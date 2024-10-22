@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -16,7 +17,7 @@
 
 use super::*;
 use crate::helpers::{NestedMap, NestedMapRead};
-use console::prelude::{anyhow, cfg_into_iter, FromBytes};
+use console::prelude::{FromBytes, anyhow, cfg_into_iter};
 
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use std::{borrow::Cow, sync::atomic::Ordering};
@@ -761,13 +762,13 @@ impl<'a, V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned> Iterator
 mod tests {
     use super::*;
     use crate::{
+        FinalizeMode,
         atomic_batch_scope,
         atomic_finalize,
         helpers::{
-            rocksdb::{internal::tests::temp_dir, MapID, TestMap},
+            rocksdb::{MapID, TestMap, internal::tests::temp_dir},
             traits::Map,
         },
-        FinalizeMode,
     };
     use console::{
         account::{Address, FromStr},

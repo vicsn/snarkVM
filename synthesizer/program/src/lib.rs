@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -48,19 +49,6 @@ mod serialize;
 
 use console::{
     network::prelude::{
-        alt,
-        anyhow,
-        bail,
-        de,
-        ensure,
-        error,
-        fmt,
-        many0,
-        many1,
-        map,
-        map_res,
-        tag,
-        take,
         Debug,
         Deserialize,
         Deserializer,
@@ -83,6 +71,19 @@ use console::{
         ToBytesSerializer,
         TypeName,
         Write,
+        alt,
+        anyhow,
+        bail,
+        de,
+        ensure,
+        error,
+        fmt,
+        many0,
+        many1,
+        map,
+        map_res,
+        tag,
+        take,
     },
     program::{Identifier, PlaintextType, ProgramID, RecordType, StructType},
 };
@@ -265,7 +266,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
 
     /// Returns the function with the given name.
     pub fn get_function(&self, name: &Identifier<N>) -> Result<FunctionCore<N, Instruction, Command>> {
-        self.get_function_ref(name).map(|function| function.clone())
+        self.get_function_ref(name).cloned()
     }
 
     /// Returns a reference to the function with the given name.

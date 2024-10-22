@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -21,7 +22,7 @@ mod execute;
 mod finalize;
 mod verify;
 
-use crate::{cast_mut_ref, cast_ref, convert, process, Restrictions};
+use crate::{Restrictions, cast_mut_ref, cast_ref, convert, process};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -44,10 +45,10 @@ use ledger_block::{
     Transactions,
 };
 use ledger_committee::Committee;
+use ledger_narwhal_data::Data;
 use ledger_puzzle::Puzzle;
 use ledger_query::Query;
 use ledger_store::{
-    atomic_finalize,
     BlockStore,
     ConsensusStorage,
     ConsensusStore,
@@ -56,8 +57,9 @@ use ledger_store::{
     TransactionStorage,
     TransactionStore,
     TransitionStore,
+    atomic_finalize,
 };
-use synthesizer_process::{deployment_cost, execution_cost, Authorization, Process, Trace};
+use synthesizer_process::{Authorization, Process, Trace, deployment_cost, execution_cost};
 use synthesizer_program::{FinalizeGlobalState, FinalizeOperation, FinalizeStoreTrait, Program};
 use utilities::try_vm_runtime;
 
@@ -66,7 +68,7 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::Either;
 use lru::LruCache;
 use parking_lot::{Mutex, RwLock};
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 #[cfg(not(feature = "serial"))]
@@ -81,7 +83,7 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     /// The VM store.
     store: ConsensusStore<N, C>,
     /// A cache containing the list of recent partially-verified transactions.
-    partially_verified_transactions: Arc<RwLock<LruCache<N::TransactionID, ()>>>,
+    partially_verified_transactions: Arc<RwLock<LruCache<N::TransactionID, N::TransmissionChecksum>>>,
     /// The restrictions list.
     restrictions: Restrictions<N>,
     /// The lock to guarantee atomicity over calls to speculate and finalize.
@@ -218,7 +220,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Returns the partially-verified transactions.
     #[inline]
-    pub fn partially_verified_transactions(&self) -> Arc<RwLock<LruCache<N::TransactionID, ()>>> {
+    pub fn partially_verified_transactions(&self) -> Arc<RwLock<LruCache<N::TransactionID, N::TransmissionChecksum>>> {
         self.partially_verified_transactions.clone()
     }
 
@@ -441,19 +443,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Note: This call is guaranteed to succeed (without error), because `DISCARD_BATCH == true`.
                     self.block_store().unpause_atomic_writes::<true>()?;
                     // Rollback the Merkle tree.
-                    self.block_store().remove_last_n_from_tree_only(1).map_err(|removal_error| {
+                    self.block_store().remove_last_n_from_tree_only(1).inspect_err(|_| {
                         // Log the finalize error.
                         error!("Failed to finalize block {} - {finalize_error}", block.height());
-                        // Return the removal error.
-                        removal_error
                     })?;
                 } else {
                     // Rollback the block.
-                    self.block_store().remove_last_n(1).map_err(|removal_error| {
+                    self.block_store().remove_last_n(1).inspect_err(|_| {
                         // Log the finalize error.
                         error!("Failed to finalize block {} - {finalize_error}", block.height());
-                        // Return the removal error.
-                        removal_error
                     })?;
                 }
                 // Return the finalize error.
@@ -481,7 +479,6 @@ pub(crate) mod test_helpers {
 
     use indexmap::IndexMap;
     use once_cell::sync::OnceCell;
-    use std::borrow::Borrow;
     #[cfg(feature = "rocks")]
     use std::path::Path;
     use synthesizer_snark::VerifyingKey;
@@ -763,8 +760,7 @@ function compute:
         rng: &mut R,
     ) -> Result<Block<MainnetV0>> {
         // Get the most recent block.
-        let block_hash =
-            vm.block_store().get_block_hash(*vm.block_store().heights().max().unwrap().borrow()).unwrap().unwrap();
+        let block_hash = vm.block_store().get_block_hash(vm.block_store().max_height().unwrap()).unwrap().unwrap();
         let previous_block = vm.block_store().get_block(&block_hash).unwrap().unwrap();
 
         // Construct the new block header.

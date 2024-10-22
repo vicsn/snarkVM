@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -33,6 +34,9 @@ use console::{
     algorithms::Sha3_256,
     collections::kary_merkle_tree::KaryMerkleTree,
     prelude::{
+        FromBits,
+        Network,
+        Result,
         anyhow,
         bail,
         cfg_into_iter,
@@ -41,9 +45,6 @@ use console::{
         cfg_values,
         ensure,
         has_duplicates,
-        FromBits,
-        Network,
-        Result,
     },
     types::U64,
 };
@@ -172,7 +173,7 @@ impl<N: Network> Puzzle<N> {
                     // Ensure that the proof target matches the expected proof target.
                     ensure!(
                         solution.target() == *proof_target,
-                        "The proof target does not match the expected proof target"
+                        "The proof target does not match the cached proof target"
                     );
                     targets[i] = *proof_target
                 }
@@ -195,7 +196,7 @@ impl<N: Network> Puzzle<N> {
                     // Ensure that the proof target matches the expected proof target.
                     ensure!(
                         solution.target() == proof_target,
-                        "The proof target does not match the expected proof target"
+                        "The proof target does not match the computed proof target"
                     );
                     // Insert the proof target into the cache.
                     self.proof_target_cache.write().put(*solution_id, proof_target);
@@ -260,6 +261,34 @@ impl<N: Network> Puzzle<N> {
         }
         // Ensure the solution is greater than or equal to the expected proof target.
         let proof_target = self.get_proof_target(solution)?;
+        if proof_target < expected_proof_target {
+            bail!("Solution does not meet the proof target requirement ({proof_target} < {expected_proof_target})")
+        }
+        Ok(())
+    }
+
+    /// ATTENTION: This function will update the target if the solution target is different from the calculated one.
+    /// Returns `Ok(())` if the solution is valid.
+    pub fn check_solution_mut(
+        &self,
+        solution: &mut Solution<N>,
+        expected_epoch_hash: N::BlockHash,
+        expected_proof_target: u64,
+    ) -> Result<()> {
+        // Ensure the epoch hash matches.
+        if solution.epoch_hash() != expected_epoch_hash {
+            bail!(
+                "Solution does not match the expected epoch hash (found '{}', expected '{expected_epoch_hash}')",
+                solution.epoch_hash()
+            )
+        }
+        // Calculate the proof target of the solution.
+        let proof_target = self.get_proof_target_unchecked(solution)?;
+
+        // Set the target with the newly calculated proof target value.
+        solution.target = proof_target;
+
+        // Ensure the solution is greater than or equal to the expected proof target.
         if proof_target < expected_proof_target {
             bail!("Solution does not meet the proof target requirement ({proof_target} < {expected_proof_target})")
         }
