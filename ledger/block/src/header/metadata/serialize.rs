@@ -44,10 +44,12 @@ impl<'de, N: Network> Deserialize<'de> for Metadata<N> {
         match deserializer.is_human_readable() {
             true => {
                 let mut metadata = serde_json::Value::deserialize(deserializer)?;
-                let cumulative_weight: String = DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_weight")?;
-                let cumulative_proof_target: String = DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_proof_target")?;
-                let cumulative_weight = cumulative_weight.parse::<u128>().map_err(|err| de::Error::custom(err))?;
-                let cumulative_proof_target = cumulative_proof_target.parse::<u128>().map_err(|err| de::Error::custom(err))?;
+                let cumulative_weight: String =
+                    DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_weight")?;
+                let cumulative_proof_target: String =
+                    DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_proof_target")?;
+                let cumulative_weight = cumulative_weight.parse::<u128>().map_err(de::Error::custom)?;
+                let cumulative_proof_target = cumulative_proof_target.parse::<u128>().map_err(de::Error::custom)?;
                 Ok(Self::new(
                     DeserializeExt::take_from_value::<D>(&mut metadata, "network")?,
                     DeserializeExt::take_from_value::<D>(&mut metadata, "round")?,
