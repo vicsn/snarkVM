@@ -1,10 +1,10 @@
 [package]
 name = "snarkvm-metrics"
-version = "0.16.19"
+version = "1.0.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Metrics for a decentralized virtual machine"
 homepage = "https://aleo.org"
-repository = "https://github.com/AleoHQ/snarkVM"
+repository = "https://github.com/AleoNet/snarkVM"
 keywords = [
   "aleo",
   "cryptography",

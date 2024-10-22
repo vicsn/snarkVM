@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -28,9 +29,6 @@ const REMOTE_URL: &str = "https://parameters.aleo.org/mainnet";
 impl_local!(Degree15, "resources/", "powers-of-beta-15", "usrs");
 #[cfg(feature = "wasm")]
 impl_remote!(Degree15, REMOTE_URL, "resources/", "powers-of-beta-15", "usrs");
-#[cfg(not(feature = "wasm"))]
-impl_local!(Degree16, "resources/", "powers-of-beta-16", "usrs");
-#[cfg(feature = "wasm")]
 impl_remote!(Degree16, REMOTE_URL, "resources/", "powers-of-beta-16", "usrs");
 impl_remote!(Degree17, REMOTE_URL, "resources/", "powers-of-beta-17", "usrs");
 impl_remote!(Degree18, REMOTE_URL, "resources/", "powers-of-beta-18", "usrs");
@@ -170,6 +168,17 @@ mod tests {
     use super::*;
     use wasm_bindgen_test::*;
     wasm_bindgen_test_configure!(run_in_browser);
+
+    #[ignore]
+    #[test]
+    fn test_load_bytes_mini() {
+        Degree16::load_bytes().expect("Failed to load degree 16");
+        BondPublicVerifier::load_bytes().expect("Failed to load bond_public verifier");
+        FeePublicProver::load_bytes().expect("Failed to load fee_public prover");
+        FeePublicVerifier::load_bytes().expect("Failed to load fee_public verifier");
+        InclusionProver::load_bytes().expect("Failed to load inclusion prover");
+        InclusionVerifier::load_bytes().expect("Failed to load inclusion verifier");
+    }
 
     #[wasm_bindgen_test]
     fn test_load_bytes() {
