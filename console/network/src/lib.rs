@@ -210,7 +210,7 @@ pub trait Network:
     /// The maximum number of stacks in the process
     /// Allows for fast processing for blocks made from 4 maximally full rounds.
     #[cfg(not(feature = "test"))]
-    const MAX_STACKS: usize = MAX_TRANSMISSIONS_PER_BATCH as usize * MAX_CERTIFICATES as usize * 4;
+    const MAX_STACKS: usize = Self::MAX_TRANSMISSIONS_PER_BATCH as usize * Self::MAX_CERTIFICATES as usize * 4;
     /// The maximum number of stacks in the process.
     #[cfg(feature = "test")]
     const MAX_STACKS: usize = 64;
