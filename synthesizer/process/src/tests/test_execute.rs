@@ -19,7 +19,6 @@ use crate::{
     Process,
     Stack,
     Trace,
-    MAX_STACKS,
 };
 use circuit::{network::AleoV0, Aleo};
 use console::{
@@ -2371,7 +2370,7 @@ fn test_process_deploy_credits_program() {
     let empty_process = Process {
         universal_srs: Arc::new(UniversalSRS::<CurrentNetwork>::load().unwrap()),
         credits: None,
-        stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(MAX_STACKS).unwrap()))),
+        stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(CurrentNetwork::MAX_STACKS).unwrap()))),
         store: None,
     };
 

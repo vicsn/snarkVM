@@ -88,13 +88,6 @@ use ledger_store::helpers::memory::ConsensusMemory;
 #[cfg(feature = "rocks")]
 use ledger_store::helpers::rocksdb::ConsensusDB;
 
-#[cfg(not(any(test, feature = "test")))]
-const MAX_STACKS: usize = 1000;
-
-#[cfg(any(test, feature = "test"))]
-// This must be at least 64 (same as MAX_IMPORTS) to avoid breaking test_max_imports.
-const MAX_STACKS: usize = 64;
-
 #[cfg(feature = "rocks")]
 #[derive(Clone)]
 pub struct Process<N: Network> {
@@ -130,7 +123,7 @@ impl<N: Network> Process<N> {
         let mut process = Self {
             universal_srs: Arc::new(UniversalSRS::load()?),
             credits: None,
-            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(MAX_STACKS).unwrap()))),
+            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(N::MAX_STACKS).unwrap()))),
             store: None,
         };
         lap!(timer, "Initialize process");
@@ -215,7 +208,7 @@ impl<N: Network> Process<N> {
         let mut process = Self {
             universal_srs: Arc::new(UniversalSRS::load()?),
             credits: None,
-            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(MAX_STACKS).unwrap()))),
+            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(N::MAX_STACKS).unwrap()))),
             store: Some(store),
         };
         lap!(timer, "Initialize process");
@@ -257,7 +250,7 @@ impl<N: Network> Process<N> {
         let process = Self {
             universal_srs: Arc::new(UniversalSRS::load()?),
             credits: None,
-            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(MAX_STACKS).unwrap()))),
+            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(N::MAX_STACKS).unwrap()))),
             store: None,
         };
 
@@ -273,7 +266,7 @@ impl<N: Network> Process<N> {
         let mut process = Self {
             universal_srs: Arc::new(UniversalSRS::load()?),
             credits: None,
-            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(MAX_STACKS).unwrap()))),
+            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(N::MAX_STACKS).unwrap()))),
             store: None,
         };
 
