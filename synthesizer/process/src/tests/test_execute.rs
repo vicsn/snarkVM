@@ -2592,7 +2592,7 @@ fn test_long_import_chain_with_calls() {
 #[test]
 fn test_max_imports() {
     // Construct the process.
-    let mut process = Process::<CurrentNetwork>::load().unwrap();
+    let mut process = Process::<CurrentNetwork>::load_testing_only().unwrap();
 
     // Add `MAX_IMPORTS` programs to the process.
     for i in 0..CurrentNetwork::MAX_IMPORTS {
@@ -2643,7 +2643,7 @@ fn test_program_exceeding_transaction_spend_limit() {
     .unwrap();
 
     // Initialize a `Process`.
-    let mut process = Process::<CurrentNetwork>::load().unwrap();
+    let mut process = Process::<CurrentNetwork>::load_testing_only().unwrap();
 
     // Attempt to add the program to the process, which should fail.
     let result = process.add_program(&program);
