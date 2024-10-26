@@ -123,10 +123,12 @@ pub mod prelude {
     pub use bech32::{self, FromBase32, ToBase32};
     pub use itertools::Itertools;
     pub use nom::{
+        Err,
         branch::alt,
         bytes::{complete::tag, streaming::take},
         character::complete::{alpha1, alphanumeric1, char, one_of},
         combinator::{complete, fail, map, map_res, opt, recognize},
+        error::{ErrorKind, make_error},
         multi::{count, many0, many0_count, many1, separated_list0, separated_list1},
         sequence::{pair, terminated},
     };
