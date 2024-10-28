@@ -17,6 +17,7 @@ use std::str::FromStr;
 
 use console::{
     network::MainnetV0,
+    prelude::Network,
     program::{Parser, ProgramID},
 };
 use synthesizer_program::Program;
@@ -67,7 +68,7 @@ function compute:
     let mut process = crate::test_helpers::sample_process(&program1);
     assert!(process.contains_program(program1.id()));
 
-    for i in 2..=65 {
+    for i in 2..=<CurrentNetwork as Network>::MAX_STACKS + 1 {
         let source = format!(
             r"
 program testing{i}.aleo;
@@ -85,7 +86,7 @@ function compute:
         assert!(process.contains_program(program.id()));
     }
 
-    // only 64 programs are cached, so program1 should be evicted
+    // only MAX_STACKS programs are cached, so program1 should be evicted
     assert!(!process.contains_program(program1.id()));
     // test we still have credits.aleo
     let credits_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
