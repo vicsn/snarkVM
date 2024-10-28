@@ -40,11 +40,8 @@ use lru::LruCache;
 use synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program, StackProgram};
 use synthesizer_snark::UniversalSRS;
 
-use parking_lot::RwLock;
-use std::{
-    num::NonZeroUsize,
-    sync::{Arc, Mutex},
-};
+use parking_lot::{Mutex, RwLock};
+use std::{num::NonZeroUsize, sync::Arc};
 
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;

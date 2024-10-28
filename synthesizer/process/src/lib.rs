@@ -73,12 +73,8 @@ use aleo_std::{
 };
 use ledger_store::{ConsensusStore, TransactionStorage, TransactionStore};
 use lru::LruCache;
-use parking_lot::RwLock;
-use std::{
-    collections::HashMap,
-    num::NonZeroUsize,
-    sync::{Arc, Mutex},
-};
+use parking_lot::{Mutex, RwLock};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 #[cfg(feature = "aleo-cli")]
 use colored::Colorize;
@@ -169,11 +165,7 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn add_stack(&self, stack: Stack<N>) {
         // Add the stack to the process.
-        let mut lock = self.stacks.lock();
-        match lock {
-            Ok(ref mut lock) => lock.put(*stack.program_id(), Arc::new(stack)),
-            Err(_) => None,
-        };
+        self.stacks.lock().put(*stack.program_id(), Arc::new(stack));
     }
 }
 
@@ -295,11 +287,7 @@ impl<N: Network> Process<N> {
         if self.credits.as_ref().map_or(false, |stack| stack.program_id() == program_id) {
             return true;
         }
-        let lock = self.stacks.lock();
-        match lock {
-            Ok(lock) => lock.contains(program_id),
-            Err(_) => false,
-        }
+        self.stacks.lock().contains(program_id)
     }
 
     /// Loads the Stack and imported Stacks for the given program ID into memory.
@@ -340,7 +328,7 @@ impl<N: Network> Process<N> {
             self.load_stack(program_id)?;
         }
         // Retrieve the stack.
-        let mut lru_cache = self.stacks.lock().map_err(|_| anyhow!("Failed to lock stack"))?;
+        let mut lru_cache = self.stacks.lock();
         let stack = lru_cache.get(&program_id).ok_or_else(|| anyhow!("Failed to load stack"))?;
         // Ensure the program ID matches.
         ensure!(stack.program_id() == &program_id, "Expected program '{}', found '{program_id}'", stack.program_id());
