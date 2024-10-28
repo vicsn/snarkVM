@@ -65,7 +65,7 @@ use synthesizer_program::{
     StackProgram,
 };
 use synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
-use tracing::{debug, info};
+use tracing::debug;
 
 use aleo_std::{
     StorageMode,
@@ -302,22 +302,25 @@ impl<N: Network> Process<N> {
         }
     }
 
+    /// Loads the Stack and imported Stacks for the given program ID into memory.
+    #[inline]
     fn load_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<()> {
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
-        info!("Lazy loading stack for {program_id}");
+        debug!("Lazy loading stack for {program_id}");
+        // Retrieve the stores.
         let store = self.store.as_ref().ok_or_else(|| anyhow!("Failed to get store"))?;
-        // Retrieve the transaction store.
         let transaction_store = store.transaction_store();
         let deployment_store = transaction_store.deployment_store();
+        // Retrieve the transaction ID.
         let transaction_id = deployment_store
             .find_transaction_id_from_program_id(&program_id)
             .map_err(|e| anyhow!("Program ID not found in storage: {e}"))?
             .ok_or_else(|| anyhow!("Program ID not found in storage"))?;
+        // Collect the deployment and imports.
         let deployments = load_deployment_and_imports(self, transaction_store, transaction_id)?;
+        // Load the deployment into memory.
         for deployment in deployments {
-            debug!("Loading deployment {}", deployment.0);
             self.load_deployment(&deployment.1)?;
-            debug!("Loaded deployment");
         }
         debug!("Loaded stack for {program_id}");
         Ok(())
