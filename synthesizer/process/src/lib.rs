@@ -188,7 +188,7 @@ impl<N: Network> Process<N> {
     /// Initializes a new process.
     #[inline]
     pub fn load_from_storage(storage_mode: Option<StorageMode>) -> Result<Self> {
-        let timer = timer!("Process::load_testing_only");
+        let timer = timer!("Process::load_from_storage");
 
         debug!("Opening storage");
         let storage_mode = storage_mode.as_ref().ok_or_else(|| anyhow!("Failed to get storage mode"))?.clone();
@@ -238,7 +238,7 @@ impl<N: Network> Process<N> {
         // Add the stack to the process.
         process.credits = Some(Arc::new(stack));
 
-        finish!(timer, "Process::load_testing_only");
+        finish!(timer, "Process::load_from_storage");
         // Return the process.
         Ok(process)
     }
