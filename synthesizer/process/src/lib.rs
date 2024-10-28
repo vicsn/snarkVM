@@ -191,7 +191,7 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::load_from_storage");
 
         debug!("Opening storage");
-        let storage_mode = storage_mode.as_ref().ok_or_else(|| anyhow!("Failed to get storage mode"))?.clone();
+        let storage_mode = storage_mode.clone().ok_or_else(|| anyhow!("Failed to get storage mode"))?;
         // try to lazy load the stack
         #[cfg(feature = "rocks")]
         let store = ConsensusStore::<N, ConsensusDB<N>>::open(storage_mode);
