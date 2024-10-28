@@ -333,7 +333,7 @@ impl<N: Network> Process<N> {
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
         // Check if the program is 'credits.aleo'.
         if program_id == ProgramID::<N>::from_str("credits.aleo")? {
-            return self.credits.as_ref().cloned().ok_or_else(|| anyhow!("Failed to get stack for 'credits.aleo'"));
+            return self.credits.clone().ok_or_else(|| anyhow!("Failed to get stack for 'credits.aleo'"));
         }
         // Maybe lazy load the stack
         if !self.contains_program(&program_id) {
