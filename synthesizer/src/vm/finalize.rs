@@ -35,6 +35,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub fn speculate<'a, R: Rng + CryptoRng>(
         &self,
         state: FinalizeGlobalState,
+        time_since_last_block: i64, // TODO (raychu86): Consider moving this value into `FinalizeGlobalState`.
         coinbase_reward: Option<u64>,
         candidate_ratifications: Vec<Ratify<N>>,
         candidate_solutions: &Solutions<N>,
@@ -62,6 +63,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let (ratifications, confirmed_transactions, speculation_aborted_transactions, ratified_finalize_operations) =
             self.atomic_speculate(
                 state,
+                time_since_last_block,
                 coinbase_reward,
                 candidate_ratifications,
                 candidate_solutions,
@@ -104,6 +106,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub fn check_speculate<R: Rng + CryptoRng>(
         &self,
         state: FinalizeGlobalState,
+        time_since_last_block: i64,
         ratifications: &Ratifications<N>,
         solutions: &Solutions<N>,
         transactions: &Transactions<N>,
@@ -129,7 +132,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Performs a **dry-run** over the list of ratifications, solutions, and transactions.
         let (speculate_ratifications, confirmed_transactions, aborted_transactions, ratified_finalize_operations) =
-            self.atomic_speculate(state, None, candidate_ratifications, solutions, candidate_transactions.iter())?;
+            self.atomic_speculate(
+                state,
+                time_since_last_block,
+                None,
+                candidate_ratifications,
+                solutions,
+                candidate_transactions.iter(),
+            )?;
 
         // Ensure the ratifications after speculation match.
         if ratifications != &speculate_ratifications {
@@ -193,6 +203,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     fn atomic_speculate<'a>(
         &self,
         state: FinalizeGlobalState,
+        time_since_last_block: i64,
         coinbase_reward: Option<u64>,
         ratifications: Vec<Ratify<N>>,
         solutions: &Solutions<N>,
@@ -478,9 +489,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     };
 
                     // Compute the block reward.
-                    let block_reward = ledger_block::block_reward_v1(
+                    let block_reward = ledger_block::block_reward::<N>(
+                        state.block_height(),
                         N::STARTING_SUPPLY,
                         N::BLOCK_TIME,
+                        time_since_last_block,
                         coinbase_reward,
                         transaction_fees,
                     );
@@ -1458,8 +1471,10 @@ finalize transfer_public:
         rng: &mut R,
     ) -> Result<Block<CurrentNetwork>> {
         // Speculate on the candidate ratifications, solutions, and transactions.
+        let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
             sample_finalize_state(previous_block.height() + 1),
+            time_since_last_block,
             None,
             vec![],
             &None.into(),
@@ -1478,7 +1493,7 @@ finalize transfer_public:
             CurrentNetwork::GENESIS_PROOF_TARGET,
             previous_block.last_coinbase_target(),
             previous_block.last_coinbase_timestamp(),
-            CurrentNetwork::GENESIS_TIMESTAMP + 1,
+            previous_block.timestamp().saturating_add(time_since_last_block),
         )?;
 
         // Construct the new block header.
@@ -1736,6 +1751,7 @@ finalize transfer_public:
         let (ratifications, confirmed_transactions, aborted_transaction_ids, _) = vm
             .speculate(
                 sample_finalize_state(1),
+                CurrentNetwork::BLOCK_TIME as i64,
                 None,
                 vec![],
                 &None.into(),
@@ -1763,7 +1779,14 @@ finalize transfer_public:
 
         // Ensure the dry run of the redeployment will cause a reject transaction to be created.
         let (_, candidate_transactions, aborted_transaction_ids, _) = vm
-            .atomic_speculate(sample_finalize_state(1), None, vec![], &None.into(), [deployment_transaction].iter())
+            .atomic_speculate(
+                sample_finalize_state(1),
+                CurrentNetwork::BLOCK_TIME as i64,
+                None,
+                vec![],
+                &None.into(),
+                [deployment_transaction].iter(),
+            )
             .unwrap();
         assert_eq!(candidate_transactions.len(), 1);
         assert!(matches!(candidate_transactions[0], ConfirmedTransaction::RejectedDeploy(..)));
@@ -1849,8 +1872,16 @@ finalize transfer_public:
 
         // Speculate on the transactions.
         let transactions = [bond_validator_transaction.clone()];
-        let (_, confirmed_transactions, _, _) =
-            vm.atomic_speculate(sample_finalize_state(1), None, vec![], &None.into(), transactions.iter()).unwrap();
+        let (_, confirmed_transactions, _, _) = vm
+            .atomic_speculate(
+                sample_finalize_state(1),
+                CurrentNetwork::BLOCK_TIME as i64,
+                None,
+                vec![],
+                &None.into(),
+                transactions.iter(),
+            )
+            .unwrap();
 
         // Assert that the transaction is rejected.
         assert_eq!(confirmed_transactions.len(), 1);
@@ -1952,8 +1983,16 @@ finalize transfer_public:
         // Transfer_20 -> Balance = 20 - 20 = 0
         {
             let transactions = [mint_10.clone(), transfer_10.clone(), transfer_20.clone()];
-            let (_, confirmed_transactions, aborted_transaction_ids, _) =
-                vm.atomic_speculate(sample_finalize_state(1), None, vec![], &None.into(), transactions.iter()).unwrap();
+            let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
+                .atomic_speculate(
+                    sample_finalize_state(1),
+                    CurrentNetwork::BLOCK_TIME as i64,
+                    None,
+                    vec![],
+                    &None.into(),
+                    transactions.iter(),
+                )
+                .unwrap();
 
             // Assert that all the transactions are accepted.
             assert_eq!(confirmed_transactions.len(), 3);
@@ -1972,8 +2011,16 @@ finalize transfer_public:
         // Transfer_30 -> Balance = 30 - 30 = 0
         {
             let transactions = [transfer_20.clone(), mint_10.clone(), mint_20.clone(), transfer_30.clone()];
-            let (_, confirmed_transactions, aborted_transaction_ids, _) =
-                vm.atomic_speculate(sample_finalize_state(1), None, vec![], &None.into(), transactions.iter()).unwrap();
+            let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
+                .atomic_speculate(
+                    sample_finalize_state(1),
+                    CurrentNetwork::BLOCK_TIME as i64,
+                    None,
+                    vec![],
+                    &None.into(),
+                    transactions.iter(),
+                )
+                .unwrap();
 
             // Assert that all the transactions are accepted.
             assert_eq!(confirmed_transactions.len(), 4);
@@ -1992,8 +2039,16 @@ finalize transfer_public:
         // Transfer_10 -> Balance = 0 - 10 = -10 (should be rejected)
         {
             let transactions = [transfer_20.clone(), transfer_10.clone()];
-            let (_, confirmed_transactions, aborted_transaction_ids, _) =
-                vm.atomic_speculate(sample_finalize_state(1), None, vec![], &None.into(), transactions.iter()).unwrap();
+            let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
+                .atomic_speculate(
+                    sample_finalize_state(1),
+                    CurrentNetwork::BLOCK_TIME as i64,
+                    None,
+                    vec![],
+                    &None.into(),
+                    transactions.iter(),
+                )
+                .unwrap();
 
             // Assert that the accepted and rejected transactions are correct.
             assert_eq!(confirmed_transactions.len(), 2);
@@ -2016,8 +2071,16 @@ finalize transfer_public:
         // Transfer_10 -> Balance = 10 - 10 = 0
         {
             let transactions = [mint_20.clone(), transfer_30.clone(), transfer_20.clone(), transfer_10.clone()];
-            let (_, confirmed_transactions, aborted_transaction_ids, _) =
-                vm.atomic_speculate(sample_finalize_state(1), None, vec![], &None.into(), transactions.iter()).unwrap();
+            let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
+                .atomic_speculate(
+                    sample_finalize_state(1),
+                    CurrentNetwork::BLOCK_TIME as i64,
+                    None,
+                    vec![],
+                    &None.into(),
+                    transactions.iter(),
+                )
+                .unwrap();
 
             // Assert that the accepted and rejected transactions are correct.
             assert_eq!(confirmed_transactions.len(), 4);
@@ -2116,7 +2179,15 @@ function ped_hash:
 
             // Speculatively execute the transaction. Ensure that this call does not panic and returns a rejected transaction.
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
-                .speculate(sample_finalize_state(1), None, vec![], &None.into(), [transaction.clone()].iter(), rng)
+                .speculate(
+                    sample_finalize_state(1),
+                    CurrentNetwork::BLOCK_TIME as i64,
+                    None,
+                    vec![],
+                    &None.into(),
+                    [transaction.clone()].iter(),
+                    rng,
+                )
                 .unwrap();
             assert!(aborted_transaction_ids.is_empty());
 

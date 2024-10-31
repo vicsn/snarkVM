@@ -547,8 +547,17 @@ mod tests {
         let deployment_transaction = vm.deploy(&caller_private_key, &program, Some(credits), 10, None, rng).unwrap();
 
         // Construct the new block header.
+        let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
-            .speculate(sample_finalize_state(1), Some(0u64), vec![], &None.into(), [deployment_transaction].iter(), rng)
+            .speculate(
+                sample_finalize_state(1),
+                time_since_last_block,
+                Some(0u64),
+                vec![],
+                &None.into(),
+                [deployment_transaction].iter(),
+                rng,
+            )
             .unwrap();
         assert!(aborted_transaction_ids.is_empty());
 
@@ -563,7 +572,7 @@ mod tests {
             CurrentNetwork::GENESIS_PROOF_TARGET,
             genesis.last_coinbase_target(),
             genesis.last_coinbase_timestamp(),
-            CurrentNetwork::GENESIS_TIMESTAMP + 1,
+            genesis.timestamp().saturating_add(time_since_last_block),
         )
         .unwrap();
 

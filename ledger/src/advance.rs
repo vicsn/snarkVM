@@ -316,6 +316,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Speculate over the ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = self.vm.speculate(
             state,
+            next_timestamp.saturating_sub(previous_block.timestamp()),
             Some(coinbase_reward),
             candidate_ratifications,
             &solutions,

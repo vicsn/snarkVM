@@ -18,9 +18,28 @@ use console::prelude::{Network, Result, ensure};
 /// A safety bound (sanity-check) for the coinbase reward.
 pub const MAX_COINBASE_REWARD: u64 = 190_258_739; // Coinbase reward at block 1.
 
-/// A the maximum block interval in seconds. This is used to cap the block interval in the V2 block reward calculation to
+/// A the maximum block interval in seconds. This is used to upper bound the block interval in the V2 block reward calculation to
 /// prevent the block reward from becoming too large in the event of a long block interval.
-const BLOCK_REWARD_V2_MAX_BLOCK_INTERVAL: i64 = 60; // 1 minute.
+const V2_MAX_BLOCK_INTERVAL: i64 = 60; // 1 minute.
+/// A the minimum block interval in seconds. This is used to lower bound the block interval in the V2 block reward calculation to
+/// prevent the block reward from becoming too small in the event of an extremely short block interval.
+const V2_MIN_BLOCK_INTERVAL: i64 = 1; // 1 second.
+
+/// Calculate the block reward based on the network’s consensus version, determined by the given block height.
+pub fn block_reward<N: Network>(
+    block_height: u32,
+    total_supply: u64,
+    block_time: u16,
+    time_since_last_block: i64,
+    coinbase_reward: u64,
+    transaction_fees: u64,
+) -> u64 {
+    // Determine which block reward version to use.
+    match block_height < N::CONSENSUS_V2_HEIGHT {
+        true => block_reward_v1(total_supply, block_time, coinbase_reward, transaction_fees),
+        false => block_reward_v2(total_supply, time_since_last_block, coinbase_reward, transaction_fees),
+    }
+}
 
 /// Calculate the V1 block reward, given the total supply, block time, coinbase reward, and transaction fees.
 ///     R_staking = floor((0.05 * S) / H_Y1) + CR / 3 + TX_F.
@@ -56,10 +75,10 @@ pub fn block_reward_v2(
     const SECONDS_IN_A_YEAR: u64 = 60 * 60 * 24 * 365;
     // Compute the annual reward: (0.05 * S).
     let annual_reward = total_supply / 20;
-    // Compute the seconds since last block with a maximum of `MAX_BLOCK_INTERVAL` seconds.
-    // Compute the block reward: (0.05 * S) * min(I, MAX_BLOCK_INTERVAL) / S_Y.
-    let block_reward =
-        annual_reward * time_since_last_block.min(BLOCK_REWARD_V2_MAX_BLOCK_INTERVAL) as u64 / SECONDS_IN_A_YEAR;
+    // Compute the seconds since last block with a maximum of `V2_MAX_BLOCK_INTERVAL` seconds and minimum of `V2_MIN_BLOCK_INTERVAL` seconds;
+    let time_since_last_block = time_since_last_block.max(V2_MIN_BLOCK_INTERVAL).min(V2_MAX_BLOCK_INTERVAL);
+    // Compute the block reward: (0.05 * S) * min(max(I, MIN_BLOCK_INTERVAL), MAX_BLOCK_INTERVAL) / S_Y.
+    let block_reward = annual_reward * time_since_last_block as u64 / SECONDS_IN_A_YEAR;
     // Return the sum of the block reward, coinbase reward, and transaction fees.
     block_reward + (coinbase_reward / 3) + transaction_fees
 }
@@ -331,7 +350,7 @@ pub fn to_next_targets<N: Network>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::network::{MainnetV0, prelude::*};
+    use console::network::{MainnetV0, TestnetV0, prelude::*};
 
     type CurrentNetwork = MainnetV0;
 
@@ -469,6 +488,53 @@ mod tests {
     }
 
     #[test]
+    fn test_block_reward() {
+        let mut rng = TestRng::default();
+
+        // Ensure that a block height of `TestnetV0::CONSENSUS_V2_HEIGHT` uses block reward V2.
+        let time_since_last_block = rng.gen_range(1..=V2_MAX_BLOCK_INTERVAL);
+        let reward = block_reward::<TestnetV0>(
+            TestnetV0::CONSENSUS_V2_HEIGHT,
+            TestnetV0::STARTING_SUPPLY,
+            TestnetV0::BLOCK_TIME,
+            time_since_last_block,
+            0,
+            0,
+        );
+        let expected_reward = block_reward_v2(TestnetV0::STARTING_SUPPLY, time_since_last_block, 0, 0);
+        assert_eq!(reward, expected_reward);
+
+        for _ in 0..100 {
+            // Check that the block reward is correct for the first consensus version.
+            let consensus_v1_height = rng.gen_range(0..TestnetV0::CONSENSUS_V2_HEIGHT);
+            let consensus_v1_reward = block_reward::<TestnetV0>(
+                consensus_v1_height,
+                TestnetV0::STARTING_SUPPLY,
+                TestnetV0::BLOCK_TIME,
+                0,
+                0,
+                0,
+            );
+            let expected_reward = block_reward_v1(TestnetV0::STARTING_SUPPLY, TestnetV0::BLOCK_TIME, 0, 0);
+            assert_eq!(consensus_v1_reward, expected_reward);
+
+            // Check that the block reward is correct for the second consensus version.
+            let consensus_v2_height = rng.gen_range(TestnetV0::CONSENSUS_V2_HEIGHT..u32::MAX);
+            let time_since_last_block = rng.gen_range(1..=V2_MAX_BLOCK_INTERVAL);
+            let consensus_v2_reward = block_reward::<TestnetV0>(
+                consensus_v2_height,
+                TestnetV0::STARTING_SUPPLY,
+                TestnetV0::BLOCK_TIME,
+                time_since_last_block,
+                0,
+                0,
+            );
+            let expected_reward = block_reward_v2(TestnetV0::STARTING_SUPPLY, time_since_last_block, 0, 0);
+            assert_eq!(consensus_v2_reward, expected_reward);
+        }
+    }
+
+    #[test]
     fn test_block_reward_v1() {
         let reward = block_reward_v1(CurrentNetwork::STARTING_SUPPLY, CurrentNetwork::BLOCK_TIME, 0, 0);
         assert_eq!(reward, EXPECTED_STAKING_REWARD);
@@ -498,11 +564,15 @@ mod tests {
         assert!(reward > smaller_reward);
 
         // Increasing the block interval past `V2_MAX_BLOCK_INTERVAL` does not increase the reward.
-        let max_reward = block_reward_v2(CurrentNetwork::STARTING_SUPPLY, BLOCK_REWARD_V2_MAX_BLOCK_INTERVAL, 0, 0);
+        let max_reward = block_reward_v2(CurrentNetwork::STARTING_SUPPLY, V2_MAX_BLOCK_INTERVAL, 0, 0);
         assert_eq!(max_reward, EXPECTED_MAX_STAKING_REWARD);
-        let equivalent_reward =
-            block_reward_v2(CurrentNetwork::STARTING_SUPPLY, BLOCK_REWARD_V2_MAX_BLOCK_INTERVAL + 1, 0, 0);
+        let equivalent_reward = block_reward_v2(CurrentNetwork::STARTING_SUPPLY, V2_MAX_BLOCK_INTERVAL + 1, 0, 0);
         assert_eq!(max_reward, equivalent_reward);
+
+        // Test that there is a minimum block reward when the time since last block is 1 second.
+        let min_reward = block_reward_v2(CurrentNetwork::STARTING_SUPPLY, 1, 0, 0);
+        let equivalent_reward = block_reward_v2(CurrentNetwork::STARTING_SUPPLY, 0, 0, 0);
+        assert_eq!(min_reward, equivalent_reward);
     }
 
     #[test]
@@ -546,7 +616,7 @@ mod tests {
             let time_factor: f64 = longer_time as f64 / CurrentNetwork::BLOCK_TIME as f64;
             let larger_reward = block_reward_v2(CurrentNetwork::STARTING_SUPPLY, longer_time as i64, 0, 0);
             let expected_reward = (EXPECTED_STAKING_REWARD as f64 * time_factor) as u64;
-            match longer_time as i64 > BLOCK_REWARD_V2_MAX_BLOCK_INTERVAL {
+            match longer_time as i64 > V2_MAX_BLOCK_INTERVAL {
                 true => assert_eq!(larger_reward, EXPECTED_MAX_STAKING_REWARD),
                 false => {
                     assert!((larger_reward as f64 - expected_reward as f64).abs() / expected_reward as f64 <= TOLERANCE)
