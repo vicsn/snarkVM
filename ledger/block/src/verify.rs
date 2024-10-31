@@ -388,7 +388,7 @@ impl<N: Network> Block<N> {
         )?;
 
         // Calculate the expected coinbase reward.
-        let expected_coinbase_reward = coinbase_reward(
+        let expected_coinbase_reward = coinbase_reward_v1(
             height,
             N::STARTING_SUPPLY,
             N::ANCHOR_HEIGHT,
@@ -404,7 +404,7 @@ impl<N: Network> Block<N> {
 
         // Compute the expected block reward.
         let expected_block_reward =
-            block_reward(N::STARTING_SUPPLY, N::BLOCK_TIME, expected_coinbase_reward, expected_transaction_fees);
+            block_reward_v1(N::STARTING_SUPPLY, N::BLOCK_TIME, expected_coinbase_reward, expected_transaction_fees);
         // Compute the expected puzzle reward.
         let expected_puzzle_reward = puzzle_reward(expected_coinbase_reward);
 

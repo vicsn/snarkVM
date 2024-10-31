@@ -478,7 +478,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     };
 
                     // Compute the block reward.
-                    let block_reward = ledger_block::block_reward(
+                    let block_reward = ledger_block::block_reward_v1(
                         N::STARTING_SUPPLY,
                         N::BLOCK_TIME,
                         coinbase_reward,
