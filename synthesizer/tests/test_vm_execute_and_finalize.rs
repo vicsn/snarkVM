@@ -466,6 +466,7 @@ fn construct_fee_records<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng
 }
 
 // A helper function to construct the next block.
+#[allow(clippy::too_many_arguments)]
 fn construct_next_block<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng>(
     vm: &VM<CurrentNetwork, C>,
     time_since_last_block: i64,

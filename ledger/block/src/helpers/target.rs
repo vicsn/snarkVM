@@ -76,7 +76,7 @@ pub fn block_reward_v2(
     // Compute the annual reward: (0.05 * S).
     let annual_reward = total_supply / 20;
     // Compute the seconds since last block with a maximum of `V2_MAX_BLOCK_INTERVAL` seconds and minimum of `V2_MIN_BLOCK_INTERVAL` seconds;
-    let time_since_last_block = time_since_last_block.max(V2_MIN_BLOCK_INTERVAL).min(V2_MAX_BLOCK_INTERVAL);
+    let time_since_last_block = time_since_last_block.clamp(V2_MIN_BLOCK_INTERVAL, V2_MAX_BLOCK_INTERVAL);
     // Compute the block reward: (0.05 * S) * min(max(I, MIN_BLOCK_INTERVAL), MAX_BLOCK_INTERVAL) / S_Y.
     let block_reward = annual_reward * time_since_last_block as u64 / SECONDS_IN_A_YEAR;
     // Return the sum of the block reward, coinbase reward, and transaction fees.

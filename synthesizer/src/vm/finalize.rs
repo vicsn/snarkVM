@@ -32,6 +32,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ///     `Ratify::BlockReward(block_reward)` and `Ratify::PuzzleReward(puzzle_reward)`
     ///     to the front of the `ratifications` list.
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn speculate<'a, R: Rng + CryptoRng>(
         &self,
         state: FinalizeGlobalState,
