@@ -59,12 +59,14 @@ pub const fn block_reward_v1(total_supply: u64, block_time: u16, coinbase_reward
 }
 
 /// Calculate the V2 block reward, given the total supply, block interval, coinbase reward, and transaction fees.
-///     R_staking = floor((0.05 * S) * min(I, 60) / S_Y) + CR / 3 + TX_F.
+///     R_staking = floor((0.05 * S) * clamp(I, MIN_BI, MAX_BI) / S_Y) + CR / 3 + TX_F.
 ///     S = Total supply.
 ///     I = Seconds elapsed since last block.
 ///     S_Y = Seconds in a year (31536000).
 ///     CR = Coinbase reward.
 ///     TX_F = Transaction fees.
+///     MIN_BI = Minimum block interval.
+///     MAX_BI = Maximum block interval.
 pub fn block_reward_v2(
     total_supply: u64,
     time_since_last_block: i64,
@@ -124,6 +126,42 @@ pub fn coinbase_reward_v1(
     Ok(u64::try_from(reward).expect("Coinbase reward exceeds u64::MAX"))
 }
 
+/// Calculates the V2 coinbase reward for a given block.
+///     R_coinbase = R_anchor(H) * min(P, C_R) / C
+///     R_anchor = Anchor reward at block height.
+///     H = Current block height.
+///     P = Combined proof target.
+///     C_R = Remaining coinbase target.
+///     C = Coinbase target.
+pub fn coinbase_reward_v2(
+    block_timestamp: i64,
+    genesis_timestamp: i64,
+    starting_supply: u64,
+    anchor_time: u16,
+    combined_proof_target: u128,
+    cumulative_proof_target: u64,
+    coinbase_target: u64,
+) -> Result<u64> {
+    // Compute the remaining coinbase target.
+    let remaining_coinbase_target = coinbase_target.saturating_sub(cumulative_proof_target);
+    // Compute the remaining proof target.
+    let remaining_proof_target = combined_proof_target.min(remaining_coinbase_target as u128);
+
+    // Compute the anchor block reward.
+    let anchor_block_reward =
+        anchor_block_reward_at_timestamp(block_timestamp, genesis_timestamp, starting_supply, anchor_time);
+
+    // Calculate the coinbase reward.
+    let reward = anchor_block_reward.saturating_mul(remaining_proof_target).saturating_div(coinbase_target as u128);
+
+    // Ensure the coinbase reward is less than the maximum coinbase reward.
+    ensure!(reward <= MAX_COINBASE_REWARD as u128, "Coinbase reward ({reward}) exceeds maximum {MAX_COINBASE_REWARD}");
+
+    // Return the coinbase reward.
+    // Note: This '.expect' is guaranteed to be safe, as we ensure the reward is within a safe bound.
+    Ok(u64::try_from(reward).expect("Coinbase reward exceeds u64::MAX"))
+}
+
 /// Calculates the anchor block reward for the given block height.
 ///     R_anchor = max(floor((2 * S * H_A * H_R) / (H_Y10 * (H_Y10 + 1))), R_Y9).
 ///     S = Starting supply.
@@ -154,6 +192,69 @@ fn anchor_block_reward_at_height(block_height: u32, starting_supply: u64, anchor
     let reward_at_block_height = block_reward_at_height(block_height, starting_supply, anchor_height, block_time);
     // Compute the anchor block reward.
     reward_at_block_height.max(reward_at_year_9)
+}
+
+/// Calculates the anchor block reward for the given block timestamp.
+/// This function uses timestamp rather than block height to determine the reward in order to combat
+/// the volatility of block times and better align with human timescales.
+///     R_anchor = max(floor((2 * S * T_A * T_R) / (T_Y10 * (T_Y10 + 1))), R_Y9).
+///     S = Starting supply.
+///     T_A = Anchor block time.
+///     T_R = Remaining number of seconds until year 10.
+///     T_Y10 = Number of seconds elapsed in 10 years.
+///     R_Y9 = Reward at year 9.
+fn anchor_block_reward_at_timestamp(
+    block_timestamp: i64,
+    genesis_timestamp: i64,
+    starting_supply: u64,
+    anchor_time: u16,
+) -> u128 {
+    // A helper function to calculate the reward at a given block timestamp, without the year 9 baseline.
+    const fn block_reward_at_timestamp(
+        block_timestamp: i64,
+        genesis_timestamp: i64,
+        starting_supply: u64,
+        anchor_time: u16,
+    ) -> u128 {
+        // Calculate the timestamp at year 10.
+        let timestamp_at_year_10 = timestamp_at_year(genesis_timestamp, 10) as u128;
+        // Calculate the number of seconds elapsed in 10 years.
+        let number_of_seconds_in_10_years = timestamp_at_year(0, 10) as u128;
+        // Compute the remaining seconds until year 10.
+        let num_remaining_seconds_to_year_10 = timestamp_at_year_10.saturating_sub(block_timestamp as u128);
+
+        // Compute the numerator.
+        // Note that we perform a `saturating_div(10)` on the `anchor_time` in the numerator and the `number_of_seconds_in_10_years` denominator.
+        // This is done to to match the truncation of `anchor_block_reward_at_height` in an attempt to
+        // keep the reward more consistent between the two functions.
+        let numerator =
+            2 * starting_supply as u128 * anchor_time.saturating_div(10) as u128 * num_remaining_seconds_to_year_10;
+        // Compute the denominator.
+        let denominator = number_of_seconds_in_10_years * (number_of_seconds_in_10_years.saturating_div(10) + 1);
+        // Compute the quotient.
+        numerator / denominator
+    }
+
+    // Calculate the timestamp at year 9.
+    let timestamp_at_year_9 = timestamp_at_year(genesis_timestamp, 9);
+    // Compute the unadjusted reward at year 9.
+    let reward_at_year_9 =
+        block_reward_at_timestamp(timestamp_at_year_9, genesis_timestamp, starting_supply, anchor_time);
+    // Compute the unadjusted reward at the given block timestamp.
+    let reward_at_block_timestamp =
+        block_reward_at_timestamp(block_timestamp, genesis_timestamp, starting_supply, anchor_time);
+    // Compute the anchor block reward.
+    reward_at_block_timestamp.max(reward_at_year_9)
+}
+
+/// Returns the timestamp for a given year, relative to the genesis timestamp.
+pub const fn timestamp_at_year(genesis_timestamp: i64, num_years: u32) -> i64 {
+    // Calculate the number of seconds in a year.
+    const SECONDS_IN_A_YEAR: u32 = 60 * 60 * 24 * 365;
+    // Calculate the number of seconds elapsed in `num_years`.
+    let seconds_elapsed = SECONDS_IN_A_YEAR.saturating_mul(num_years);
+    // Return the timestamp for the given year.
+    genesis_timestamp.saturating_add(seconds_elapsed as i64)
 }
 
 /// Returns the block height after a given number of years for a specific block time.
@@ -362,7 +463,7 @@ mod tests {
     const EXPECTED_MAX_STAKING_REWARD: u64 = 142_694_063;
 
     #[test]
-    fn test_anchor_block_reward() {
+    fn test_anchor_block_reward_v1() {
         // Check the anchor block reward at block 1.
         let reward_at_block_1 = anchor_block_reward_at_height(
             1,
@@ -430,7 +531,75 @@ mod tests {
     }
 
     #[test]
-    fn test_total_anchor_block_reward() {
+    fn test_anchor_block_reward_v2() {
+        // Check the anchor block reward at block 1.
+        let reward_at_block_1 = anchor_block_reward_at_timestamp(
+            CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
+            CurrentNetwork::GENESIS_TIMESTAMP,
+            CurrentNetwork::STARTING_SUPPLY,
+            CurrentNetwork::ANCHOR_TIME,
+        );
+        assert_eq!(reward_at_block_1, EXPECTED_ANCHOR_BLOCK_REWARD_AT_BLOCK_1);
+
+        // A helper function to check the the reward at the first expected block of a given year.
+        fn check_reward_at_year(year: u32, expected_reward: u128) {
+            let reward_at_year = anchor_block_reward_at_timestamp(
+                timestamp_at_year(CurrentNetwork::GENESIS_TIMESTAMP, year),
+                CurrentNetwork::GENESIS_TIMESTAMP,
+                CurrentNetwork::STARTING_SUPPLY,
+                CurrentNetwork::ANCHOR_TIME,
+            );
+            assert_eq!(reward_at_year, expected_reward);
+        }
+
+        // Check the anchor block reward at the start of years 1 through 15.
+        check_reward_at_year(1, 171_232_871);
+        check_reward_at_year(2, 152_206_996);
+        check_reward_at_year(3, 133_181_122);
+        check_reward_at_year(4, 114_155_247);
+        check_reward_at_year(5, 95_129_372);
+        check_reward_at_year(6, 76_103_498);
+        check_reward_at_year(7, 57_077_623);
+        check_reward_at_year(8, 38_051_749);
+        check_reward_at_year(9, 19_025_874);
+        check_reward_at_year(10, 19_025_874);
+        check_reward_at_year(11, 19_025_874);
+        check_reward_at_year(12, 19_025_874);
+        check_reward_at_year(13, 19_025_874);
+        check_reward_at_year(14, 19_025_874);
+        check_reward_at_year(15, 19_025_874);
+
+        // Calculate the timestamp at year 9.
+        let timestamp_at_year_9 = timestamp_at_year(CurrentNetwork::GENESIS_TIMESTAMP, 9);
+
+        // Ensure that the reward is decreasing for blocks before year 9.
+        let mut previous_reward = reward_at_block_1;
+        let anchor_time = CurrentNetwork::ANCHOR_TIME as usize;
+        for timestamp in (CurrentNetwork::GENESIS_TIMESTAMP..timestamp_at_year_9).step_by(anchor_time).skip(1) {
+            let reward = anchor_block_reward_at_timestamp(
+                timestamp,
+                CurrentNetwork::GENESIS_TIMESTAMP,
+                CurrentNetwork::STARTING_SUPPLY,
+                CurrentNetwork::ANCHOR_TIME,
+            );
+            assert!(reward < previous_reward, "Failed on timestamp {timestamp}");
+            previous_reward = reward;
+        }
+
+        // Ensure that the reward is 19_025_874 for blocks after year 9.
+        for timestamp in timestamp_at_year_9..(timestamp_at_year_9 + ITERATIONS as i64) {
+            let reward = anchor_block_reward_at_timestamp(
+                timestamp,
+                CurrentNetwork::GENESIS_TIMESTAMP,
+                CurrentNetwork::STARTING_SUPPLY,
+                CurrentNetwork::ANCHOR_TIME,
+            );
+            assert_eq!(reward, 19_025_874);
+        }
+    }
+
+    #[test]
+    fn test_total_anchor_block_reward_v1() {
         // A helper function used to add the anchor block reward for a given range of block heights.
         fn add_anchor_block_reward(total_reward: &mut u128, start_height: u32, end_height: u32) {
             for height in start_height..end_height {
@@ -485,6 +654,68 @@ mod tests {
         check_sum_of_anchor_rewards(14, 3269999768220413);
         // Check the sum of all anchor block rewards at block at year 15.
         check_sum_of_anchor_rewards(15, 3329999764466813);
+    }
+
+    #[test]
+    fn test_total_anchor_block_reward_v2() {
+        // A helper function used to add the anchor block reward for a given range of block timestamps.
+        fn add_anchor_block_reward(total_reward: &mut u128, start_timestamp: i64, end_timestamp: i64) {
+            for timestamp in (start_timestamp..end_timestamp).step_by(CurrentNetwork::BLOCK_TIME as usize) {
+                *total_reward += anchor_block_reward_at_timestamp(
+                    timestamp,
+                    CurrentNetwork::GENESIS_TIMESTAMP,
+                    CurrentNetwork::STARTING_SUPPLY,
+                    CurrentNetwork::ANCHOR_TIME,
+                );
+            }
+        }
+
+        // Initialize the total reward.
+        let mut total_reward = 0;
+
+        // A helper function to check the sum of all possible anchor rewards over a given year.
+        let mut check_sum_of_anchor_rewards = |year: u32, expected_reward: u128| {
+            assert!(year > 0, "Year must be greater than 0");
+            let end_timestamp = timestamp_at_year(CurrentNetwork::GENESIS_TIMESTAMP, year);
+            let start_timestamp = std::cmp::max(
+                CurrentNetwork::GENESIS_TIMESTAMP,
+                timestamp_at_year(CurrentNetwork::GENESIS_TIMESTAMP, year - 1),
+            );
+            add_anchor_block_reward(&mut total_reward, start_timestamp, end_timestamp);
+            // println!("year {year}, total_reward: {total_reward} expected_reward: {expected_reward}")
+            assert_eq!(total_reward, expected_reward);
+        };
+
+        // Check the sum of all anchor block rewards at block at year 1.
+        check_sum_of_anchor_rewards(1, 569999989861552);
+        // Check the sum of all anchor block rewards at block at year 2.
+        check_sum_of_anchor_rewards(2, 1079999981625694);
+        // Check the sum of all anchor block rewards at block at year 3.
+        check_sum_of_anchor_rewards(3, 1529999975292428);
+        // Check the sum of all anchor block rewards at block at year 4.
+        check_sum_of_anchor_rewards(4, 1919999970861747);
+        // Check the sum of all anchor block rewards at block at year 5.
+        check_sum_of_anchor_rewards(5, 2249999968333661);
+        // Check the sum of all anchor block rewards at block at year 6.
+        check_sum_of_anchor_rewards(6, 2519999967708149);
+        // Check the sum of all anchor block rewards at block at year 7.
+        check_sum_of_anchor_rewards(7, 2729999968985230);
+        // Check the sum of all anchor block rewards at block at year 8.
+        check_sum_of_anchor_rewards(8, 2879999972164900);
+        // Check the sum of all anchor block rewards at block at year 9.
+        check_sum_of_anchor_rewards(9, 2969999977247158);
+        // Check the sum of all anchor block rewards at block at year 10.
+        check_sum_of_anchor_rewards(10, 3029999973493558);
+        // Check the sum of all anchor block rewards at block at year 11.
+        check_sum_of_anchor_rewards(11, 3089999969739958);
+        // Check the sum of all anchor block rewards at block at year 12.
+        check_sum_of_anchor_rewards(12, 3149999965986358);
+        // Check the sum of all anchor block rewards at block at year 13.
+        check_sum_of_anchor_rewards(13, 3209999962232758);
+        // Check the sum of all anchor block rewards at block at year 14.
+        check_sum_of_anchor_rewards(14, 3269999958479158);
+        // Check the sum of all anchor block rewards at block at year 15.
+        check_sum_of_anchor_rewards(15, 3329999954725558);
     }
 
     #[test]
@@ -626,7 +857,7 @@ mod tests {
     }
 
     #[test]
-    fn test_coinbase_reward() {
+    fn test_coinbase_reward_v1() {
         let coinbase_target: u64 = 10000;
         let combined_proof_target: u128 = coinbase_target as u128;
 
@@ -709,7 +940,90 @@ mod tests {
     }
 
     #[test]
-    fn test_coinbase_reward_remaining_target() {
+    fn test_coinbase_reward_v2() {
+        let coinbase_target: u64 = 10000;
+        let combined_proof_target: u128 = coinbase_target as u128;
+
+        let reward = coinbase_reward_v2(
+            CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
+            CurrentNetwork::GENESIS_TIMESTAMP,
+            CurrentNetwork::STARTING_SUPPLY,
+            CurrentNetwork::ANCHOR_TIME,
+            combined_proof_target,
+            0,
+            coinbase_target,
+        )
+        .unwrap();
+        assert_eq!(reward, EXPECTED_COINBASE_REWARD_AT_BLOCK_1);
+
+        // Halving the combined proof target halves the reward.
+        let smaller_reward = coinbase_reward_v2(
+            CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
+            CurrentNetwork::GENESIS_TIMESTAMP,
+            CurrentNetwork::STARTING_SUPPLY,
+            CurrentNetwork::ANCHOR_TIME,
+            combined_proof_target / 2,
+            0,
+            coinbase_target,
+        )
+        .unwrap();
+        assert_eq!(smaller_reward, reward / 2);
+
+        // Halving the remaining coinbase target halves the reward.
+        let smaller_reward = coinbase_reward_v2(
+            CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
+            CurrentNetwork::GENESIS_TIMESTAMP,
+            CurrentNetwork::STARTING_SUPPLY,
+            CurrentNetwork::ANCHOR_TIME,
+            combined_proof_target,
+            coinbase_target / 2,
+            coinbase_target,
+        )
+        .unwrap();
+        assert_eq!(smaller_reward, reward / 2);
+
+        // Dramatically increasing the combined proof target greater than the remaining coinbase target will not increase the reward.
+        let equivalent_reward = coinbase_reward_v2(
+            CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
+            CurrentNetwork::GENESIS_TIMESTAMP,
+            CurrentNetwork::STARTING_SUPPLY,
+            CurrentNetwork::ANCHOR_TIME,
+            u128::MAX,
+            0,
+            coinbase_target,
+        )
+        .unwrap();
+        assert_eq!(reward, equivalent_reward);
+
+        // Decreasing the combined proof target to 0 will result in a reward of 0.
+        let zero_reward = coinbase_reward_v2(
+            CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
+            CurrentNetwork::GENESIS_TIMESTAMP,
+            CurrentNetwork::STARTING_SUPPLY,
+            CurrentNetwork::ANCHOR_TIME,
+            0,
+            0,
+            coinbase_target,
+        )
+        .unwrap();
+        assert_eq!(zero_reward, 0);
+
+        // Increasing the cumulative proof target beyond the coinbase target will result in a reward of 0.
+        let zero_reward = coinbase_reward_v2(
+            CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
+            CurrentNetwork::GENESIS_TIMESTAMP,
+            CurrentNetwork::STARTING_SUPPLY,
+            CurrentNetwork::ANCHOR_TIME,
+            1,
+            coinbase_target + 1,
+            coinbase_target,
+        )
+        .unwrap();
+        assert_eq!(zero_reward, 0);
+    }
+
+    #[test]
+    fn test_coinbase_reward_v1_remaining_target() {
         let mut rng = TestRng::default();
 
         fn compute_coinbase_reward(
@@ -767,7 +1081,65 @@ mod tests {
     }
 
     #[test]
-    fn test_coinbase_reward_up_to_year_10() {
+    fn test_coinbase_reward_v2_remaining_target() {
+        let mut rng = TestRng::default();
+
+        fn compute_coinbase_reward(
+            combined_proof_target: u64,
+            cumulative_proof_target: u64,
+            coinbase_target: u64,
+        ) -> u64 {
+            coinbase_reward_v2(
+                CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
+                CurrentNetwork::GENESIS_TIMESTAMP,
+                CurrentNetwork::STARTING_SUPPLY,
+                CurrentNetwork::ANCHOR_TIME,
+                combined_proof_target as u128,
+                cumulative_proof_target,
+                coinbase_target,
+            )
+            .unwrap()
+        }
+
+        // Sample the starting conditions.
+        let coinbase_target: u64 = rng.gen_range(1_000_000..1_000_000_000_000_000);
+        let cumulative_proof_target = coinbase_target / 2;
+        let combined_proof_target = coinbase_target / 4;
+        let reward = compute_coinbase_reward(combined_proof_target, cumulative_proof_target, coinbase_target);
+
+        for _ in 0..ITERATIONS {
+            // Check that as long as the sum of the combined proof target and cumulative proof target is less than the coinbase target,
+            // the reward remains the same.
+            // Intuition: Staying below the coinbase target preserves the reward for the combined proof target.
+            let equivalent_reward = compute_coinbase_reward(
+                combined_proof_target,
+                rng.gen_range(0..(coinbase_target - combined_proof_target)),
+                coinbase_target,
+            );
+            assert_eq!(reward, equivalent_reward);
+
+            // Check that increasing the cumulative proof target to devalue the combined proof target will decrease the reward.
+            // Intuition: Overflowing the coinbase target crowds out the combined proof target, leading to less reward for the combined proof target.
+            let lower_reward = compute_coinbase_reward(
+                combined_proof_target,
+                rng.gen_range((coinbase_target - combined_proof_target + 1)..coinbase_target),
+                coinbase_target,
+            );
+            assert!(lower_reward < reward);
+
+            // Check that increasing the combined proof target increases the reward.
+            // Intuition: If a prover contributes more proof target, they should be rewarded more.
+            let larger_reward = compute_coinbase_reward(
+                rng.gen_range(combined_proof_target + 1..u64::MAX),
+                cumulative_proof_target,
+                coinbase_target,
+            );
+            assert!(reward < larger_reward);
+        }
+    }
+
+    #[test]
+    fn test_coinbase_reward_v1_up_to_year_10() {
         let block_height_at_year_10 = block_height_at_year(CurrentNetwork::BLOCK_TIME, 10);
 
         let mut block_height = 1;
@@ -831,12 +1203,76 @@ mod tests {
     }
 
     #[test]
-    fn test_coinbase_reward_after_year_10() {
+    fn test_coinbase_reward_v2_up_to_year_10() {
+        let block_height_at_year_10 = timestamp_at_year(CurrentNetwork::GENESIS_TIMESTAMP, 10);
+
+        let mut timestamp = CurrentNetwork::GENESIS_TIMESTAMP;
+
+        let mut previous_reward = coinbase_reward_v2(
+            CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
+            CurrentNetwork::GENESIS_TIMESTAMP,
+            CurrentNetwork::STARTING_SUPPLY,
+            CurrentNetwork::ANCHOR_TIME,
+            1,
+            0,
+            1,
+        )
+        .unwrap();
+
+        timestamp += CurrentNetwork::BLOCK_TIME as i64;
+
+        let mut total_reward = previous_reward;
+
+        let coinbase_target = CurrentNetwork::ANCHOR_HEIGHT as u64;
+        let mut cumulative_proof_target = 0;
+
+        let mut hit_500m = false;
+        let mut hit_1b = false;
+
+        while timestamp < block_height_at_year_10 {
+            let reward = coinbase_reward_v2(
+                timestamp,
+                CurrentNetwork::GENESIS_TIMESTAMP,
+                CurrentNetwork::STARTING_SUPPLY,
+                CurrentNetwork::ANCHOR_TIME,
+                1,
+                cumulative_proof_target,
+                coinbase_target,
+            )
+            .unwrap();
+            assert!(reward <= previous_reward);
+
+            total_reward += reward;
+            previous_reward = reward;
+            timestamp += CurrentNetwork::BLOCK_TIME as i64;
+
+            // Update the cumulative proof target.
+            cumulative_proof_target = match cumulative_proof_target + 1 {
+                cumulative_proof_target if cumulative_proof_target == coinbase_target => 0,
+                cumulative_proof_target => cumulative_proof_target,
+            };
+
+            if !hit_500m && total_reward > 500_000_000_000_000 {
+                println!("500M credits block timestamp is {timestamp}");
+                assert_eq!(timestamp, 1783331630, "Update me if my parameters have changed");
+                hit_500m = true;
+            } else if !hit_1b && total_reward > 1_000_000_000_000_000 {
+                println!("1B credits block timestamp is {timestamp}");
+                assert_eq!(timestamp, 1858748810, "Update me if my parameters have changed");
+                hit_1b = true;
+            }
+        }
+
+        assert_eq!(total_reward, 1_515_000_074_780_540, "Update me if my parameters have changed");
+    }
+
+    #[test]
+    fn test_coinbase_reward_v1_after_year_10() {
         let mut rng = TestRng::default();
 
         let block_height_at_year_10 = block_height_at_year(CurrentNetwork::BLOCK_TIME, 10);
 
-        // Check that the block at year 10 has a reward of 15.
+        // Check that the block at year 10 has a reward of 19.
         let reward = coinbase_reward_v1(
             block_height_at_year_10,
             CurrentNetwork::STARTING_SUPPLY,
@@ -849,7 +1285,7 @@ mod tests {
         .unwrap();
         assert_eq!(reward, 19_025_874);
 
-        // Check that the subsequent blocks have an anchor reward of 15 and reward less than or equal to 15.
+        // Check that the subsequent blocks have an anchor reward of 19 and reward less than or equal to 19.
         for _ in 0..ITERATIONS {
             let block_height: u32 = rng.gen_range(block_height_at_year_10..block_height_at_year_10 * 10);
             let coinbase_target = rng.gen_range(1_000_000..1_000_000_000_000_000);
@@ -869,6 +1305,54 @@ mod tests {
                 CurrentNetwork::STARTING_SUPPLY,
                 CurrentNetwork::ANCHOR_HEIGHT,
                 CurrentNetwork::BLOCK_TIME,
+                combined_proof_target,
+                cumulative_proof_target,
+                coinbase_target,
+            )
+            .unwrap();
+            assert!(reward <= 19_025_874);
+        }
+    }
+
+    #[test]
+    fn test_coinbase_reward_v2_after_year_10() {
+        let mut rng = TestRng::default();
+
+        let timestamp_at_year_10 = timestamp_at_year(CurrentNetwork::GENESIS_TIMESTAMP, 10);
+
+        // Check that the block at year 10 has a reward of 19.
+        let reward = coinbase_reward_v2(
+            timestamp_at_year_10,
+            CurrentNetwork::GENESIS_TIMESTAMP,
+            CurrentNetwork::STARTING_SUPPLY,
+            CurrentNetwork::ANCHOR_TIME,
+            1,
+            0,
+            1,
+        )
+        .unwrap();
+        assert_eq!(reward, 19_025_874);
+
+        // Check that the subsequent blocks have an anchor reward of 19 and reward less than or equal to 19.
+        for _ in 0..ITERATIONS {
+            let timestamp: i64 = rng.gen_range(timestamp_at_year_10..timestamp_at_year_10 * 10);
+            let coinbase_target = rng.gen_range(1_000_000..1_000_000_000_000_000);
+            let cumulative_proof_target = rng.gen_range(0..coinbase_target);
+            let combined_proof_target = rng.gen_range(0..coinbase_target as u128);
+
+            let anchor_reward = anchor_block_reward_at_timestamp(
+                timestamp,
+                CurrentNetwork::GENESIS_TIMESTAMP,
+                CurrentNetwork::STARTING_SUPPLY,
+                CurrentNetwork::ANCHOR_TIME,
+            );
+            assert_eq!(anchor_reward, 19_025_874);
+
+            let reward = coinbase_reward_v2(
+                timestamp,
+                CurrentNetwork::GENESIS_TIMESTAMP,
+                CurrentNetwork::STARTING_SUPPLY,
+                CurrentNetwork::ANCHOR_TIME,
                 combined_proof_target,
                 cumulative_proof_target,
                 coinbase_target,
