@@ -388,9 +388,12 @@ impl<N: Network> Block<N> {
         )?;
 
         // Calculate the expected coinbase reward.
-        let expected_coinbase_reward = coinbase_reward_v1(
+        let expected_coinbase_reward = coinbase_reward::<N>(
             height,
+            timestamp,
+            N::GENESIS_TIMESTAMP,
             N::STARTING_SUPPLY,
+            N::ANCHOR_TIME,
             N::ANCHOR_HEIGHT,
             N::BLOCK_TIME,
             combined_proof_target,

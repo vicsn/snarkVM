@@ -91,6 +91,42 @@ pub const fn puzzle_reward(coinbase_reward: u64) -> u64 {
     coinbase_reward.saturating_mul(2).saturating_div(3)
 }
 
+/// Calculate the coinbase reward based on the network’s consensus version, determined by the given block height.
+pub fn coinbase_reward<N: Network>(
+    block_height: u32,
+    block_timestamp: i64,
+    genesis_timestamp: i64,
+    starting_supply: u64,
+    anchor_time: u16,
+    anchor_height: u32,
+    block_time: u16,
+    combined_proof_target: u128,
+    cumulative_proof_target: u64,
+    coinbase_target: u64,
+) -> Result<u64> {
+    // Determine which coinbase reward version to use.
+    match block_height < N::CONSENSUS_V2_HEIGHT {
+        true => coinbase_reward_v1(
+            block_height,
+            starting_supply,
+            anchor_height,
+            block_time,
+            combined_proof_target,
+            cumulative_proof_target,
+            coinbase_target,
+        ),
+        false => coinbase_reward_v2(
+            block_timestamp,
+            genesis_timestamp,
+            starting_supply,
+            anchor_time,
+            combined_proof_target,
+            cumulative_proof_target,
+            coinbase_target,
+        ),
+    }
+}
+
 /// Calculates the V1 coinbase reward for a given block.
 ///     R_coinbase = R_anchor(H) * min(P, C_R) / C
 ///     R_anchor = Anchor reward at block height.
@@ -853,6 +889,99 @@ mod tests {
                     assert!((larger_reward as f64 - expected_reward as f64).abs() / expected_reward as f64 <= TOLERANCE)
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_coinbase_reward() {
+        let mut rng = TestRng::default();
+
+        // Ensure that a block height of `TestnetV0::CONSENSUS_V2_HEIGHT` uses coinbase reward V2.
+        let block_timestamp = TestnetV0::GENESIS_TIMESTAMP
+            .saturating_add(TestnetV0::CONSENSUS_V2_HEIGHT.saturating_mul(TestnetV0::BLOCK_TIME as u32) as i64);
+        let reward = coinbase_reward::<TestnetV0>(
+            TestnetV0::CONSENSUS_V2_HEIGHT,
+            block_timestamp,
+            TestnetV0::GENESIS_TIMESTAMP,
+            TestnetV0::STARTING_SUPPLY,
+            TestnetV0::ANCHOR_TIME,
+            TestnetV0::ANCHOR_HEIGHT,
+            TestnetV0::BLOCK_TIME,
+            1,
+            0,
+            1,
+        )
+        .unwrap();
+        let expected_reward = coinbase_reward_v2(
+            block_timestamp,
+            TestnetV0::GENESIS_TIMESTAMP,
+            TestnetV0::STARTING_SUPPLY,
+            TestnetV0::ANCHOR_TIME,
+            1,
+            0,
+            1,
+        )
+        .unwrap();
+        assert_eq!(reward, expected_reward);
+
+        for _ in 0..100 {
+            // Check that the block reward is correct for the first consensus version.
+            let consensus_v1_height = rng.gen_range(0..TestnetV0::CONSENSUS_V2_HEIGHT);
+            let block_timestamp = TestnetV0::GENESIS_TIMESTAMP
+                .saturating_add(consensus_v1_height.saturating_mul(TestnetV0::BLOCK_TIME as u32) as i64);
+            let consensus_v1_reward = coinbase_reward::<TestnetV0>(
+                consensus_v1_height,
+                block_timestamp,
+                TestnetV0::GENESIS_TIMESTAMP,
+                TestnetV0::STARTING_SUPPLY,
+                TestnetV0::ANCHOR_TIME,
+                TestnetV0::ANCHOR_HEIGHT,
+                TestnetV0::BLOCK_TIME,
+                1,
+                0,
+                1,
+            )
+            .unwrap();
+            let expected_reward = coinbase_reward_v1(
+                consensus_v1_height,
+                TestnetV0::STARTING_SUPPLY,
+                TestnetV0::ANCHOR_HEIGHT,
+                TestnetV0::BLOCK_TIME,
+                1,
+                0,
+                1,
+            )
+            .unwrap();
+            assert_eq!(consensus_v1_reward, expected_reward);
+
+            // Check that the block reward is correct for the second consensus version.
+            let consensus_v2_height = rng.gen_range(TestnetV0::CONSENSUS_V2_HEIGHT..u32::MAX);
+            let block_timestamp = TestnetV0::GENESIS_TIMESTAMP
+                .saturating_add(consensus_v2_height.saturating_mul(TestnetV0::BLOCK_TIME as u32) as i64);
+            let consensus_v2_reward = coinbase_reward::<TestnetV0>(
+                consensus_v2_height,
+                block_timestamp,
+                TestnetV0::GENESIS_TIMESTAMP,
+                TestnetV0::STARTING_SUPPLY,
+                TestnetV0::ANCHOR_TIME,
+                TestnetV0::ANCHOR_HEIGHT,
+                TestnetV0::BLOCK_TIME,
+                1,
+                0,
+                1,
+            )
+            .unwrap();
+            let expected_reward = coinbase_reward_v2(
+                block_timestamp,
+                TestnetV0::GENESIS_TIMESTAMP,
+                TestnetV0::STARTING_SUPPLY,
+                TestnetV0::ANCHOR_TIME,
+                1,
+                0,
+                1,
+            )
+            .unwrap();
+            assert_eq!(consensus_v2_reward, expected_reward);
         }
     }
 

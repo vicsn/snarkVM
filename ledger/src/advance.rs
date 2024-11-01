@@ -295,9 +295,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         )?;
 
         // Calculate the coinbase reward.
-        let coinbase_reward = coinbase_reward_v1(
+        let coinbase_reward = coinbase_reward::<N>(
             next_height,
+            next_timestamp,
+            N::GENESIS_TIMESTAMP,
             N::STARTING_SUPPLY,
+            N::ANCHOR_TIME,
             N::ANCHOR_HEIGHT,
             N::BLOCK_TIME,
             combined_proof_target,
