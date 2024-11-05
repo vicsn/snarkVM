@@ -25,6 +25,9 @@ const V2_MAX_BLOCK_INTERVAL: i64 = 60; // 1 minute.
 /// prevent the block reward from becoming too small in the event of an extremely short block interval.
 const V2_MIN_BLOCK_INTERVAL: i64 = 1; // 1 second.
 
+/// The number of seconds in a year with 365 days. Leap years are ignored for simplicity.
+const SECONDS_IN_A_YEAR: u32 = 60 * 60 * 24 * 365;
+
 /// Calculate the block reward based on the network’s consensus version, determined by the given block height.
 pub fn block_reward<N: Network>(
     block_height: u32,
@@ -73,14 +76,12 @@ pub fn block_reward_v2(
     coinbase_reward: u64,
     transaction_fees: u64,
 ) -> u64 {
-    // Calculate the number of seconds in a year.
-    const SECONDS_IN_A_YEAR: u64 = 60 * 60 * 24 * 365;
     // Compute the annual reward: (0.05 * S).
     let annual_reward = total_supply / 20;
     // Compute the seconds since last block with a maximum of `V2_MAX_BLOCK_INTERVAL` seconds and minimum of `V2_MIN_BLOCK_INTERVAL` seconds;
     let time_since_last_block = time_since_last_block.clamp(V2_MIN_BLOCK_INTERVAL, V2_MAX_BLOCK_INTERVAL);
     // Compute the block reward: (0.05 * S) * min(max(I, MIN_BLOCK_INTERVAL), MAX_BLOCK_INTERVAL) / S_Y.
-    let block_reward = annual_reward * time_since_last_block as u64 / SECONDS_IN_A_YEAR;
+    let block_reward = annual_reward * time_since_last_block as u64 / SECONDS_IN_A_YEAR as u64;
     // Return the sum of the block reward, coinbase reward, and transaction fees.
     block_reward + (coinbase_reward / 3) + transaction_fees
 }
@@ -255,7 +256,7 @@ fn anchor_block_reward_at_timestamp(
         // Calculate the timestamp at year 10.
         let timestamp_at_year_10 = timestamp_at_year(genesis_timestamp, 10) as u128;
         // Calculate the number of seconds elapsed in 10 years.
-        let number_of_seconds_in_10_years = timestamp_at_year(0, 10) as u128;
+        let number_of_seconds_in_10_years = (SECONDS_IN_A_YEAR as u128).saturating_mul(10);
         // Compute the remaining seconds until year 10.
         let num_remaining_seconds_to_year_10 = timestamp_at_year_10.saturating_sub(block_timestamp as u128);
 
@@ -284,9 +285,8 @@ fn anchor_block_reward_at_timestamp(
 }
 
 /// Returns the timestamp for a given year, relative to the genesis timestamp.
-pub const fn timestamp_at_year(genesis_timestamp: i64, num_years: u32) -> i64 {
-    // Calculate the number of seconds in a year.
-    const SECONDS_IN_A_YEAR: u32 = 60 * 60 * 24 * 365;
+/// We assume a year is 365 days and ignore leap years for simplicity.
+const fn timestamp_at_year(genesis_timestamp: i64, num_years: u32) -> i64 {
     // Calculate the number of seconds elapsed in `num_years`.
     let seconds_elapsed = SECONDS_IN_A_YEAR.saturating_mul(num_years);
     // Return the timestamp for the given year.
@@ -294,9 +294,7 @@ pub const fn timestamp_at_year(genesis_timestamp: i64, num_years: u32) -> i64 {
 }
 
 /// Returns the block height after a given number of years for a specific block time.
-pub const fn block_height_at_year(block_time: u16, num_years: u32) -> u32 {
-    // Calculate the number of seconds in a year.
-    const SECONDS_IN_A_YEAR: u32 = 60 * 60 * 24 * 365;
+const fn block_height_at_year(block_time: u16, num_years: u32) -> u32 {
     // Calculate the one-year block height.
     let block_height_at_year_1 = SECONDS_IN_A_YEAR / block_time as u32;
     // Return the block height for the given number of years.
