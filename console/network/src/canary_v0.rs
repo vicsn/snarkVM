@@ -135,7 +135,7 @@ impl Network for CanaryV0 {
 
     /// The block height from which consensus V2 rules apply.
     #[cfg(not(any(test, feature = "test")))]
-    const CONSENSUS_V2_HEIGHT: u32 = 2_500_000;
+    const CONSENSUS_V2_HEIGHT: u32 = 2_900_000;
     // TODO (raychu86): Update this value based on the desired canary height.
     /// The block height from which consensus V2 rules apply.
     #[cfg(any(test, feature = "test"))]
