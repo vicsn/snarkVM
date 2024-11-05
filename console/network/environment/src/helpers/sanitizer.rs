@@ -117,8 +117,9 @@ impl Sanitizer {
     ///
     /// Discard any leading newline.
     fn str_till_eol(string: &str) -> ParserResult<&str> {
-        // A heuristic approach is applied here in order to avoid
-        // costly parsing operations in the most common scenarios.
+        // A heuristic approach is applied here in order to avoid costly parsing operations in the
+        // most common scenarios: non-parsing methods are used to verify if the string has multiple
+        // lines and if there are any unsafe characters.
         if let Some((before, after)) = string.split_once('\n') {
             let is_multiline = before.ends_with('\\');
 
@@ -128,6 +129,8 @@ impl Sanitizer {
                 if !contains_unsafe_chars {
                     Ok((after, before))
                 } else {
+                    // `eoi` is used here instead of `eol`, since the earlier call to `split_once`
+                    // already removed the newline
                     recognize(Self::till(value((), Sanitizer::parse_safe_char), Self::eoi))(before)
                 }
             } else {
