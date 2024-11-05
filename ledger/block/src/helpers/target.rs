@@ -87,6 +87,8 @@ pub fn block_reward_v2(
 }
 
 /// Calculate the puzzle reward, given the coinbase reward.
+/// The puzzle reward is 2/3 of the total coinbase reward and paid out to the provers. The other 1/3 of
+/// the coinbase reward is included in the block reward and paid out to stakers.
 pub const fn puzzle_reward(coinbase_reward: u64) -> u64 {
     // Return the coinbase reward multiplied by 2 and divided by 3.
     coinbase_reward.saturating_mul(2).saturating_div(3)
@@ -200,6 +202,8 @@ pub fn coinbase_reward_v2(
 }
 
 /// Calculates the anchor block reward for the given block height.
+/// The anchor block reward is upper bound of the coinbase reward for the given block before
+/// calculating the final pro-rata coinbase reward based on the targets.
 ///     R_anchor = max(floor((2 * S * H_A * H_R) / (H_Y10 * (H_Y10 + 1))), R_Y9).
 ///     S = Starting supply.
 ///     H_A = Anchor block height.
@@ -232,6 +236,8 @@ fn anchor_block_reward_at_height(block_height: u32, starting_supply: u64, anchor
 }
 
 /// Calculates the anchor block reward for the given block timestamp.
+/// The anchor block reward is upper bound of the coinbase reward for the given block before
+/// calculating the final pro-rata coinbase reward based on the targets.
 /// This function uses timestamp rather than block height to determine the reward in order to combat
 /// the volatility of block times and better align with human timescales.
 ///     R_anchor = max(floor((2 * S * T_A * T_R) / (T_Y10 * (T_Y10 + 1))), R_Y9).
