@@ -434,7 +434,7 @@ pub fn cost_in_microcredits_deprecated<N: Network>(stack: &Stack<N>, function_na
             let stack = stack.get_external_stack(future.program_id())?;
             // Accumulate the finalize cost of the future.
             future_cost = future_cost
-                .checked_add(stack.get_finalize_cost(future.resource())?)
+                .checked_add(cost_in_microcredits_deprecated(stack, future.resource())?)
                 .ok_or(anyhow!("Finalize cost overflowed"))?;
         }
     }

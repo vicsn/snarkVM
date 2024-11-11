@@ -405,6 +405,74 @@ mod tests {
         assert_eq!(34_060, *transaction.base_fee_amount().unwrap());
     }
 
+    #[cfg(feature = "test")]
+    #[test]
+    fn test_fee_migration_correctly_calculates_nested() {
+        // This test will fail if the consensus v2 height is 0
+        assert_ne!(0, CurrentNetwork::CONSENSUS_V2_HEIGHT);
+
+        let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Prepare the VM and records.
+        let (vm, _) = prepare_vm(rng).unwrap();
+
+        // Deploy a nested program to test the finalize cost cache
+        let program = Program::from_str(
+            r"
+import credits.aleo;
+program nested_call.aleo;
+mapping data:
+  key as field.public;
+  value as field.public;
+function test:
+  input r0 as u64.public;
+  call credits.aleo/transfer_public_as_signer nested_call.aleo r0 into r1;
+  async test r1 into r2;
+  output r2 as nested_call.aleo/test.future;
+finalize test:
+  input r0 as credits.aleo/transfer_public_as_signer.future;
+  await r0;
+  get data[0field] into r1;",
+        )
+        .unwrap();
+
+        // Deploy the program.
+        let transaction = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
+
+        // Construct the next block.
+        let next_block = crate::test_helpers::sample_next_block(&vm, &private_key, &[transaction], rng).unwrap();
+
+        // Add the next block to the VM.
+        vm.add_next_block(&next_block).unwrap();
+
+        // Prepare the inputs.
+        let inputs = [Value::<CurrentNetwork>::from_str("1_000_000u64").unwrap()].into_iter();
+
+        // Execute.
+        let transaction =
+            vm.execute(&private_key, ("nested_call.aleo", "test"), inputs.clone(), None, 0, None, rng).unwrap();
+
+        // This fee should be at least the old credits.aleo/transfer_public fee, 51_060
+        assert_eq!(62_776, *transaction.base_fee_amount().unwrap());
+
+        let transactions: [Transaction<CurrentNetwork>; 0] = [];
+        for _ in 1..CurrentNetwork::CONSENSUS_V2_HEIGHT {
+            // Call the function
+            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
+            vm.add_next_block(&next_block).unwrap();
+        }
+
+        let transaction =
+            vm.execute(&private_key, ("nested_call.aleo", "test"), inputs.clone(), None, 0, None, rng).unwrap();
+
+        // The difference in old vs new fees is 8_500 * 3 = 25_500 for the three get/get.or_use's
+        // There are two get.or_use's in transfer_public and an additional one in the nested_call.aleo/test
+        assert_eq!(37_276, *transaction.base_fee_amount().unwrap());
+    }
+
     #[test]
     fn test_credits_bond_public_cost() {
         let rng = &mut TestRng::default();
