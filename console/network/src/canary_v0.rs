@@ -133,12 +133,25 @@ impl Network for CanaryV0 {
     /// The transmission checksum type.
     type TransmissionChecksum = u128;
 
+    /// The block height from which consensus V2 rules apply.
+    #[cfg(not(any(test, feature = "test")))]
+    const CONSENSUS_V2_HEIGHT: u32 = 2_900_000;
+    // TODO (raychu86): Update this value based on the desired canary height.
+    /// The block height from which consensus V2 rules apply.
+    #[cfg(any(test, feature = "test"))]
+    const CONSENSUS_V2_HEIGHT: u32 = 0;
     /// The network edition.
     const EDITION: u16 = 0;
     /// The genesis block coinbase target.
+    #[cfg(not(feature = "test_targets"))]
     const GENESIS_COINBASE_TARGET: u64 = (1u64 << 29).saturating_sub(1);
+    #[cfg(feature = "test_targets")]
+    const GENESIS_COINBASE_TARGET: u64 = (1u64 << 5).saturating_sub(1);
     /// The genesis block proof target.
+    #[cfg(not(feature = "test_targets"))]
     const GENESIS_PROOF_TARGET: u64 = 1u64 << 27;
+    #[cfg(feature = "test_targets")]
+    const GENESIS_PROOF_TARGET: u64 = 1u64 << 3;
     /// The fixed timestamp of the genesis block.
     const GENESIS_TIMESTAMP: i64 = 1715776496 /* 2024-05-15 12:34:56 UTC */;
     /// The network ID.
