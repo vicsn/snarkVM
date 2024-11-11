@@ -47,7 +47,7 @@ use ledger_block::{
 use ledger_committee::Committee;
 use ledger_narwhal_data::Data;
 use ledger_puzzle::Puzzle;
-use ledger_query::Query;
+use ledger_query::{Query, QueryTrait};
 use ledger_store::{
     BlockStore,
     ConsensusStorage,
@@ -753,6 +753,7 @@ function compute:
             .clone()
     }
 
+    #[cfg(feature = "test")]
     pub(crate) fn create_new_transaction_with_different_fee(
         rng: &mut TestRng,
         transaction: Transaction<CurrentNetwork>,
@@ -779,10 +780,7 @@ function compute:
         let fee = vm.execute_fee_authorization(authorization, None, rng).unwrap();
 
         // Construct the transaction.
-        let transaction = Transaction::from_execution(execution, Some(fee)).unwrap();
-
-        // Return the transaction.
-        transaction
+        Transaction::from_execution(execution, Some(fee)).unwrap()
     }
 
     pub fn sample_next_block<R: Rng + CryptoRng>(

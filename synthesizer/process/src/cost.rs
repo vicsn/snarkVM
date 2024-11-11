@@ -90,7 +90,7 @@ pub fn execution_cost_deprecated<N: Network>(
 
     // Get the finalize cost for the root transition.
     let stack = process.get_stack(transition.program_id())?;
-    let finalize_cost = cost_in_microcredits_deprecated(&stack, transition.function_name())?;
+    let finalize_cost = cost_in_microcredits_deprecated(stack, transition.function_name())?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -458,7 +458,7 @@ pub fn cost_in_microcredits_deprecated<N: Network>(stack: &Stack<N>, function_na
                     _ => {}
                 }
             }
-            Ok(v2_cost.checked_add(additional_mapping_cost).ok_or(anyhow!("Finalize cost overflowed"))?)
+            v2_cost.checked_add(additional_mapping_cost).ok_or(anyhow!("Finalize cost overflowed"))
         })
 }
 

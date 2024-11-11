@@ -236,8 +236,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Compute the execution cost based on the block height
                         let block_height = &self.block_store().max_height().unwrap_or_default();
                         let (cost, (_, _)) = match *block_height < N::CONSENSUS_V2_HEIGHT {
-                            true => execution_cost_deprecated(&self.process().read(), &execution)?,
-                            false => execution_cost(&self.process().read(), &execution)?,
+                            true => execution_cost_deprecated(&self.process().read(), execution)?,
+                            false => execution_cost(&self.process().read(), execution)?,
                         };
                         // Ensure the fee is sufficient to cover the cost.
                         if *fee.base_amount()? < cost {
