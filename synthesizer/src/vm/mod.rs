@@ -753,7 +753,11 @@ function compute:
             .clone()
     }
 
-    pub(crate) fn create_new_transaction_with_different_fee(rng: &mut TestRng, transaction: Transaction<CurrentNetwork>, fee: u64) -> Transaction<CurrentNetwork> {
+    pub(crate) fn create_new_transaction_with_different_fee(
+        rng: &mut TestRng,
+        transaction: Transaction<CurrentNetwork>,
+        fee: u64,
+    ) -> Transaction<CurrentNetwork> {
         // Initialize a new caller.
         let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
@@ -769,15 +773,8 @@ function compute:
         let execution = transaction.execution().unwrap().clone();
 
         // Authorize the fee.
-        let authorization = vm
-            .authorize_fee_public(
-                &caller_private_key,
-                fee,
-                100,
-                execution.to_execution_id().unwrap(),
-                rng,
-            )
-            .unwrap();
+        let authorization =
+            vm.authorize_fee_public(&caller_private_key, fee, 100, execution.to_execution_id().unwrap(), rng).unwrap();
         // Compute the fee.
         let fee = vm.execute_fee_authorization(authorization, None, rng).unwrap();
 
@@ -786,7 +783,7 @@ function compute:
 
         // Return the transaction.
         transaction
-  }
+    }
 
     pub fn sample_next_block<R: Rng + CryptoRng>(
         vm: &VM<MainnetV0, ConsensusMemory<MainnetV0>>,

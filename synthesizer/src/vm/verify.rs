@@ -729,12 +729,13 @@ function compute:
         assert!(vm.check_transaction(&mutated_transaction, None, rng).is_err());
     }
 
+    #[cfg(feature = "test")]
     #[test]
     fn test_fee_migration() {
         // This test will fail if the consensus v2 height is 0
         assert_ne!(0, CurrentNetwork::CONSENSUS_V2_HEIGHT);
 
-        let minimum_credits_transfer_public_fee = 32_060;
+        let minimum_credits_transfer_public_fee = 34_060;
         let old_minimum_credits_transfer_public_fee = 51_060;
 
         let rng = &mut TestRng::default();
@@ -750,11 +751,19 @@ function compute:
         let transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
 
         // Try to submit a tx with the new fee before the migration block height
-        let fee_too_low_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(rng, transaction.clone(), minimum_credits_transfer_public_fee);
+        let fee_too_low_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
+            rng,
+            transaction.clone(),
+            minimum_credits_transfer_public_fee,
+        );
         assert!(vm.check_transaction(&fee_too_low_transaction, None, rng).is_err());
 
         // Try to submit a tx with the old fee before the migration block height
-        let old_valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(rng, transaction.clone(), old_minimum_credits_transfer_public_fee);
+        let old_valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
+            rng,
+            transaction.clone(),
+            old_minimum_credits_transfer_public_fee,
+        );
         assert!(vm.check_transaction(&old_valid_transaction, None, rng).is_ok());
 
         // Update the VM to the migration block height
@@ -765,14 +774,22 @@ function compute:
             let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
             vm.add_next_block(&next_block).unwrap();
         }
-        
+
         // Try to submit a tx with the old fee after the migration block height
         // Should work as now the fee is just too high
-        let fee_too_high_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(rng, transaction.clone(), old_minimum_credits_transfer_public_fee);
+        let fee_too_high_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
+            rng,
+            transaction.clone(),
+            old_minimum_credits_transfer_public_fee,
+        );
         assert!(vm.check_transaction(&fee_too_high_transaction, None, rng).is_ok());
-    
+
         // Try to submit a tx with the old fee before the migration block height
-        let valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(rng, transaction.clone(), minimum_credits_transfer_public_fee);
+        let valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
+            rng,
+            transaction.clone(),
+            minimum_credits_transfer_public_fee,
+        );
         assert!(vm.check_transaction(&valid_transaction, None, rng).is_ok());
     }
 }

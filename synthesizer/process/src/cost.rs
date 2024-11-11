@@ -78,23 +78,26 @@ pub fn execution_cost<N: Network>(process: &Process<N>, execution: &Execution<N>
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given execution (total cost, (storage cost, finalize cost)).
-pub fn execution_cost_deprecated<N: Network>(process: &Process<N>, execution: &Execution<N>) -> Result<(u64, (u64, u64))> {
-  // Compute the storage cost in microcredits.
-  let storage_cost = execution_storage_cost::<N>(execution.size_in_bytes()?);
+pub fn execution_cost_deprecated<N: Network>(
+    process: &Process<N>,
+    execution: &Execution<N>,
+) -> Result<(u64, (u64, u64))> {
+    // Compute the storage cost in microcredits.
+    let storage_cost = execution_storage_cost::<N>(execution.size_in_bytes()?);
 
-  // Get the root transition.
-  let transition = execution.peek()?;
+    // Get the root transition.
+    let transition = execution.peek()?;
 
-  // Get the finalize cost for the root transition.
-  let stack = process.get_stack(transition.program_id())?;
-  let finalize_cost = cost_in_microcredits_deprecated(&stack, transition.function_name())?;
+    // Get the finalize cost for the root transition.
+    let stack = process.get_stack(transition.program_id())?;
+    let finalize_cost = cost_in_microcredits_deprecated(&stack, transition.function_name())?;
 
-  // Compute the total cost in microcredits.
-  let total_cost = storage_cost
-      .checked_add(finalize_cost)
-      .ok_or(anyhow!("The total cost computation overflowed for an execution"))?;
+    // Compute the total cost in microcredits.
+    let total_cost = storage_cost
+        .checked_add(finalize_cost)
+        .ok_or(anyhow!("The total cost computation overflowed for an execution"))?;
 
-  Ok((total_cost, (storage_cost, finalize_cost)))
+    Ok((total_cost, (storage_cost, finalize_cost)))
 }
 
 /// Returns the storage cost in microcredits for a program execution.
@@ -122,7 +125,7 @@ const HASH_PSD_BASE_COST: u64 = 40_000;
 const HASH_PSD_PER_BYTE_COST: u64 = 75;
 
 const MAPPING_BASE_COST_V1: u64 = 10_000;
-const MAPPING_BASE_COST_V2: u64 = 500;
+const MAPPING_BASE_COST_V2: u64 = 1_500;
 const MAPPING_PER_BYTE_COST: u64 = 10;
 
 const SET_BASE_COST: u64 = 10_000;
@@ -444,19 +447,19 @@ pub fn cost_in_microcredits_deprecated<N: Network>(stack: &Stack<N>, function_na
             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
         })
         .and_then(|v2_cost| {
-        let mut additional_mapping_cost = 0u64;
-        for command in finalize.commands() {
-            match command {
-                Command::Get(_) | Command::GetOrUse(_) | Command::Contains(_) => {
-                    additional_mapping_cost = additional_mapping_cost
-                        .checked_add(MAPPING_BASE_COST_V1 - MAPPING_BASE_COST_V2)
-                        .ok_or(anyhow!("Mapping cost overflowed"))?;
+            let mut additional_mapping_cost = 0u64;
+            for command in finalize.commands() {
+                match command {
+                    Command::Get(_) | Command::GetOrUse(_) | Command::Contains(_) => {
+                        additional_mapping_cost = additional_mapping_cost
+                            .checked_add(MAPPING_BASE_COST_V1 - MAPPING_BASE_COST_V2)
+                            .ok_or(anyhow!("Mapping cost overflowed"))?;
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
-        }
-        Ok(v2_cost.checked_add(additional_mapping_cost).ok_or(anyhow!("Finalize cost overflowed"))?)
-      })
+            Ok(v2_cost.checked_add(additional_mapping_cost).ok_or(anyhow!("Finalize cost overflowed"))?)
+        })
 }
 
 #[cfg(test)]

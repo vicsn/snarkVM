@@ -334,9 +334,10 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "test")]
     #[test]
     fn test_execute_cost_fee_migration() {
-      let rng = &mut TestRng::default();
+        let rng = &mut TestRng::default();
         let credits_program = "credits.aleo";
         let function_name = "transfer_public";
 
@@ -345,8 +346,7 @@ mod tests {
         let recipient_private_key: PrivateKey<MainnetV0> = PrivateKey::new(rng).unwrap();
         let recipient_address = Address::try_from(&recipient_private_key).unwrap();
         let transfer_public_amount = 1_000_000u64;
-        let inputs =
-            &[recipient_address.to_string(), format!("{transfer_public_amount}_u64")];
+        let inputs = &[recipient_address.to_string(), format!("{transfer_public_amount}_u64")];
 
         // Prepare the VM and records.
         let (vm, _) = prepare_vm(rng).unwrap();
@@ -359,13 +359,14 @@ mod tests {
         let (cost, _) = execution_cost(&vm.process().read(), &execution).unwrap();
         let (old_cost, _) = execution_cost_deprecated(&vm.process().read(), &execution).unwrap();
 
-        assert_eq!(32_060, cost);
+        assert_eq!(34_060, cost);
         assert_eq!(51_060, old_cost);
 
         // Since transfer_public has 2 get.or_use's, the difference is (MAPPING_COST_V1 - MAPPING_BASE_COST_V2) * 2
-        assert_eq!(old_cost - cost, 9_500 * 2);
+        assert_eq!(old_cost - cost, 8_500 * 2);
     }
 
+    #[cfg(feature = "test")]
     #[test]
     fn test_fee_migration_occurs_at_correct_block_height() {
         // This test will fail if the consensus v2 height is 0
@@ -389,7 +390,7 @@ mod tests {
 
         // Execute.
         let transaction =
-        vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs.clone(), None, 0, None, rng).unwrap();
+            vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs.clone(), None, 0, None, rng).unwrap();
 
         assert_eq!(51_060, *transaction.base_fee_amount().unwrap());
 
@@ -401,9 +402,9 @@ mod tests {
         }
 
         let transaction =
-        vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs.clone(), None, 0, None, rng).unwrap();
+            vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs.clone(), None, 0, None, rng).unwrap();
 
-        assert_eq!(32_060, *transaction.base_fee_amount().unwrap());
+        assert_eq!(34_060, *transaction.base_fee_amount().unwrap());
     }
 
     #[test]
