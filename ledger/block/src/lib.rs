@@ -605,7 +605,7 @@ pub mod test_helpers {
     use super::*;
     use console::account::{Address, PrivateKey};
     use ledger_query::Query;
-    use ledger_store::{helpers::memory::BlockMemory, BlockStore};
+    use ledger_store::{BlockStore, helpers::memory::BlockMemory};
     use synthesizer_process::Process;
 
     use once_cell::sync::OnceCell;
@@ -656,7 +656,7 @@ pub mod test_helpers {
         let inputs = [address.to_string(), format!("{amount}_u64")];
 
         // Initialize the process.
-        let process = Process::load().unwrap();
+        let process = Process::load_testing_only().unwrap();
         // Authorize the function.
         let authorization =
             process.authorize::<CurrentAleo, _>(&private_key, locator.0, locator.1, inputs.iter(), rng).unwrap();
