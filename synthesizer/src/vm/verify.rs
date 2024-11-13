@@ -778,6 +778,31 @@ function compute:
             vm.add_next_block(&next_block).unwrap();
         }
 
+        // Create a new transaction with the new stateroot post migration block height
+        let transaction = {
+            let address = Address::try_from(&private_key).unwrap();
+            let inputs = [
+                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+            ]
+            .into_iter();
+
+            // Execute.
+            let transaction_without_fee =
+                vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs, None, 0, None, rng).unwrap();
+            let execution = transaction_without_fee.execution().unwrap().clone();
+
+            // Authorize the fee.
+            let authorization = vm
+                .authorize_fee_public(&private_key, 10_000_000, 100, execution.to_execution_id().unwrap(), rng)
+                .unwrap();
+            // Compute the fee.
+            let fee = vm.execute_fee_authorization(authorization, None, rng).unwrap();
+
+            // Construct the transaction.
+            Transaction::from_execution(execution, Some(fee)).unwrap()
+        };
+
         // Try to submit a tx with the old fee after the migration block height
         // Should work as now the fee is just too high
         let fee_too_high_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
@@ -787,7 +812,7 @@ function compute:
         );
         assert!(vm.check_transaction(&fee_too_high_transaction, None, rng).is_ok());
 
-        // Try to submit a tx with the old fee before the migration block height
+        // Try to submit a tx with the new fee after the migration block height
         let valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
             rng,
             transaction.clone(),
