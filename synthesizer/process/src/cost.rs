@@ -59,7 +59,7 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given execution (total cost, (storage cost, finalize cost)).
-pub fn execution_cost<N: Network>(process: &Process<N>, execution: &Execution<N>) -> Result<(u64, (u64, u64))> {
+pub fn execution_cost_v2<N: Network>(process: &Process<N>, execution: &Execution<N>) -> Result<(u64, (u64, u64))> {
     // Compute the storage cost in microcredits.
     let storage_cost = execution_storage_cost::<N>(execution.size_in_bytes()?);
 
@@ -78,10 +78,7 @@ pub fn execution_cost<N: Network>(process: &Process<N>, execution: &Execution<N>
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given execution (total cost, (storage cost, finalize cost)).
-pub fn execution_cost_deprecated<N: Network>(
-    process: &Process<N>,
-    execution: &Execution<N>,
-) -> Result<(u64, (u64, u64))> {
+pub fn execution_cost_v1<N: Network>(process: &Process<N>, execution: &Execution<N>) -> Result<(u64, (u64, u64))> {
     // Compute the storage cost in microcredits.
     let storage_cost = execution_storage_cost::<N>(execution.size_in_bytes()?);
 
@@ -90,7 +87,7 @@ pub fn execution_cost_deprecated<N: Network>(
 
     // Get the finalize cost for the root transition.
     let stack = process.get_stack(transition.program_id())?;
-    let finalize_cost = cost_in_microcredits_deprecated(stack, transition.function_name())?;
+    let finalize_cost = cost_in_microcredits_v1(stack, transition.function_name())?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -123,6 +120,11 @@ const HASH_BHP_PER_BYTE_COST: u64 = 300;
 
 const HASH_PSD_BASE_COST: u64 = 40_000;
 const HASH_PSD_PER_BYTE_COST: u64 = 75;
+
+pub enum ConsensusFeeVersion {
+    V1,
+    V2,
+}
 
 const MAPPING_BASE_COST_V1: u64 = 10_000;
 const MAPPING_BASE_COST_V2: u64 = 1_500;
@@ -192,7 +194,17 @@ fn cost_in_size<'a, N: Network>(
 }
 
 /// Returns the the cost of a command in a finalize scope.
-pub fn cost_per_command<N: Network>(stack: &Stack<N>, finalize: &Finalize<N>, command: &Command<N>) -> Result<u64> {
+pub fn cost_per_command<N: Network>(
+    stack: &Stack<N>,
+    finalize: &Finalize<N>,
+    command: &Command<N>,
+    consensus_fee_version: ConsensusFeeVersion,
+) -> Result<u64> {
+    let mapping_base_cost = match consensus_fee_version {
+        ConsensusFeeVersion::V1 => MAPPING_BASE_COST_V1,
+        ConsensusFeeVersion::V2 => MAPPING_BASE_COST_V2,
+    };
+
     match command {
         Command::Instruction(Instruction::Abs(_)) => Ok(500),
         Command::Instruction(Instruction::AbsWrapped(_)) => Ok(500),
@@ -372,13 +384,13 @@ pub fn cost_per_command<N: Network>(stack: &Stack<N>, finalize: &Finalize<N>, co
         Command::Instruction(Instruction::Xor(_)) => Ok(500),
         Command::Await(_) => Ok(500),
         Command::Contains(command) => {
-            cost_in_size(stack, finalize, [command.key()], MAPPING_PER_BYTE_COST, MAPPING_BASE_COST_V2)
+            cost_in_size(stack, finalize, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
         Command::Get(command) => {
-            cost_in_size(stack, finalize, [command.key()], MAPPING_PER_BYTE_COST, MAPPING_BASE_COST_V2)
+            cost_in_size(stack, finalize, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
         Command::GetOrUse(command) => {
-            cost_in_size(stack, finalize, [command.key()], MAPPING_PER_BYTE_COST, MAPPING_BASE_COST_V2)
+            cost_in_size(stack, finalize, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
         Command::RandChaCha(_) => Ok(25_000),
         Command::Remove(_) => Ok(SET_BASE_COST),
@@ -391,7 +403,7 @@ pub fn cost_per_command<N: Network>(stack: &Stack<N>, finalize: &Finalize<N>, co
 }
 
 /// Returns the minimum number of microcredits required to run the finalize.
-pub fn cost_in_microcredits<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
+pub fn cost_in_microcredits_v2<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
     // Retrieve the finalize logic.
     let Some(finalize) = stack.get_function_ref(function_name)?.finalize_logic() else {
         // Return a finalize cost of 0, if the function does not have a finalize scope.
@@ -413,14 +425,14 @@ pub fn cost_in_microcredits<N: Network>(stack: &Stack<N>, function_name: &Identi
     finalize
         .commands()
         .iter()
-        .map(|command| cost_per_command(stack, finalize, command))
+        .map(|command| cost_per_command(stack, finalize, command, ConsensusFeeVersion::V2))
         .try_fold(future_cost, |acc, res| {
             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
         })
 }
 
 /// Returns the minimum number of microcredits required to run the finalize (depcrated).
-pub fn cost_in_microcredits_deprecated<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
+pub fn cost_in_microcredits_v1<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
     // Retrieve the finalize logic.
     let Some(finalize) = stack.get_function_ref(function_name)?.finalize_logic() else {
         // Return a finalize cost of 0, if the function does not have a finalize scope.
@@ -434,7 +446,7 @@ pub fn cost_in_microcredits_deprecated<N: Network>(stack: &Stack<N>, function_na
             let stack = stack.get_external_stack(future.program_id())?;
             // Accumulate the finalize cost of the future.
             future_cost = future_cost
-                .checked_add(cost_in_microcredits_deprecated(stack, future.resource())?)
+                .checked_add(cost_in_microcredits_v1(stack, future.resource())?)
                 .ok_or(anyhow!("Finalize cost overflowed"))?;
         }
     }
@@ -442,23 +454,9 @@ pub fn cost_in_microcredits_deprecated<N: Network>(stack: &Stack<N>, function_na
     finalize
         .commands()
         .iter()
-        .map(|command| cost_per_command(stack, finalize, command))
+        .map(|command| cost_per_command(stack, finalize, command, ConsensusFeeVersion::V1))
         .try_fold(future_cost, |acc, res| {
             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
-        })
-        .and_then(|v2_cost| {
-            let mut additional_mapping_cost = 0u64;
-            for command in finalize.commands() {
-                match command {
-                    Command::Get(_) | Command::GetOrUse(_) | Command::Contains(_) => {
-                        additional_mapping_cost = additional_mapping_cost
-                            .checked_add(MAPPING_BASE_COST_V1 - MAPPING_BASE_COST_V2)
-                            .ok_or(anyhow!("Mapping cost overflowed"))?;
-                    }
-                    _ => {}
-                }
-            }
-            v2_cost.checked_add(additional_mapping_cost).ok_or(anyhow!("Finalize cost overflowed"))
         })
 }
 
@@ -536,10 +534,10 @@ function over_five_thousand:
         // Get execution and cost data.
         let execution_under_5000 = get_execution(&mut process, &program, &under_5000, ["2group"].into_iter());
         let execution_size_under_5000 = execution_under_5000.size_in_bytes().unwrap();
-        let (_, (storage_cost_under_5000, _)) = execution_cost(&process, &execution_under_5000).unwrap();
+        let (_, (storage_cost_under_5000, _)) = execution_cost_v2(&process, &execution_under_5000).unwrap();
         let execution_over_5000 = get_execution(&mut process, &program, &over_5000, ["2group"].into_iter());
         let execution_size_over_5000 = execution_over_5000.size_in_bytes().unwrap();
-        let (_, (storage_cost_over_5000, _)) = execution_cost(&process, &execution_over_5000).unwrap();
+        let (_, (storage_cost_over_5000, _)) = execution_cost_v2(&process, &execution_over_5000).unwrap();
 
         // Ensure the sizes are below and above the threshold respectively.
         assert!(execution_size_under_5000 < threshold);
