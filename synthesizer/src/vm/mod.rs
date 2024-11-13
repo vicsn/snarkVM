@@ -47,7 +47,7 @@ use ledger_block::{
 use ledger_committee::Committee;
 use ledger_narwhal_data::Data;
 use ledger_puzzle::Puzzle;
-use ledger_query::Query;
+use ledger_query::{Query, QueryTrait};
 use ledger_store::{
     BlockStore,
     ConsensusStorage,
@@ -58,7 +58,7 @@ use ledger_store::{
     TransitionStore,
     atomic_finalize,
 };
-use synthesizer_process::{Authorization, Process, Trace, deployment_cost, execution_cost};
+use synthesizer_process::{Authorization, Process, Trace, deployment_cost, execution_cost_v1, execution_cost_v2};
 use synthesizer_program::{FinalizeGlobalState, FinalizeOperation, FinalizeStoreTrait, Program};
 use utilities::try_vm_runtime;
 
@@ -673,6 +673,36 @@ function compute:
                 transaction
             })
             .clone()
+    }
+
+    #[cfg(feature = "test")]
+    pub(crate) fn create_new_transaction_with_different_fee(
+        rng: &mut TestRng,
+        transaction: Transaction<CurrentNetwork>,
+        fee: u64,
+    ) -> Transaction<CurrentNetwork> {
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+
+        // Initialize the VM.
+        let vm = sample_vm();
+        // Update the VM.
+        vm.add_next_block(&genesis).unwrap();
+
+        // Get Execution
+        let execution = transaction.execution().unwrap().clone();
+
+        // Authorize the fee.
+        let authorization =
+            vm.authorize_fee_public(&caller_private_key, fee, 100, execution.to_execution_id().unwrap(), rng).unwrap();
+        // Compute the fee.
+        let fee = vm.execute_fee_authorization(authorization, None, rng).unwrap();
+
+        // Construct the transaction.
+        Transaction::from_execution(execution, Some(fee)).unwrap()
     }
 
     pub fn sample_next_block<R: Rng + CryptoRng>(
