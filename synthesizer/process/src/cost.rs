@@ -522,7 +522,7 @@ function over_five_thousand:
         let threshold = MainnetV0::EXECUTION_STORAGE_PENALTY_THRESHOLD;
 
         // Test the cost of an execution.
-        let mut process = Process::load_testing_only().unwrap();
+        let mut process = Process::load().unwrap();
 
         // Get the program.
         let program = Program::from_str(SIZE_BOUNDARY_PROGRAM).unwrap();

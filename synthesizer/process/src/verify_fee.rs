@@ -232,7 +232,7 @@ mod tests {
         ];
 
         // Construct a new process.
-        let process = Process::load_testing_only().unwrap();
+        let process = Process::load().unwrap();
 
         for transaction in transactions {
             match transaction {
