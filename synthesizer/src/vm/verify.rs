@@ -132,15 +132,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         lap!(timer, "Check for duplicate elements");
 
-        // First, verify the fee.
-        self.check_fee(transaction, rejected_id)?;
-
         // Construct the transaction checksum.
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
 
         // Check if the transaction exists in the partially-verified cache.
         let is_partially_verified =
             self.partially_verified_transactions.read().peek(&(transaction.id())) == Some(&checksum);
+
+        // Verify the fee.
+        self.check_fee(transaction, rejected_id, is_partially_verified)?;
 
         // Next, verify the deployment or execution.
         match transaction {
@@ -202,7 +202,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Verifies the `fee` in the given transaction. On failure, returns an error.
     #[inline]
-    pub fn check_fee(&self, transaction: &Transaction<N>, rejected_id: Option<Field<N>>) -> Result<()> {
+    pub fn check_fee(
+        &self,
+        transaction: &Transaction<N>,
+        rejected_id: Option<Field<N>>,
+        is_partially_verified: bool,
+    ) -> Result<()> {
         match transaction {
             Transaction::Deploy(id, _, deployment, fee) => {
                 // Ensure the rejected ID is not present.
@@ -218,7 +223,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     bail!("Transaction '{id}' has an insufficient base fee (deployment) - requires {cost} microcredits")
                 }
                 // Verify the fee.
-                self.check_fee_internal(fee, deployment_id)?;
+                self.check_fee_internal(fee, deployment_id, is_partially_verified)?;
             }
             Transaction::Execute(id, execution, fee) => {
                 // Ensure the rejected ID is not present.
@@ -253,7 +258,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         ensure!(*fee.base_amount()? == 0, "Transaction '{id}' has a non-zero base fee (execution)");
                     }
                     // Verify the fee.
-                    self.check_fee_internal(fee, execution_id)?;
+                    self.check_fee_internal(fee, execution_id, is_partially_verified)?;
                 } else {
                     // Ensure the fee can be safely skipped.
                     ensure!(!is_fee_required, "Transaction '{id}' is missing a fee (execution)");
@@ -265,7 +270,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             Transaction::Fee(id, fee) => {
                 // Verify the fee.
                 match rejected_id {
-                    Some(rejected_id) => self.check_fee_internal(fee, rejected_id)?,
+                    Some(rejected_id) => self.check_fee_internal(fee, rejected_id, is_partially_verified)?,
                     None => bail!("Transaction '{id}' is missing a rejected ID (fee)"),
                 }
             }
@@ -339,15 +344,23 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Note: This is an internal check only. To ensure all components of the fee are checked,
     /// use `VM::check_fee` instead.
     #[inline]
-    fn check_fee_internal(&self, fee: &Fee<N>, deployment_or_execution_id: Field<N>) -> Result<()> {
+    fn check_fee_internal(
+        &self,
+        fee: &Fee<N>,
+        deployment_or_execution_id: Field<N>,
+        is_partially_verified: bool,
+    ) -> Result<()> {
         let timer = timer!("VM::check_fee");
 
         // Ensure the fee does not exceed the limit.
         let fee_amount = fee.amount()?;
         ensure!(*fee_amount <= N::MAX_FEE, "Fee verification failed: fee exceeds the maximum limit");
 
-        // Verify the fee.
-        let verification = self.process.read().verify_fee(fee, deployment_or_execution_id);
+        // Verify the fee, if it has not been partially-verified before.
+        let verification = match is_partially_verified {
+            true => Ok(()),
+            false => self.process.read().verify_fee(fee, deployment_or_execution_id),
+        };
         lap!(timer, "Verify the fee");
 
         // TODO (howardwu): This check is technically insufficient. Consider moving this upstream
@@ -489,12 +502,12 @@ mod tests {
                     // Ensure the proof exists.
                     assert!(fee.proof().is_some());
                     // Verify the fee.
-                    vm.check_fee_internal(&fee, execution_id).unwrap();
+                    vm.check_fee_internal(&fee, execution_id, false).unwrap();
 
                     // Ensure that deserialization doesn't break the transaction verification.
                     let serialized_fee = fee.to_string();
                     let recovered_fee: Fee<CurrentNetwork> = serde_json::from_str(&serialized_fee).unwrap();
-                    vm.check_fee_internal(&recovered_fee, execution_id).unwrap();
+                    vm.check_fee_internal(&recovered_fee, execution_id, false).unwrap();
                 }
                 _ => panic!("Expected an execution with a fee"),
             }
