@@ -421,16 +421,22 @@ mod tests {
         let deployment_transaction = crate::vm::test_helpers::sample_deployment_transaction(rng);
         // Ensure the transaction verifies.
         vm.check_transaction(&deployment_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&deployment_transaction.id()).is_some());
 
         // Fetch an execution transaction.
         let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
         // Ensure the transaction verifies.
         vm.check_transaction(&execution_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&execution_transaction.id()).is_some());
 
         // Fetch an execution transaction.
         let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
         // Ensure the transaction verifies.
         vm.check_transaction(&execution_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&execution_transaction.id()).is_some());
     }
 
     #[test]
@@ -446,11 +452,15 @@ mod tests {
 
         // Ensure the deployment is valid.
         vm.check_deployment_internal(&deployment, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is not updated.
+        assert!(vm.partially_verified_transactions.read().peek(&deployment.to_deployment_id().unwrap()).is_none());
 
         // Ensure that deserialization doesn't break the transaction verification.
         let serialized_deployment = deployment.to_string();
         let deployment_transaction: Deployment<CurrentNetwork> = serde_json::from_str(&serialized_deployment).unwrap();
         vm.check_deployment_internal(&deployment_transaction, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is not updated.
+        assert!(vm.partially_verified_transactions.read().peek(&deployment.to_deployment_id().unwrap()).is_none());
     }
 
     #[test]
@@ -471,12 +481,23 @@ mod tests {
                     assert!(execution.proof().is_some());
                     // Verify the execution.
                     vm.check_execution_internal(&execution, false).unwrap();
+                    // Ensure the partially_verified_transactions cache is not updated.
+                    assert!(
+                        vm.partially_verified_transactions.read().peek(&execution.to_execution_id().unwrap()).is_none()
+                    );
 
                     // Ensure that deserialization doesn't break the transaction verification.
                     let serialized_execution = execution.to_string();
                     let recovered_execution: Execution<CurrentNetwork> =
                         serde_json::from_str(&serialized_execution).unwrap();
                     vm.check_execution_internal(&recovered_execution, false).unwrap();
+                    // Ensure the partially_verified_transactions cache is not updated.
+                    assert!(
+                        vm.partially_verified_transactions
+                            .read()
+                            .peek(&recovered_execution.to_execution_id().unwrap())
+                            .is_none()
+                    );
                 }
                 _ => panic!("Expected an execution transaction"),
             }
@@ -503,11 +524,15 @@ mod tests {
                     assert!(fee.proof().is_some());
                     // Verify the fee.
                     vm.check_fee_internal(&fee, execution_id, false).unwrap();
+                    // Ensure the partially_verified_transactions cache is not updated.
+                    assert!(vm.partially_verified_transactions.read().peek(&execution_id).is_none());
 
                     // Ensure that deserialization doesn't break the transaction verification.
                     let serialized_fee = fee.to_string();
                     let recovered_fee: Fee<CurrentNetwork> = serde_json::from_str(&serialized_fee).unwrap();
                     vm.check_fee_internal(&recovered_fee, execution_id, false).unwrap();
+                    // Ensure the partially_verified_transactions cache is not updated.
+                    assert!(vm.partially_verified_transactions.read().peek(&execution_id).is_none());
                 }
                 _ => panic!("Expected an execution with a fee"),
             }
@@ -528,14 +553,20 @@ mod tests {
         // Fetch a valid execution transaction with a private fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
 
         // Fetch a valid execution transaction with a public fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
 
-        // Fetch an valid execution transaction with no fee.
+        // Fetch a valid execution transaction with no fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_without_fee(rng);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
     }
 
     #[test]
@@ -643,6 +674,8 @@ mod tests {
 
         // Verify.
         vm.check_transaction(&transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&transaction.id()).is_some());
     }
 
     #[test]
@@ -692,6 +725,8 @@ function compute:
         // Fetch a valid execution transaction with a public fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
 
         // Mutate the execution transaction by inserting a Field::Zero as an output.
         let execution = valid_transaction.execution().unwrap();
@@ -743,6 +778,8 @@ function compute:
 
         // Ensure that the mutated transaction fails verification due to an extra output.
         assert!(vm.check_transaction(&mutated_transaction, None, rng).is_err());
+        // Ensure the partially_verified_transactions cache is not updated.
+        assert!(vm.partially_verified_transactions.read().peek(&mutated_transaction.id()).is_none());
     }
 
     #[cfg(feature = "test")]
@@ -773,6 +810,8 @@ function compute:
             minimum_credits_transfer_public_fee,
         );
         assert!(vm.check_transaction(&fee_too_low_transaction, None, rng).is_err());
+        // Ensure the partially_verified_transactions cache is not updated.
+        assert!(vm.partially_verified_transactions.read().peek(&fee_too_low_transaction.id()).is_none());
 
         // Try to submit a tx with the old fee before the migration block height
         let old_valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
@@ -781,6 +820,8 @@ function compute:
             old_minimum_credits_transfer_public_fee,
         );
         assert!(vm.check_transaction(&old_valid_transaction, None, rng).is_ok());
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&old_valid_transaction.id()).is_some());
 
         // Update the VM to the migration block height
         let private_key = test_helpers::sample_genesis_private_key(rng);
@@ -824,6 +865,8 @@ function compute:
             old_minimum_credits_transfer_public_fee,
         );
         assert!(vm.check_transaction(&fee_too_high_transaction, None, rng).is_ok());
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&fee_too_high_transaction.id()).is_some());
 
         // Try to submit a tx with the new fee after the migration block height
         let valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
@@ -832,5 +875,7 @@ function compute:
             minimum_credits_transfer_public_fee,
         );
         assert!(vm.check_transaction(&valid_transaction, None, rng).is_ok());
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
     }
 }
