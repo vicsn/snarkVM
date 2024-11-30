@@ -78,6 +78,7 @@ members = [
   "ledger/store",
   "ledger/test-helpers",
   "metrics",
+  "mpc-snarks",
   "parameters",
   "synthesizer",
   "synthesizer/process",

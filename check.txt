@@ -1,0 +1,116 @@
+    Checking snarkvm-utilities v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/utilities)
+    Checking ring v0.17.7
+    Checking hyper v0.14.28
+   Compiling rustls v0.21.10
+    Checking regex v1.10.3
+    Checking clap v4.4.18
+    Checking sct v0.7.1
+    Checking rustls-webpki v0.101.7
+    Checking snarkvm-fields v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/fields)
+    Checking hyper-tls v0.5.0
+    Checking reqwest v0.11.23
+    Checking snarkvm-curves v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/curves)
+    Checking self_update v0.38.0
+    Checking snarkvm-console-network-environment v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/network/environment)
+    Checking snarkvm-parameters v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/parameters)
+    Checking ureq v2.9.1
+    Checking snarkvm-console-types-boolean v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/types/boolean)
+    Checking snarkvm-console-types-field v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/types/field)
+    Checking snarkvm-console-types-scalar v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/types/scalar)
+    Checking snarkvm-console-types-group v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/types/group)
+    Checking snarkvm-console-types-integers v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/types/integers)
+    Checking snarkvm-console-types-address v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/types/address)
+    Checking snarkvm-console-types-string v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/types/string)
+    Checking snarkvm-console-types v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/types)
+    Checking snarkvm-console-algorithms v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/algorithms)
+    Checking snarkvm-algorithms v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/algorithms)
+    Checking snarkvm-console-collections v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/collections)
+    Checking snarkvm-console-network v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/network)
+    Checking snarkvm-circuit-environment v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/environment)
+    Checking snarkvm-console-account v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/account)
+    Checking snarkvm-console-program v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console/program)
+    Checking snarkvm-circuit-types-boolean v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/types/boolean)
+    Checking snarkvm-circuit-types-field v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/types/field)
+    Checking snarkvm-circuit-types-scalar v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/types/scalar)
+    Checking snarkvm-circuit-types-integers v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/types/integers)
+    Checking snarkvm-circuit-types-group v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/types/group)
+    Checking snarkvm-circuit-types-address v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/types/address)
+    Checking snarkvm-circuit-types-string v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/types/string)
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> console/program/src/data_types/literal_type/mod.rs:31:44
+   |
+31 | #[derive(Copy, Clone, PartialEq, Eq, Hash, FromPrimitive, Sequence)]
+   |                                            ^------------
+   |                                            |
+   |                                            `FromPrimitive` is not local
+   |                                            move the `impl` block outside of this constant `_IMPL_NUM_FromPrimitive_FOR_LiteralType`
+32 | pub enum LiteralType {
+   |          ----------- `LiteralType` is not local
+   |
+   = note: the derive macro `FromPrimitive` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `FromPrimitive` may come from an old version of the `num_derive` crate, try updating your dependency with `cargo update -p num_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: `#[warn(non_local_definitions)]` on by default
+   = note: this warning originates in the derive macro `FromPrimitive` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+    Checking snarkvm-circuit-types v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/types)
+warning: `snarkvm-console-program` (lib) generated 1 warning
+    Checking snarkvm-console v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/console)
+    Checking snarkvm-circuit-algorithms v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/algorithms)
+    Checking snarkvm-ledger-puzzle v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/puzzle)
+    Checking snarkvm-ledger-narwhal-data v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/narwhal/data)
+    Checking snarkvm-circuit-collections v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/collections)
+    Checking snarkvm-ledger-narwhal-transmission-id v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/narwhal/transmission-id)
+    Checking snarkvm-circuit-network v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/network)
+    Checking snarkvm-ledger-narwhal-batch-header v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/narwhal/batch-header)
+    Checking snarkvm-ledger-committee v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/committee)
+    Checking snarkvm-ledger-narwhal-batch-certificate v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/narwhal/batch-certificate)
+    Checking snarkvm-circuit-account v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/account)
+    Checking snarkvm-ledger-narwhal-subdag v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/narwhal/subdag)
+    Checking snarkvm-circuit-program v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit/program)
+    Checking snarkvm-ledger-authority v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/authority)
+    Checking snarkvm-circuit v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/circuit)
+    Checking snarkvm-synthesizer-program v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/synthesizer/program)
+    Checking snarkvm-synthesizer-snark v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/synthesizer/snark)
+    Checking snarkvm-ledger-block v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/block)
+    Checking snarkvm-ledger-store v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/store)
+    Checking snarkvm-ledger-narwhal-transmission v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/narwhal/transmission)
+    Checking snarkvm-ledger-narwhal v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/narwhal)
+    Checking snarkvm-ledger-query v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/query)
+    Checking snarkvm-synthesizer-process v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/synthesizer/process)
+    Checking snarkvm-ledger-puzzle-epoch v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger/puzzle/epoch)
+    Checking snarkvm-synthesizer v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/synthesizer)
+    Checking snarkvm-ledger v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2/ledger)
+warning: elided lifetime has a name
+  --> ledger/src/find.rs:57:22
+   |
+53 |     pub fn find_record_ciphertexts<'a>(
+   |                                    -- lifetime `'a` declared here
+...
+57 |     ) -> Result<impl '_ + Iterator<Item = (Field<N>, Cow<'_, Record<N, Ciphertext<N>>>)>> {
+   |                      ^^ this elided lifetime gets resolved as `'a`
+   |
+   = note: `#[warn(elided_named_lifetimes)]` on by default
+
+warning: elided lifetime has a name
+  --> ledger/src/find.rs:57:58
+   |
+53 |     pub fn find_record_ciphertexts<'a>(
+   |                                    -- lifetime `'a` declared here
+...
+57 |     ) -> Result<impl '_ + Iterator<Item = (Field<N>, Cow<'_, Record<N, Ciphertext<N>>>)>> {
+   |                                                          ^^ this elided lifetime gets resolved as `'a`
+
+warning: elided lifetime has a name
+   --> ledger/src/find.rs:131:22
+    |
+127 |     pub fn find_records<'a>(
+    |                         -- lifetime `'a` declared here
+...
+131 |     ) -> Result<impl '_ + Iterator<Item = (Field<N>, Record<N, Plaintext<N>>)>> {
+    |                      ^^ this elided lifetime gets resolved as `'a`
+
+warning: `snarkvm-ledger` (lib) generated 3 warnings
+    Checking snarkvm v1.0.0 (/Users/victorsintnicolaas/programs/snarkVM_2)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 16.95s
