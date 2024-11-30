@@ -14,6 +14,7 @@
 // limitations under the License.
 
 pub mod bls12;
+pub mod group;
 pub mod short_weierstrass_jacobian;
 pub mod to_field_vec;
 pub mod twisted_edwards_extended;

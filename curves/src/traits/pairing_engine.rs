@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::traits::{AffineCurve, PairingCurve, ProjectiveCurve};
+use crate::traits::{AffineCurve, PairingCurve, ProjectiveCurve, Group};
 use snarkvm_fields::{Field, PrimeField, SquareRootField, ToConstraintField};
 
 use core::{fmt::Debug, hash::Hash, iter};
@@ -24,13 +24,15 @@ pub trait PairingEngine: Sized + 'static + Copy + Debug + PartialEq + Eq + Hash 
 
     /// The projective representation of an element in G1.
     type G1Projective: ProjectiveCurve<BaseField = Self::Fq, ScalarField = Self::Fr, Affine = Self::G1Affine>
-        + From<Self::G1Affine>;
+        + From<Self::G1Affine>
+        + Group<ScalarField = Self::Fr>;
 
     /// The affine representation of an element in G1.
     type G1Affine: AffineCurve<BaseField = Self::Fq, ScalarField = Self::Fr, Projective = Self::G1Projective>
         + PairingCurve<PairWith = Self::G2Affine, PairingResult = Self::Fqk>
         + From<Self::G1Projective>
-        + ToConstraintField<Self::Fq>;
+        + ToConstraintField<Self::Fq>
+        + Group<ScalarField = Self::Fr>;
 
     /// The projective representation of an element in G2.
     type G2Projective: ProjectiveCurve<BaseField = Self::Fqe, ScalarField = Self::Fr, Affine = Self::G2Affine>
@@ -40,7 +42,8 @@ pub trait PairingEngine: Sized + 'static + Copy + Debug + PartialEq + Eq + Hash 
     type G2Affine: AffineCurve<BaseField = Self::Fqe, ScalarField = Self::Fr, Projective = Self::G2Projective>
         + PairingCurve<PairWith = Self::G1Affine, PairingResult = Self::Fqk>
         + From<Self::G2Projective>
-        + ToConstraintField<Self::Fq>;
+        + ToConstraintField<Self::Fq>
+        + Group<ScalarField = Self::Fr>;
 
     /// The base field that hosts G1.
     type Fq: PrimeField + SquareRootField;
