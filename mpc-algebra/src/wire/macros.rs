@@ -1,6 +1,6 @@
 #![macro_use]
 
-use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, ToBytes, FromBytes, Compress, Validate};
+use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, ToBytes, FromBytes, Compress, Validate, Valid};
 use snarkvm_fields::{Zero, One};
 
 use crate::channel::{self, MpcSerNet};
@@ -76,7 +76,7 @@ macro_rules! impl_basics_2 {
         impl<T: $bound, S: $share<T>> ToBytes for $wrap<T, S> {
             fn write_le<W: Write>(&self, writer: W) -> io::Result<()> {
                 match self {
-                    Self::Public(v) => v.write(writer),
+                    Self::Public(v) => v.write_le(writer),
                     Self::Shared(_) => unimplemented!("write share: {}", self),
                 }
             }
@@ -86,16 +86,24 @@ macro_rules! impl_basics_2 {
                 unimplemented!("read")
             }
         }
-        impl<T: $bound, S: $share<T>> CanonicalSerialize for $wrap<T, S> {
-            fn serialize_with_mode<W: Write>(&self, compress: Compress, writer: W) -> Result<(), SerializationError> {
+        impl<T: $bound, S: $share<T>> Valid for $wrap<T, S> {
+            fn check(&self) -> Result<(), SerializationError> {
                 match self {
-                    Self::Public(v) => v.serialize_with_mode(compress, writer),
+                    Self::Public(v) => v.check(),
+                    Self::Shared(_) => unimplemented!("check share: {}", self),
+                }
+            }
+        }
+        impl<T: $bound, S: $share<T>> CanonicalSerialize for $wrap<T, S> {
+            fn serialize_with_mode<W: Write>(&self, writer: W, compress: Compress) -> Result<(), SerializationError> {
+                match self {
+                    Self::Public(v) => v.serialize_with_mode(writer, compress),
                     Self::Shared(_) => unimplemented!("serialize share: {}", self),
                 }
             }
-            fn serialized_size(&self) -> usize {
+            fn serialized_size(&self, compress: Compress) -> usize {
                 match self {
-                    Self::Public(v) => v.serialized_size(),
+                    Self::Public(v) => v.serialized_size(compress),
                     Self::Shared(_) => unimplemented!("serialized_size share: {}", self),
                 }
             }
@@ -160,7 +168,7 @@ macro_rules! impl_basics_2 {
                     // self
                     $wrap::Public(x) => match other {
                         $wrap::Public(y) => {
-                            *x += y;
+                            *x += *y;
                         }
                         $wrap::Shared(y) => {
                             let mut tt = *y;
@@ -299,7 +307,7 @@ macro_rules! impl_basics_field {
         impl<T: $bound, S: $share<T>> ToBytes for $wrap<T, S> {
             fn write_le<W: Write>(&self, writer: W) -> io::Result<()> {
                 match self {
-                    Self::Public(v) => v.write(writer),
+                    Self::Public(v) => v.write_le(writer),
                     Self::Shared(_) => unimplemented!("write share: {}", self),
                 }
             }
@@ -309,16 +317,24 @@ macro_rules! impl_basics_field {
                 unimplemented!("read")
             }
         }
-        impl<T: $bound, S: $share<T>> CanonicalSerialize for $wrap<T, S> {
-            fn serialize_with_mode<W: Write>(&self, compress: Compress, writer: W) -> Result<(), SerializationError> {
+        impl<T: $bound, S: $share<T>> Valid for $wrap<T, S> {
+            fn check(&self) -> Result<(), SerializationError> {
                 match self {
-                    Self::Public(v) => v.serialize_with_mode(compress, writer),
+                    Self::Public(v) => v.check(),
+                    Self::Shared(_) => unimplemented!("check share: {}", self),
+                }
+            }
+        }
+        impl<T: $bound, S: $share<T>> CanonicalSerialize for $wrap<T, S> {
+            fn serialize_with_mode<W: Write>(&self, writer: W, compress: Compress) -> Result<(), SerializationError> {
+                match self {
+                    Self::Public(v) => v.serialize_with_mode(writer, compress),
                     Self::Shared(_) => unimplemented!("serialize share: {}", self),
                 }
             }
-            fn serialized_size(&self) -> usize {
+            fn serialized_size(&self, compress: Compress) -> usize {
                 match self {
-                    Self::Public(v) => v.serialized_size(),
+                    Self::Public(v) => v.serialized_size(compress),
                     Self::Shared(_) => unimplemented!("serialized_size share: {}", self),
                 }
             }
@@ -383,7 +399,7 @@ macro_rules! impl_basics_field {
                     // self
                     $wrap::Public(x) => match other {
                         $wrap::Public(y) => {
-                            *x += y;
+                            *x += *y;
                         }
                         $wrap::Shared(y) => {
                             let mut tt = *y;

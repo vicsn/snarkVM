@@ -585,9 +585,9 @@ impl Computation {
         }
         outputs
     }
-    fn run_group<G: GroupG::ScalarField>(
+    fn run_group<G: Group>(
         &self,
-        inputs: VecG::ScalarField,
+        inputs: Vec<<G as Group>::ScalarField>,
         generator: G,
     ) {
         match self {
@@ -603,16 +603,16 @@ impl Computation {
                 assert_eq!(alice, bob);
             }
             Computation::Msm => {
-                let _bases: Vec<G> = (0u8..).map(|i| generator.mul(&C::from(i))).take(inputs.len()).collect();
+                let _bases: Vec<G> = (0u8..).map(|i| generator.mul(&<G as Group>::ScalarField::from(i))).take(inputs.len()).collect();
                 todo!()
             }
             Computation::GroupOps => {
                 let g = generator;
-                let mut r1 = (g.mul(&inputs[0]) + &g - &g).mul(&C::from(4u8));
+                let mut r1 = (g.mul(&inputs[0]) + &g - &g).mul(&<G as Group>::ScalarField::from(4u8));
                 r1.publicize();
                 let mut t = inputs[0];
                 t.publicize();
-                let mut r2 = g.mul(&(t * C::from(4u8)));
+                let mut r2 = g.mul(&(t * <G as Group>::ScalarField::from(4u8)));
                 r2.publicize();
                 assert_eq!(r1, r2);
             }

@@ -49,6 +49,11 @@ impl<T: Field, S: PrimeField> FromBytes for MulFieldGroup<T, S> {
         unimplemented!("read")
     }
 }
+impl<T: Field, S: PrimeField> Valid for MulFieldGroup<T, S> {
+    fn check(&self) -> Result<(), SerializationError> {
+        unimplemented!("check")
+    }
+}
 impl<T: Field, S: PrimeField> CanonicalSerialize for MulFieldGroup<T, S> {
     fn serialize_with_mode<W: Write>(&self, _writer: W, _compress: Compress) -> Result<(), SerializationError> {
         unimplemented!("serialize_with_mode")
@@ -68,11 +73,6 @@ impl<T: Field, S: PrimeField> CanonicalSerializeWithFlags for MulFieldGroup<T, S
 
     fn serialized_size_with_flags<F: Flags>(&self) -> usize {
         unimplemented!("serialized_size_with_flags")
-    }
-}
-impl<T: Field, S: PrimeField> Valid for MulFieldGroup<T, S> {
-    fn check(&self) -> Result<(), SerializationError> {
-        unimplemented!("check")
     }
 }
 impl<T: Field, S: PrimeField> CanonicalDeserialize for MulFieldGroup<T, S> {
@@ -147,7 +147,7 @@ impl<T: Field, S: PrimeField> Default for MulFieldGroup<T, S> {
 }
 impl<T: Field, S: PrimeField> MulAssign<S> for MulFieldGroup<T, S> {
     fn mul_assign(&mut self, other: S) {
-        self.val = self.val.pow(other.into_repr());
+        self.val = self.val.pow(other.to_bigint());
     }
 }
 impl<T: Field, S: PrimeField> MpcWire for MulFieldGroup<T, S> {

@@ -239,7 +239,7 @@ impl<E: PairingEngine> Valid for VerifierKey<E> {
         Ok(())
     }
 
-    fn batch_check<'a>(batch: impl Iterator<Item = &'a Self> + Send) -> Result<(), SerializationError>
+    fn batch_check<'a>(batch: impl Iterator<Item = &'a Self>) -> Result<(), SerializationError>
     where
         Self: 'a,
     {

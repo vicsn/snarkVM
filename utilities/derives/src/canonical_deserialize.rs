@@ -86,7 +86,7 @@ fn impl_valid(ast: &syn::DeriveInput) -> TokenStream {
                 #(#check_body)*
                 Ok(())
             }
-            fn batch_check<'a>(batch: impl Iterator<Item = &'a Self> + Send) -> Result<(), snarkvm_utilities::serialize::SerializationError>
+            fn batch_check<'a>(batch: impl Iterator<Item = &'a Self>) -> Result<(), snarkvm_utilities::serialize::SerializationError>
                 where
             Self: 'a
             {

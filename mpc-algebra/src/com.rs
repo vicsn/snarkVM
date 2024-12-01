@@ -3,7 +3,7 @@ use rand::Rng;
 use sha2;
 
 use snarkvm_console::program::{Deserialize, Deserializer, Serialize, Serializer};
-use snarkvm_utilities::{Valid, SerializationError, ToBits, FromBits};
+use snarkvm_utilities::{Valid, SerializationError, ToBits, FromBits, CanonicalSerialize};
 // use ark_ff::prelude::*;
 use std::io;
 use snarkvm_fields::{FftField, PrimeField};
@@ -16,9 +16,9 @@ use crate::share::field::FieldShare;
 
 /// Vector-Commitable Field
 pub trait ComField: FftField + MpcWire {
-    type Commitment: ark_serialize::CanonicalSerialize;
+    type Commitment: CanonicalSerialize;
     type Key;
-    type OpeningProof: ark_serialize::CanonicalSerialize;
+    type OpeningProof: CanonicalSerialize;
     fn public_rand<R: Rng>(r: &mut R) -> Self;
     fn commit(vs: &[Self]) -> (Self::Key, Self::Commitment);
     fn open_at(vs: &[Self], key: &Self::Key, i: usize) -> (Self, Self::OpeningProof);
@@ -34,12 +34,6 @@ impl<'de, Fr: PrimeField, S: FieldShare<Fr>> Deserialize<'de> for MpcField<Fr, S
 
 impl<Fr: PrimeField, S: FieldShare<Fr>> Serialize for MpcField<Fr, S> {
     fn serialize<SS: Serializer>(&self, serializer: SS) -> Result<SS::Ok, SS::Error> {
-        unimplemented!()
-    }
-}
-
-impl<Fr: PrimeField, S: FieldShare<Fr>> Valid for MpcField<Fr, S> {
-    fn check(&self) -> Result<(), SerializationError> {
         unimplemented!()
     }
 }

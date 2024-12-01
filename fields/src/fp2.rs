@@ -461,7 +461,7 @@ impl<P: Fp2Parameters> Valid for Fp2<P> {
     }
 
     fn batch_check<'a>(
-        _batch: impl Iterator<Item = &'a Self> + Send,
+        _batch: impl Iterator<Item = &'a Self>,
     ) -> Result<(), snarkvm_utilities::SerializationError>
     where
         Self: 'a,

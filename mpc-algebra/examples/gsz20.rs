@@ -98,8 +98,8 @@ fn test_mul_field<E: PairingEngine>() {
     for _i in 0..2 {
         let a_exp_pub = E::Fr::rand(rng);
         let b_exp_pub = E::Fr::rand(rng);
-        let a_pub = g.pow(a_exp_pub.into_repr());
-        let b_pub = g.pow(b_exp_pub.into_repr());
+        let a_pub = g.pow(a_exp_pub.to_bigint());
+        let b_pub = g.pow(b_exp_pub.to_bigint());
         let a = mul_field::MulFieldShare::<E::Fqk, E::Fr>::from_public(a_pub);
         let b = mul_field::MulFieldShare::<E::Fqk, E::Fr>::from_public(b_pub);
         let c = a.mul(b, &mut PanicBeaverSource::default());

@@ -37,7 +37,7 @@ pub struct AdditiveFieldShare<T> {
 
 impl<F: Field> AdditiveFieldShare<F> {
     fn poly_share<'a>(
-        p: Polynomial<Self>,
+        p: DenseOrSparsePolynomial<Self>,
     ) -> snarkvm_algorithms::fft::Polynomial<'a, F> {
         match p {
             Ok(p) => snarkvm_algorithms::fft::Polynomial::Dense(Cow::Owned(
@@ -59,7 +59,7 @@ impl<F: Field> AdditiveFieldShare<F> {
         )
     }
     fn poly_share2<'a>(
-        p: Polynomial<F>,
+        p: DenseOrSparsePolynomial<F>,
     ) -> snarkvm_algorithms::fft::Polynomial<'a, F> {
         match p {
             Ok(p) => snarkvm_algorithms::fft::Polynomial::Dense(Cow::Owned(
@@ -120,7 +120,7 @@ impl<F: Field> FieldShare<F> for AdditiveFieldShare<F> {
     fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<F> {
         let self_vec: Vec<F> = selfs.into_iter().map(|s| s.val).collect();
         let all_vals = Net::broadcast(&self_vec);
-        (0..self_vec.len()).map(|i| all_vals.iter().map(|v| &v[i]).sum()).collect()
+        (0..self_vec.len()).map(|i| all_vals.iter().map(|v| v[i]).sum()).collect()
     }
     fn add(&mut self, other: &Self) -> &mut Self {
         self.val += &other.val;
@@ -219,7 +219,7 @@ impl<G: Group, M: Msm<G, G::ScalarField>> GroupShare<G> for AdditiveGroupShare<G
     fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
         let self_vec: Vec<G> = selfs.into_iter().map(|s| s.val).collect();
         let all_vals = Net::broadcast(&self_vec);
-        (0..self_vec.len()).map(|i| all_vals.iter().map(|v| &v[i]).sum()).collect()
+        (0..self_vec.len()).map(|i| all_vals.iter().map(|v| v[i]).sum()).collect()
     }
 
     fn add(&mut self, other: &Self) -> &mut Self {
@@ -247,7 +247,7 @@ impl<G: Group, M: Msm<G, G::ScalarField>> GroupShare<G> for AdditiveGroupShare<G
 
     fn shift(&mut self, other: &G) -> &mut Self {
         if Net::am_king() {
-            self.val += other;
+            self.val += *other;
         }
         self
     }

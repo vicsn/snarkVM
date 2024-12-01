@@ -47,7 +47,7 @@ fn batch_pf_publicize(
     ark_poly_commit::BatchLCProof {
         proof: pf.proof.into_iter().map(pf_from_mpc).collect(),
         evals: pf
-            .evals
+            .evaluations
             .map(|e| e.into_iter().map(MpcField::reveal).collect()),
     }
 }

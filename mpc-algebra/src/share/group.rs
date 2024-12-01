@@ -2,7 +2,7 @@ use snarkvm_curves::Group;
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
 use snarkvm_utilities::{
-    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, FromBytes, ToBytes, Uniform
+    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, FromBytes, ToBytes, Uniform, Valid, Validate,
 };
 
 use aleo_std::{end_timer, start_timer};
@@ -58,7 +58,7 @@ pub trait GroupShare<G: Group>:
         self
     }
     fn neg(&mut self) -> &mut Self {
-        self.scale_pub_scalar(&-<G::ScalarField as ark_ff::One>::one())
+        self.scale_pub_scalar(&-<G::ScalarField as snarkvm_fields::One>::one())
     }
 
     fn scale_pub_scalar(&mut self, scalar: &G::ScalarField) -> &mut Self;

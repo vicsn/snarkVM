@@ -1,12 +1,14 @@
+use serde::{Deserialize, Serialize};
 use snarkvm_curves::bls12_377::{G1Affine, G2Affine};
-use snarkvm_curves::Group;
+use snarkvm_curves::{Group, PairingCurve};
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
-use snarkvm_fields::{Field, FftField, PrimeField, Zero, One, SquareRootField};
+use snarkvm_fields::{Field, FftField, PrimeField, Zero, One, SquareRootField, FftParameters, ToConstraintField, ConstraintFieldError};
 use snarkvm_utilities::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Flags, SerializationError, ToBytes, FromBytes, Uniform, Compress, Validate,
+    CanonicalSerializeWithFlags, Flags, SerializationError, ToBytes, FromBytes, Uniform, Compress, Validate, Valid,
+    ToBits, FromBits,
 };
 use std::io::{self, Read, Write};
 use aleo_std::{end_timer, start_timer};
@@ -87,12 +89,12 @@ pub struct MpcG1Projective<E: PairingEngine, PS: PairingShare<E>> {
     pub val: MpcGroup<E::G1Projective, PS::G1ProjectiveShare>,
 }
 
-// #[derive(Debug, Derivative)]
-// #[derivative(Clone(bound = ""), Default(bound = "E::G1::Prepared: Default"))]
-// pub struct MpcG1Prep<E: PairingEngine, PS: PairingShare<E>> {
-//     pub val: E::G1Affine::Prepared,
-//     pub _phants: PhantomData<(E, PS)>,
-// }
+#[derive(Debug, Derivative)]
+#[derivative(Clone(bound = ""), Default(bound = "<E::G1Affine as PairingCurve>::Prepared: Default"))]
+pub struct MpcG1Prep<E: PairingEngine, PS: PairingShare<E>> {
+    pub val: <E::G1Affine as PairingCurve>::Prepared,
+    pub _phants: PhantomData<(E, PS)>,
+}
 
 #[derive(Debug, Derivative)]
 #[derivative(
@@ -118,12 +120,12 @@ pub struct MpcG2Projective<E: PairingEngine, PS: PairingShare<E>> {
     pub val: MpcGroup<E::G2Projective, PS::G2ProjectiveShare>,
 }
 
-// #[derive(Debug, Derivative)]
-// #[derivative(Clone(bound = ""), Default(bound = "E::G2Affine::Prepared: Default"))]
-// pub struct MpcG2Prep<E: PairingEngine, PS: PairingShare<E>> {
-//     pub val: E::G2Affine::Prepared,
-//     pub _phants: PhantomData<(E, PS)>,
-// }
+#[derive(Debug, Derivative)]
+#[derivative(Clone(bound = ""), Default(bound = "<E::G2Affine as PairingCurve>::Prepared: Default"))]
+pub struct MpcG2Prep<E: PairingEngine, PS: PairingShare<E>> {
+    pub val: <E::G2Affine as PairingCurve>::Prepared,
+    pub _phants: PhantomData<(E, PS)>,
+}
 
 #[derive(Derivative)]
 #[derivative(
@@ -148,16 +150,66 @@ pub struct MpcExtField<F: Field, FS: ExtFieldShare<F>> {
     Default(bound = ""),
     Debug(bound = ""),
     PartialEq(bound = ""),
-    Eq(bound = "")
+    Eq(bound = ""),
+    Hash(bound = "")
 )]
 pub struct MpcPairingEngine<E: PairingEngine, PS: PairingShare<E>> {
     _phants: PhantomData<(E, PS)>,
 }
 
-impl<E: PairingEngine, PS: PairingShare<E>> PairingEngine for MpcPairingEngine<E, PS> {
-    type Fr = MpcField<E::Fr, PS::FrShare>;
-    type Fq = MpcField<E::Fq, PS::FqShare>;
+// impl<E: PairingEngine, PS: PairingShare<E>> PairingCurve for MpcG1Affine<E, PS> {
+//     type Engine = MpcPairingEngine<E, PS>; // TODO: consider using `E`
+//     type PairWith = MpcG2Affine<E, PS>;
+//     type PairingResult = MpcExtField<E::Fqk, PS::FqkShare>; // TODO: consider using `E::fqk`
+//     type Prepared = MpcG1Prep<E, PS>;
+
+//     fn prepare(&self) -> Self::Prepared {
+//         Self::Prepared::from_affine(*self)
+//     }
+
+//     fn pairing_with(&self, other: &Self::PairWith) -> Self::PairingResult {
+//         E::pairing(*self, *other)
+//     }
+// }
+// impl<E: PairingEngine, PS: PairingShare<E>> PairingCurve for MpcG2Affine<E, PS> {
+//     type Engine = MpcPairingEngine<E, PS>; // TODO: consider using `E`
+//     type PairWith = MpcG1Affine<E, PS>;
+//     type PairingResult = MpcExtField<E::Fqk, PS::FqkShare>; // TODO: consider using `E::fqk`
+//     type Prepared = MpcG2Prep<E, PS>;
+
+//     fn prepare(&self) -> Self::Prepared {
+//         Self::Prepared::from_affine(*self)
+//     }
+
+//     fn pairing_with(&self, other: &Self::PairWith) -> Self::PairingResult {
+//         E::pairing(*other, *self)
+//     }
+// }
+
+impl<E: PairingEngine, PS: PairingShare<E>> PairingEngine for MpcPairingEngine<E, PS> 
+where 
+    <E::Fr as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
+    MpcG1Affine<E, PS>: PairingCurve<
+            BaseField = MpcField<E::Fq, PS::FqShare>,
+            ScalarField = MpcField<E::Fr, PS::FrShare>,
+            Projective = MpcG1Projective<E, PS>,
+            PairWith = MpcG2Affine<E, PS>,
+            Prepared = MpcG1Prep<E, PS>,
+            PairingResult = MpcExtField<E::Fqk, PS::FqkShare>,
+        >,
+    MpcG2Affine<E, PS>: PairingCurve<
+            BaseField = MpcExtField<E::Fqe, PS::FqeShare>,
+            ScalarField = MpcField<E::Fr, PS::FrShare>,
+            Projective = MpcG2Projective<E, PS>,
+            PairWith = MpcG1Affine<E, PS>,
+            Prepared = MpcG2Prep<E, PS>,
+            PairingResult = MpcExtField<E::Fqk, PS::FqkShare>,
+        >,
+{
+    type Fr = MpcField<E::Fr, PS::FrShare>; // E::Fr; // MpcFieldTrait; //MpcField<E::Fr, PS::FrShare>; // <MpcField<E::Fr, PS::FrShare>>::Field;
+    type Fq = MpcField<E::Fq, PS::FqShare>; // <MpcField<E::Fq, PS::FqShare>>::Field;
     type Fqe = MpcExtField<E::Fqe, PS::FqeShare>;
+    // type G1Affine: AffineCurve<BaseField = Self::Fq, ScalarField = Self::Fr, Projective = Self::G1Projective>
     type G1Affine = MpcG1Affine<E, PS>;
     type G1Projective = MpcG1Projective<E, PS>;
     // type G1Prepared = MpcG1Prep<E, PS>;
@@ -239,7 +291,7 @@ macro_rules! impl_pairing_mpc_wrapper {
         }
         impl<E: $bound1, PS: $bound2<E>> ToBytes for $wrap<E, PS> {
             fn write_le<W: Write>(&self, writer: W) -> io::Result<()> {
-                self.val.write(writer)
+                self.val.write_le(writer)
             }
         }
         impl<E: $bound1, PS: $bound2<E>> FromBytes for $wrap<E, PS> {
@@ -247,16 +299,21 @@ macro_rules! impl_pairing_mpc_wrapper {
                 unimplemented!("read")
             }
         }
+        impl<E: $bound1, PS: $bound2<E>> Valid for $wrap<E, PS> {
+            fn check(&self) -> Result<(), SerializationError> {
+                self.val.check()
+            }
+        }
         impl<E: $bound1, PS: $bound2<E>> CanonicalSerialize for $wrap<E, PS> {
             fn serialize_with_mode<W: Write>(
                 &self,
-                compress: Compress,
                 writer: W,
+                compress: Compress,
             ) -> Result<(), SerializationError> {
-                self.val.serialize_with_mode(compress, writer)
+                self.val.serialize_with_mode(writer, compress)
             }
-            fn serialized_size(&self) -> usize {
-                self.val.serialized_size()
+            fn serialized_size(&self, compress: Compress) -> usize {
+                self.val.serialized_size(compress)
             }
         }
         impl<E: $bound1, PS: $bound2<E>> CanonicalSerializeWithFlags for $wrap<E, PS> {
@@ -373,6 +430,38 @@ macro_rules! impl_pairing_mpc_wrapper {
 }
 macro_rules! impl_ext_field_wrapper {
     ($wrapped:ident, $wrap:ident) => {
+        impl<'a, E: Field, PS: ExtFieldShare<E>> Deserialize<'a> for $wrap<E, PS> {
+            #[inline]
+            fn deserialize<R: Read>(reader: R) -> io::Result<Self> {
+                unimplemented!("deserialize");
+            }
+        }
+        impl<E: Field, PS: ExtFieldShare<E>> Serialize for $wrap<E, PS> {
+            #[inline]
+            fn serialize<W: Write>(&self, writer: W) -> io::Result<()> {
+                unimplemented!("serialize");
+            }
+        }
+        impl<E: Field, PS: ExtFieldShare<E>> ToBits for $wrap<E, PS> {
+            #[inline]
+            fn write_bits_le(&self, vec: &mut Vec<bool>) {
+                self.val.write_bits_le(vec);
+            }
+            #[inline]
+            fn write_bits_be(&self, vec: &mut Vec<bool>) {
+                self.val.write_bits_be(vec);
+            }
+        }
+        impl<E: Field, PS: ExtFieldShare<E>> FromBits for $wrap<E, PS> {
+            #[inline]
+            fn from_bits_le(bits: &[bool]) -> Self {
+                unimplemented!("from_bits_le")
+            }
+            #[inline]
+            fn from_bits_be(bits: &[bool]) -> Self {
+                unimplemented!("from_bits_be")
+            }
+        }
         impl<E: Field, PS: ExtFieldShare<E>> $wrap<E, PS> {
             #[inline]
             pub fn wrap(val: $wrapped<E, PS::Ext>) -> Self {
@@ -464,27 +553,28 @@ macro_rules! impl_ext_field_wrapper {
         from_prim!(u128, Field, ExtFieldShare, $wrap);
         impl<F: Field, S: ExtFieldShare<F>> Field for $wrap<F, S> {
             type BasePrimeField = MpcField<F::BasePrimeField, S::Base>;
-            // fn extension_degree() -> u64 {
-            //     unimplemented!("extension_degree")
-            // }
-            // fn from_base_prime_field_elems(
-            //     _b: &[<Self as ark_ff::Field>::BasePrimeField],
-            // ) -> Option<Self> {
-            //     unimplemented!()
-            //     // assert!(b.len() > 0);
-            //     // let shared = b[0].is_shared();
-            //     // assert!(b.iter().all(|e| e.is_shared() == shared));
-            //     // let base_values = b.iter().map(|e| e.unwrap_as_public()).collect::<Vec<_>>();
-            //     // F::from_base_prime_field_elems(&base_values).map(|val| Self::new(val, shared))
-            // }
+            fn characteristic<'a>() -> &'a [u64] {
+            // fn characteristic() -> u64 {
+                unimplemented!("extension_degree")
+            }
+            fn from_base_prime_field(
+                // _b: &[<Self as ark_ff::Field>::BasePrimeField],
+                _other: Self::BasePrimeField,
+            ) -> Self {
+                unimplemented!()
+                // assert!(b.len() > 0);
+                // let shared = b[0].is_shared();
+                // assert!(b.iter().all(|e| e.is_shared() == shared));
+                // let base_values = b.iter().map(|e| e.unwrap_as_public()).collect::<Vec<_>>();
+                // F::from_base_prime_field_elems(&base_values).map(|val| Self::new(val, shared))
+            }
             #[inline]
             fn double(&self) -> Self {
                 Self::wrap(self.val * $wrapped::from_public(F::from(2u8)))
             }
             #[inline]
-            fn double_in_place(&mut self) -> &mut Self {
+            fn double_in_place(&mut self) {
                 self.val *= $wrapped::from_public(F::from(2u8));
-                self
             }
             fn from_random_bytes_with_flags<Fl: Flags>(b: &[u8]) -> Option<(Self, Fl)> {
                 F::from_random_bytes_with_flags(b).map(|(val, f)| (Self::new(val, true), f))
@@ -515,7 +605,7 @@ macro_rules! impl_ext_field_wrapper {
         }
 
         impl<F: FftField, S: ExtFieldShare<F>> FftField for $wrap<F, S> {
-            // type FftParams = F::FftParams;
+            type FftParameters = F::FftParameters;
             #[inline]
             fn two_adic_root_of_unity() -> Self {
                 Self::from_public(F::two_adic_root_of_unity())
@@ -538,7 +628,7 @@ macro_rules! impl_ext_field_wrapper {
         }
 
         impl<F: SquareRootField, S: ExtFieldShare<F>> SquareRootField for $wrap<F, S> {
-            fn legendre(&self) -> ark_ff::LegendreSymbol {
+            fn legendre(&self) -> snarkvm_fields::LegendreSymbol {
                 todo!()
             }
             fn sqrt(&self) -> Option<Self> {
@@ -565,6 +655,46 @@ macro_rules! impl_pairing_curve_wrapper {
                     val: $wrapped::from_public(t),
                 }
             }
+        }
+        impl<'de, E: $bound1, PS: $bound2<E>> Deserialize<'de> for $wrap<E, PS> {
+            #[inline]
+            fn deserialize<R: Read>(reader: R) -> io::Result<Self> {
+                unimplemented!("impl_pairing_curve_wrapper::deserialize")
+            }
+        }
+        impl<'de, E: $bound1, PS: $bound2<E>> Serialize for $wrap<E, PS> {
+            #[inline]
+            fn serialize<W: Write>(&self, writer: W) -> io::Result<()> {
+                unimplemented!("impl_pairing_curve_wrapper::serialize")
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> ToConstraintField<E::Fq> for $wrap<E, PS> {
+            #[inline]
+            fn to_field_elements(&self) -> Result<Vec<E::Fq>, ConstraintFieldError> {
+                self.val.to_field_elements()
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> Group for $wrap<E, PS> {
+            type ScalarField = MpcField<E::Fr, PS::FrShare>;
+
+            #[must_use]
+            fn double(&self) -> Self {
+                *self + *self
+            }
+        
+            /// Sets `self := self + self`.
+            fn double_in_place(&mut self) -> &mut Self {
+                *self += self.clone();
+                self
+            }
+        
+            #[must_use]
+            fn mul<'a>(&self, other: &'a Self::ScalarField) -> Self {
+                let mut copy = *self;
+                copy *= *other;
+                copy
+            }
+
         }
         impl<E: $bound1, PS: $bound2<E>> Reveal for $wrap<E, PS> {
             type Base = E::$base;
@@ -728,7 +858,8 @@ macro_rules! impl_aff_proj {
         // }
 
         impl<E: PairingEngine, PS: PairingShare<E>> AffineCurve for $w_aff<E, PS> {
-            // type ScalarField = MpcField<E::Fr, PS::FrShare>;
+            type ScalarField = MpcField<E::Fr, PS::FrShare>;
+            type Coordinates = E::$aff::Coordinates;
             // const COFACTOR: &'static [u64] = E::$aff::COFACTOR;
             type BaseField = $w_base<E::$base, PS::$base_share>;
             type Projective = $w_pro<E, PS>;
@@ -752,6 +883,55 @@ macro_rules! impl_aff_proj {
             fn mul_by_cofactor_inv(&self) -> Self {
                 todo!("AffineCurve::mul_by_cofactor_inv")
             }
+            fn from_coordinates(coordinates: Self::Coordinates) -> Option<Self> {
+                todo!("AffineCurve::from_coordinates")
+            }
+            fn from_coordinates_unchecked(coordinates: Self::Coordinates) -> Self {
+                todo!("AffineCurve::from_coordinates_unchecked")
+            }
+            fn cofactor(&self) -> Self {
+                todo!("AffineCurve::cofactor")
+            }
+            fn from_x_coordinate(x: Self::BaseField) -> Option<Self> {
+                todo!("AffineCurve::from_x_coordinate")
+            }
+            fn pair_from_x_coordinate(x: Self::BaseField, _positive: bool) -> Option<Self> {
+                todo!("AffineCurve::pair_from_x_coordinate")
+            }
+            fn from_y_coordinate(y: Self::BaseField, _positive: bool) -> Option<Self> {
+                todo!("AffineCurve::from_y_coordinate")
+            }
+            fn to_projective(&self) -> Self::Projective {
+                todo!("AffineCurve::to_projective")
+            }
+            fn mul_bits<S: AsRef<[u64]>>(&self, bits: S) -> Self::Projective {
+                todo!("AffineCurve::mul_bits")
+            }
+            fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool {
+                todo!("AffineCurve::is_in_correct_subgroup_assuming_on_curve")
+            }
+            fn to_x_coordinate(&self) -> Option<Self::BaseField> {
+                todo!("AffineCurve::to_x_coordinate")
+            }
+            fn to_y_coordinate(&self) -> Option<Self::BaseField> {
+                todo!("AffineCurve::to_y_coordinate")
+            }
+            fn is_on_curve(&self) -> bool {
+                todo!("AffineCurve::is_on_curve")
+            }
+            fn batch_add_loop_1(
+                _bases: &[Self],
+                _scalars: &[Self::ScalarField],
+            ) -> Self::Projective {
+                todo!("AffineCurve::batch_add_loop_1")
+            }
+            fn batch_add_loop_2(
+                _bases: &[Self],
+                _scalars: &[Self::ScalarField],
+            ) -> Self::Projective {
+                todo!("AffineCurve::batch_add_loop_2")
+            }
+            
             // fn multi_scalar_mul(bases: &[Self], scalars: &[Self::ScalarField]) -> Self::Projective {
             //     let b = {
             //         assert!(bases.iter().all(|b| !b.is_shared()));
@@ -821,7 +1001,7 @@ macro_rules! impl_aff_proj {
             // }
         }
         impl<E: PairingEngine, PS: PairingShare<E>> ProjectiveCurve for $w_pro<E, PS> {
-            // type ScalarField = MpcField<E::Fr, PS::FrShare>;
+            type ScalarField = MpcField<E::Fr, PS::FrShare>; // TODO: maybe I should be taking the given type (Field v.s. Extension Field)
             // const COFACTOR: &'static [u64] = E::$aff::COFACTOR;
             type BaseField = $w_base<E::$base, PS::$base_share>;
             type Affine = $w_aff<E, PS>;
@@ -835,9 +1015,14 @@ macro_rules! impl_aff_proj {
             fn is_normalized(&self) -> bool {
                 todo!("ProjectiveCurve::is_normalized")
             }
-            fn double_in_place(&mut self) -> &mut Self {
+            fn double_in_place(&mut self) {
                 self.val.double_in_place();
-                self
+            }
+            fn double(&self) -> Self {
+                todo!("ProjectiveCurve::double")
+            }
+            fn to_affine(&self) -> Self::Affine {
+                todo!("ProjectiveCurve::to_affine")
             }
             fn add_assign_mixed(&mut self, o: &<Self as ProjectiveCurve>::Affine) {
                 let new_self = match (&self.val, &o.val) {

@@ -6,10 +6,9 @@ use zeroize::Zeroize;
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
 // use ark_ff::{poly_stub, FftField};
-use snarkvm_fields::{Field, FftField, PrimeField, Zero, One, SquareRootField};
+use snarkvm_fields::{FftField, Field, One, PoseidonDefaultField, PoseidonParameters, PrimeField, SquareRootField, Zero};
 use snarkvm_utilities::{
-    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Flags, SerializationError, FromBytes, ToBytes, Uniform, Compress, Validate,
+    BigInteger, BigInteger256, BigInteger384, CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Compress, Flags, FromBytes, SerializationError, ToBytes, Uniform, Valid, Validate
 };
 use mpc_trait::MpcWire;
 
@@ -19,10 +18,20 @@ use std::iter::{Product, Sum};
 use std::marker::PhantomData;
 use std::ops::*;
 
+use anyhow;
+
 use super::super::share::field::FieldShare;
 use super::super::share::BeaverSource;
 use crate::Reveal;
 use mpc_net::{MpcNet, MpcMultiNet as Net};
+
+// pub trait MpcFieldTrait: PrimeField + SquareRootField + Into<<Self as PrimeField>::BigInteger> {
+
+// }
+
+// impl<F: Field, S: FieldShare<F>> MpcFieldTrait for MpcField<F, S> {
+
+// }
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MpcField<F: Field, S: FieldShare<F>> {
@@ -303,6 +312,67 @@ impl<T: PrimeField, S: FieldShare<T>> std::str::FromStr for MpcField<T, S> {
     }
 }
 
+// Can't impl for a generic type
+#[allow(clippy::from_over_into)]
+impl<T: PrimeField, S: FieldShare<T>> Into<BigInteger256> for MpcField<T, S> {
+    #[inline]
+    fn into(self) -> BigInteger256 {
+        match self {
+            MpcField::Public(x) => x.into(),
+            MpcField::Shared(x) => unimplemented!(),
+        }
+    }
+}
+
+// Can't impl for a generic type
+// impl<T: PrimeField, S: FieldShare<T>, B: BigInteger> Into<B> for MpcField<T, S> {
+//     #[inline]
+//     fn into(self) -> B {
+//         match self {
+//             MpcField::Public(x) => x.into(),
+//             MpcField::Shared(x) => unimplemented!(),
+//         }
+//     }
+// }
+
+// Can't impl for a non-local type
+// impl<T: PrimeField, S: FieldShare<T>, B: BigInteger> From<MpcField<T, S>> for B {
+//     #[inline]
+//     fn from(f: MpcField<T, S>) -> B {
+//         match f {
+//             MpcField::Public(x) => x.into(),
+//             MpcField::Shared(x) => unimplemented!(),
+//         }
+//     }
+// }
+
+// Can't impl for a non-local type
+// impl<T: PrimeField, S: FieldShare<T>> From<MpcField<T, S>> for <MpcField<T, S> as PrimeField>::BigInteger {
+//     #[inline]
+//     fn from(&self) -> <MpcField<T, S> as PrimeField>::BigInteger {
+//         unimplemented!("No BigInt reprs for shared fields! (into_repr)")
+//         //self.unwrap_as_public().into_repr()
+//     }
+// }
+// impl<E: PairingEngine, PS: PairingShare<E>> From<MpcField<E::Fr, PS::FrShare>> for <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger {
+//     #[inline]
+//     fn from(&self) -> <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger {
+//         unimplemented!("No BigInt reprs for shared fields! (into_repr)")
+//         //self.unwrap_as_public().into_repr()
+//     }
+// }
+
+
+// NOTE: there is already a default implementation for fn poseidon_params...
+impl<F: PrimeField, S: FieldShare<F>> PoseidonDefaultField for MpcField<F, S> {
+    fn default_poseidon_parameters<const RATE: usize>() -> anyhow::Result<PoseidonParameters<Self, RATE, 1>>
+    where
+        Self: PrimeField,
+    {
+        unimplemented!("poseidon_params")
+    }
+}
+
 impl<F: PrimeField, S: FieldShare<F>> Field for MpcField<F, S> {
     type BasePrimeField = Self;
     #[inline]
@@ -314,7 +384,7 @@ impl<F: PrimeField, S: FieldShare<F>> Field for MpcField<F, S> {
     //     unimplemented!("extension_degree")
     // }
     #[inline]
-    fn from_base_prime_field(_b: &[<Self as ark_ff::Field>::BasePrimeField]) -> Option<Self> {
+    fn from_base_prime_field(_b: <Self as snarkvm_fields::Field>::BasePrimeField) -> Self {
         unimplemented!()
         // assert!(b.len() > 0);
         // let shared = b[0].is_shared();
@@ -327,9 +397,8 @@ impl<F: PrimeField, S: FieldShare<F>> Field for MpcField<F, S> {
         Self::Public(F::from(2u8)) * self
     }
     #[inline]
-    fn double_in_place(&mut self) -> &mut Self {
+    fn double_in_place(&mut self) {
         *self *= Self::Public(F::from(2u8));
-        self
     }
     #[inline]
     fn from_random_bytes_with_flags<Fl: Flags>(b: &[u8]) -> Option<(Self, Fl)> {
@@ -503,7 +572,7 @@ impl<F: PrimeField, S: FieldShare<F>> Field for MpcField<F, S> {
 }
 
 impl<F: PrimeField, S: FieldShare<F>> FftField for MpcField<F, S> {
-    // type FftParams = F::FftParams;
+    type FftParameters = F::FftParameters;
     #[inline]
     fn two_adic_root_of_unity() -> Self {
         Self::from_public(F::two_adic_root_of_unity())
@@ -533,14 +602,22 @@ impl<F: PrimeField, S: FieldShare<F>> PrimeField for MpcField<F, S> {
         //self.unwrap_as_public().into_repr()
     }
     #[inline]
-    fn decompose(&self) -> (u64, u64, u64, u64, u64) {
+    fn decompose(
+        &self,
+        q1: &[u64; 4],
+        q2: &[u64; 4],
+        b1: Self,
+        b2: Self,
+        r128: Self,
+        half_r: &[u64; 8],
+    ) -> (Self, Self, bool, bool) {
         unimplemented!("No BigInt reprs for shared fields! (decompose)")
     }
 }
 
 impl<F: PrimeField, S: FieldShare<F>> SquareRootField for MpcField<F, S> {
     #[inline]
-    fn legendre(&self) -> ark_ff::LegendreSymbol {
+    fn legendre(&self) -> snarkvm_fields::LegendreSymbol {
         todo!()
     }
     #[inline]
@@ -570,23 +647,26 @@ mod poly_impl {
         type Base = Evaluations<F>;
 
         fn reveal(self) -> Self::Base {
+            let domain_size = self.evaluations.domain().size();
             Evaluations::from_vec_and_domain(
-                self.evals.reveal(),
-                EvaluationDomain::new(self.domain().size()).unwrap(),
+                self.evaluations.reveal(),
+                EvaluationDomain::new(domain_size).unwrap(),
             )
         }
 
         fn from_add_shared(b: Self::Base) -> Self {
+            let domain_size = b.domain().size();
             Evaluations::from_vec_and_domain(
-                Reveal::from_add_shared(b.evals),
-                EvaluationDomain::new(b.domain().size()).unwrap(),
+                Reveal::from_add_shared(b.evaluations),
+                EvaluationDomain::new(domain_size).unwrap(),
             )
         }
 
         fn from_public(b: Self::Base) -> Self {
+            let domain_size = b.domain().size();
             Evaluations::from_vec_and_domain(
-                Reveal::from_public(b.evals),
-                EvaluationDomain::new(b.domain().size()).unwrap(),
+                Reveal::from_public(b.evaluations),
+                EvaluationDomain::new(domain_size).unwrap(),
             )
         }
     }

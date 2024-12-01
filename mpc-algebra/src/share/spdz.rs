@@ -9,7 +9,7 @@ use snarkvm_fields::{Field, PrimeField};
 // use ark_ff::prelude::*;
 use snarkvm_utilities::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Flags, SerializationError, Compress, Uniform, FromBytes, ToBytes, Validate,
+    CanonicalSerializeWithFlags, Flags, SerializationError, Compress, Uniform, FromBytes, ToBytes, Validate, Valid,
 };
 
 use std::cmp::Ord;
@@ -74,6 +74,11 @@ macro_rules! impl_basics_spdz {
         impl<T: $bound> FromBytes for $share<T> {
             fn read_le<R: Read>(_reader: R) -> io::Result<Self> {
                 unimplemented!("read")
+            }
+        }
+        impl<T: $bound> Valid for $share<T> {
+            fn check(&self) -> Result<(), SerializationError> {
+                unimplemented!("check")
             }
         }
         impl<T: $bound> CanonicalSerialize for $share<T> {
@@ -176,7 +181,7 @@ impl<F: Field> FieldShare<F> for SpdzFieldShare<F> {
         let n = s_vals.len();
         let all_vals = Net::broadcast(&s_vals);
         let vals: Vec<F> =
-            (0..n).map(|i| all_vals.iter().map(|v| &v[i]).sum()).collect();
+            (0..n).map(|i| all_vals.iter().map(|v| v[i]).sum()).collect();
         let dx_ts: Vec<F> =
             macs
             .iter()
@@ -342,6 +347,11 @@ macro_rules! impl_spdz_basics_2_param {
                 unimplemented!("read")
             }
         }
+        impl<T: $bound, M> Valid for $share<T, M> {
+            fn check(&self) -> Result<(), SerializationError> {
+                unimplemented!("check")
+            }
+        }
         impl<T: $bound, M> CanonicalSerialize for $share<T, M> {
             fn serialize_with_mode<W: Write>(&self, _writer: W, _compress: Compress) -> Result<(), SerializationError> {
                 unimplemented!("serialize_with_mode")
@@ -399,16 +409,16 @@ impl<G: Group, M: Msm<G, G::ScalarField>> GroupShare<G> for SpdzGroupShare<G, M>
         let n = s_vals.len();
         let all_vals = Net::broadcast(&s_vals);
         let vals: Vec<G> =
-            (0..n).map(|i| all_vals.iter().map(|v| &v[i]).sum()).collect();
+            (0..n).map(|i| all_vals.iter().map(|v| v[i]).sum()).collect();
         let dx_ts: Vec<G> =
             macs
             .iter()
             .zip(vals.iter())
-            .map(|(mac, val)| val.mul(&mac_share::<G::ScalarField>()) - mac)
+            .map(|(mac, val)| val.mul(&mac_share::<G::ScalarField>()) - *mac)
             .collect();
         let all_dx_ts: Vec<Vec<G>> = Net::atomic_broadcast(&dx_ts);
         for i in 0..n {
-            let sum: G = all_dx_ts.iter().map(|dx_ts| &dx_ts[i]).sum();
+            let sum: G = all_dx_ts.iter().map(|dx_ts| dx_ts[i]).sum();
             assert!(sum.is_zero());
         }
         vals
@@ -481,7 +491,7 @@ impl<F: Field, S: PrimeField> Reveal for SpdzMulFieldShare<F, S> {
         let vals: Vec<F> = Net::broadcast(&self.sh.val);
         // _Pragmatic MPC_ 6.6.2
         let x: F = vals.iter().product();
-        let dx_t: F = x.pow(&mac_share::<S>().into_repr()) / self.mac.val;
+        let dx_t: F = x.pow(&mac_share::<S>().to_bigint()) / self.mac.val;
         let all_dx_ts: Vec<F> = Net::atomic_broadcast(&dx_t);
         let prod: F = all_dx_ts.iter().product();
         assert!(prod.is_one());
@@ -490,14 +500,14 @@ impl<F: Field, S: PrimeField> Reveal for SpdzMulFieldShare<F, S> {
     fn from_public(f: F) -> Self {
         Self {
             sh: Reveal::from_public(f),
-            mac: Reveal::from_add_shared(f.pow(&mac_share::<S>().into_repr())),
+            mac: Reveal::from_add_shared(f.pow(&mac_share::<S>().to_bigint())),
             _phants: PhantomData::default(),
         }
     }
     fn from_add_shared(f: F) -> Self {
         Self {
             sh: Reveal::from_add_shared(f),
-            mac: Reveal::from_add_shared(f.pow(&mac::<S>().into_repr())),
+            mac: Reveal::from_add_shared(f.pow(&mac::<S>().to_bigint())),
             _phants: PhantomData::default(),
         }
     }
@@ -512,7 +522,7 @@ impl<F: Field, S: PrimeField> FieldShare<F> for SpdzMulFieldShare<F, S> {
         if Net::am_king() {
             self.sh.scale(other);
         }
-        self.mac.scale(&other.pow(&mac_share::<S>().into_repr()));
+        self.mac.scale(&other.pow(&mac_share::<S>().to_bigint()));
         self
     }
 

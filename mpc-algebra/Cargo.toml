@@ -2,7 +2,7 @@
 name = "mpc-algebra"
 version = "0.1.0"
 authors = ["Alex Ozdemir <aozdemir@hmc.edu>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 # ark-ff = { path = "../algebra/ff", version = "0.2.0", default-features = false }
@@ -22,10 +22,12 @@ derivative = { version = "2.0", features = ["use_core"]}
 log = {version = "0.4"}
 digest = { version = "0.9" }
 
+anyhow = { version = "1.0" }
 aleo-std = { version = "0.1.24" }
 rand = { version = "0.8", default-features = false, features = ["std"] }
 rand_chacha = { version = "0.3", default-features = false }
 rayon = { version = "1", optional = true }
+serde = { version = "1" }
 zeroize = { version = "1", default-features = false, features = ["zeroize_derive"] }
 mpc-net = { path = "../mpc-net" }
 mpc-trait = { path = "../mpc-trait" }

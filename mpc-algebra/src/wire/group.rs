@@ -8,7 +8,7 @@ use snarkvm_curves::Group;
 // use ark_ff::prelude::*;
 use snarkvm_utilities::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Flags, SerializationError, FromBytes, ToBytes, Uniform, Compress, Validate,
+    CanonicalSerializeWithFlags, Flags, SerializationError, FromBytes, ToBytes, Uniform, Compress, Validate, Valid,
 };
 use snarkvm_fields::{Zero, One};
 use mpc_trait::MpcWire;
@@ -48,9 +48,9 @@ impl<T: Group, S: GroupShare<T>> BeaverSource<S, S::FieldShare, S>
         (
             S::from_add_shared(T::zero()),
             <S::FieldShare as Reveal>::from_add_shared(if Net::am_king() {
-                C::one()
+                T::ScalarField::one()
             } else {
-                C::zero()
+                T::ScalarField::zero()
             }),
             S::from_add_shared(T::zero()),
         )
@@ -59,14 +59,14 @@ impl<T: Group, S: GroupShare<T>> BeaverSource<S, S::FieldShare, S>
     fn inv_pair(&mut self) -> (S::FieldShare, S::FieldShare) {
         (
             <S::FieldShare as Reveal>::from_add_shared(if Net::am_king() {
-                C::one()
+                T::ScalarField::one()
             } else {
-                C::zero()
+                T::ScalarField::zero()
             }),
             <S::FieldShare as Reveal>::from_add_shared(if Net::am_king() {
-                C::one()
+                T::ScalarField::one()
             } else {
-                C::zero()
+                T::ScalarField::zero()
             }),
         )
     }

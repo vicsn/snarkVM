@@ -123,10 +123,10 @@ where
             PairingResult = Fp12<P::Fp12Params>,
         >,
 {
+    type Fr = <P::G1Parameters as ModelParameters>::ScalarField;
     type Fq = P::Fp;
     type Fqe = Fp2<P::Fp2Params>;
     type Fqk = Fp12<P::Fp12Params>;
-    type Fr = <P::G1Parameters as ModelParameters>::ScalarField;
     type G1Affine = G1Affine<P>;
     type G1Projective = G1Projective<P>;
     type G2Affine = G2Affine<P>;
