@@ -324,45 +324,6 @@ impl<T: PrimeField, S: FieldShare<T>> Into<BigInteger256> for MpcField<T, S> {
     }
 }
 
-// Can't impl for a generic type
-// impl<T: PrimeField, S: FieldShare<T>, B: BigInteger> Into<B> for MpcField<T, S> {
-//     #[inline]
-//     fn into(self) -> B {
-//         match self {
-//             MpcField::Public(x) => x.into(),
-//             MpcField::Shared(x) => unimplemented!(),
-//         }
-//     }
-// }
-
-// Can't impl for a non-local type
-// impl<T: PrimeField, S: FieldShare<T>, B: BigInteger> From<MpcField<T, S>> for B {
-//     #[inline]
-//     fn from(f: MpcField<T, S>) -> B {
-//         match f {
-//             MpcField::Public(x) => x.into(),
-//             MpcField::Shared(x) => unimplemented!(),
-//         }
-//     }
-// }
-
-// Can't impl for a non-local type
-// impl<T: PrimeField, S: FieldShare<T>> From<MpcField<T, S>> for <MpcField<T, S> as PrimeField>::BigInteger {
-//     #[inline]
-//     fn from(&self) -> <MpcField<T, S> as PrimeField>::BigInteger {
-//         unimplemented!("No BigInt reprs for shared fields! (into_repr)")
-//         //self.unwrap_as_public().into_repr()
-//     }
-// }
-// impl<E: PairingEngine, PS: PairingShare<E>> From<MpcField<E::Fr, PS::FrShare>> for <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger {
-//     #[inline]
-//     fn from(&self) -> <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger {
-//         unimplemented!("No BigInt reprs for shared fields! (into_repr)")
-//         //self.unwrap_as_public().into_repr()
-//     }
-// }
-
-
 // NOTE: there is already a default implementation for fn poseidon_params...
 impl<F: PrimeField, S: FieldShare<F>> PoseidonDefaultField for MpcField<F, S> {
     fn default_poseidon_parameters<const RATE: usize>() -> anyhow::Result<PoseidonParameters<Self, RATE, 1>>

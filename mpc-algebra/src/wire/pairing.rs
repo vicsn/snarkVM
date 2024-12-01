@@ -206,16 +206,13 @@ where
             PairingResult = MpcExtField<E::Fqk, PS::FqkShare>,
         >,
 {
-    type Fr = MpcField<E::Fr, PS::FrShare>; // E::Fr; // MpcFieldTrait; //MpcField<E::Fr, PS::FrShare>; // <MpcField<E::Fr, PS::FrShare>>::Field;
-    type Fq = MpcField<E::Fq, PS::FqShare>; // <MpcField<E::Fq, PS::FqShare>>::Field;
+    type Fr = MpcField<E::Fr, PS::FrShare>;
+    type Fq = MpcField<E::Fq, PS::FqShare>;
     type Fqe = MpcExtField<E::Fqe, PS::FqeShare>;
-    // type G1Affine: AffineCurve<BaseField = Self::Fq, ScalarField = Self::Fr, Projective = Self::G1Projective>
     type G1Affine = MpcG1Affine<E, PS>;
     type G1Projective = MpcG1Projective<E, PS>;
-    // type G1Prepared = MpcG1Prep<E, PS>;
     type G2Affine = MpcG2Affine<E, PS>;
     type G2Projective = MpcG2Projective<E, PS>;
-    // type G2Prepared = MpcG2Prep<E, PS>;
     type Fqk = MpcExtField<E::Fqk, PS::FqkShare>;
 
     fn miller_loop<'a, I>(_i: I) -> Self::Fqk
