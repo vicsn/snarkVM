@@ -1,13 +1,13 @@
-use snarkvm_console::prelude::GroupTrait;
+use rand::Rng;
+use snarkvm_curves::Group;
 use snarkvm_fields::{Field, PrimeField, Zero};
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
 use snarkvm_utilities::{
-    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Compress, Flags, FromBytes, SerializationError, ToBytes, Uniform
+    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Compress, Flags, FromBytes, SerializationError, ToBytes, Uniform, Valid, Validate,
 };
 use std::io::{self, Read, Write};
 use core::ops::*;
-use rand::Rng;
 use std::cmp::Ord;
 use std::default::Default;
 use std::fmt::{self, Debug, Display, Formatter};
@@ -50,10 +50,10 @@ impl<T: Field, S: PrimeField> FromBytes for MulFieldGroup<T, S> {
     }
 }
 impl<T: Field, S: PrimeField> CanonicalSerialize for MulFieldGroup<T, S> {
-    fn serialize_with_mode<W: Write>(&self, _compress: Compress, _writer: W) -> Result<(), SerializationError> {
+    fn serialize_with_mode<W: Write>(&self, _writer: W, _compress: Compress) -> Result<(), SerializationError> {
         unimplemented!("serialize_with_mode")
     }
-    fn serialized_size(&self) -> usize {
+    fn serialized_size(&self, _compress: Compress) -> usize {
         unimplemented!("serialized_size")
     }
 }
@@ -70,10 +70,16 @@ impl<T: Field, S: PrimeField> CanonicalSerializeWithFlags for MulFieldGroup<T, S
         unimplemented!("serialized_size_with_flags")
     }
 }
+impl<T: Field, S: PrimeField> Valid for MulFieldGroup<T, S> {
+    fn check(&self) -> Result<(), SerializationError> {
+        unimplemented!("check")
+    }
+}
 impl<T: Field, S: PrimeField> CanonicalDeserialize for MulFieldGroup<T, S> {
     fn deserialize_with_mode<R: Read>(
-        _compress: Compress,
         _reader: R,
+        _compress: Compress,
+        _validate: Validate,
     ) -> Result<Self, SerializationError> {
         unimplemented!("deserialize_with_mode")
     }
@@ -186,6 +192,6 @@ impl_mul_ref_ops!(
     MulFieldGroup
 );
 
-// impl<T: Field, S: PrimeField> GroupTrait for MulFieldGroup<T, S> {
+// impl<T: Field, S: PrimeField> Group for MulFieldGroup<T, S> {
 //     type ScalarField = S;
 // }

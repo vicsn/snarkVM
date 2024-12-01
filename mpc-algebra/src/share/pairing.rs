@@ -1,5 +1,5 @@
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
-use snarkvm_console::prelude::GroupTrait;
+use snarkvm_curves::Group;
 use snarkvm_fields::Field;
 
 use std::fmt::Debug;
@@ -9,8 +9,8 @@ use super::group::GroupShare;
 
 pub trait AffProjShare<
     Fr: Field,
-    A: AffineCurve<ScalarField = Fr> + GroupTrait,
-    P: ProjectiveCurve<Affine = A>,
+    A: AffineCurve<ScalarField = Fr> + Group,
+    P: ProjectiveCurve<Affine = A> + Group,
 >
 {
     type FrShare: FieldShare<Fr>;
@@ -41,10 +41,10 @@ pub trait PairingShare<E: PairingEngine>:
     // TODO: wrong. Need to fix the PairingEngine interface though..
     type FqkShare: ExtFieldShare<E::Fqk>;
     //type FqkShare: GroupShare<MulFieldGroup<E::Fqk, E::Fr>, FieldShare = Self::FrShare>;
-    type G1AffineShare: GroupShare<E::Fr, E::G1Affine, FieldShare = Self::FrShare>;
-    type G2AffineShare: GroupShare<E::Fr, E::G2Affine, FieldShare = Self::FrShare>;
-    type G1ProjectiveShare: GroupShare<E::Fr, E::G1Projective, FieldShare = Self::FrShare>;
-    type G2ProjectiveShare: GroupShare<E::Fr, E::G2Projective, FieldShare = Self::FrShare>;
+    type G1AffineShare: GroupShare<E::G1Affine, FieldShare = Self::FrShare>;
+    type G2AffineShare: GroupShare<E::G2Affine, FieldShare = Self::FrShare>;
+    type G1ProjectiveShare: GroupShare<E::G1Projective, FieldShare = Self::FrShare>;
+    type G2ProjectiveShare: GroupShare<E::G2Projective, FieldShare = Self::FrShare>;
     type G1: AffProjShare<
         E::Fr,
         E::G1Affine,

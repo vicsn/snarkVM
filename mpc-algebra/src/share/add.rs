@@ -3,13 +3,12 @@ use derivative::Derivative;
 use rand::Rng;
 
 use snarkvm_algorithms::fft::Polynomial as Polynomial;
-use snarkvm_console::prelude::{GroupTrait, ScalarTrait};
+use snarkvm_curves::Group;
 use snarkvm_curves::{PairingEngine, ProjectiveCurve};
 use snarkvm_fields::Field;
 use snarkvm_utilities::bytes::{FromBytes, ToBytes};
 use snarkvm_utilities::{
-    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Flags, SerializationError, Compress, Uniform,
+    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Compress, Flags, SerializationError, Uniform, Valid, Validate
 };
 
 use std::borrow::Cow;
@@ -23,7 +22,7 @@ use mpc_net::{MpcNet, MpcMultiNet as Net};
 use crate::channel::MpcSerNet;
 
 use super::field::{
-    DensePolynomial, ExtFieldShare, FieldShare, SparsePolynomial,
+    DenseOrSparsePolynomial, DensePolynomial, ExtFieldShare, FieldShare, SparsePolynomial,
 };
 use super::group::GroupShare;
 use super::pairing::{AffProjShare, PairingShare};
@@ -146,8 +145,8 @@ impl<F: Field> FieldShare<F> for AdditiveFieldShare<F> {
     }
 
     fn univariate_div_qr<'a>(
-        num: Polynomial<Self>,
-        den: Polynomial<F>,
+        num: DenseOrSparsePolynomial<Self>,
+        den: DenseOrSparsePolynomial<F>,
     ) -> Option<(DensePolynomial<Self>, DensePolynomial<Self>)> {
         let num = Self::poly_share(num);
         let den = Self::poly_share2(den);
@@ -172,7 +171,7 @@ pub struct AdditiveGroupShare<T, M> {
     _phants: PhantomData<M>,
 }
 
-impl<G: GroupTrait, M> Reveal for AdditiveGroupShare<G, M> {
+impl<G: Group, M> Reveal for AdditiveGroupShare<G, M> {
     type Base = G;
 
     fn reveal(self) -> G {
@@ -214,8 +213,8 @@ impl<G: GroupTrait, M> Reveal for AdditiveGroupShare<G, M> {
     }
 }
 
-impl<C: ScalarTrait, G: GroupTrait<C>, M: Msm<G, C>> GroupShare<C, G> for AdditiveGroupShare<G, M> {
-    type FieldShare = AdditiveFieldShare<C>;
+impl<G: Group, M: Msm<G, G::ScalarField>> GroupShare<G> for AdditiveGroupShare<G, M> {
+    type FieldShare = AdditiveFieldShare<G::ScalarField>;
 
     fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
         let self_vec: Vec<G> = selfs.into_iter().map(|s| s.val).collect();
@@ -233,7 +232,7 @@ impl<C: ScalarTrait, G: GroupTrait<C>, M: Msm<G, C>> GroupShare<C, G> for Additi
         self
     }
 
-    fn scale_pub_scalar(&mut self, scalar: &C) -> &mut Self {
+    fn scale_pub_scalar(&mut self, scalar: &G::ScalarField) -> &mut Self {
         self.val *= *scalar;
         self
     }
@@ -254,7 +253,7 @@ impl<C: ScalarTrait, G: GroupTrait<C>, M: Msm<G, C>> GroupShare<C, G> for Additi
     }
 
     fn multi_scale_pub_group(bases: &[G], scalars: &[Self::FieldShare]) -> Self {
-        let scalars: Vec<C> = scalars.into_iter().map(|s| s.val.clone()).collect();
+        let scalars: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.val.clone()).collect();
         Self::from_add_shared(M::msm(bases, &scalars))
     }
 }
@@ -281,11 +280,16 @@ macro_rules! impl_basics {
                 unimplemented!("read")
             }
         }
+        impl<T: $bound> Valid for $share<T> {
+            fn check(&self) -> Result<(), SerializationError> {
+                unimplemented!("check")
+            }
+        }
         impl<T: $bound> CanonicalSerialize for $share<T> {
-            fn serialize_with_mode<W: Write>(&self, _compress: Compress, _writer: W) -> Result<(), SerializationError> {
+            fn serialize_with_mode<W: Write>(&self, _writer: W, _compress: Compress) -> Result<(), SerializationError> {
                 unimplemented!("serialize_with_mode")
             }
-            fn serialized_size(&self) -> usize {
+            fn serialized_size(&self, _compress: Compress) -> usize {
                 unimplemented!("serialized_size")
             }
         }
@@ -304,8 +308,9 @@ macro_rules! impl_basics {
         }
         impl<T: $bound> CanonicalDeserialize for $share<T> {
             fn deserialize_with_mode<R: Read>(
-                _compress: Compress,
                 _reader: R,
+                _compress: Compress,
+                _validate: Validate,
             ) -> Result<Self, SerializationError> {
                 unimplemented!("deserialize_with_mode")
             }
@@ -325,36 +330,41 @@ macro_rules! impl_basics {
     };
 }
 macro_rules! impl_basics_2_param {
-    ($share:ident, $bound_scalar:ident, $bound:ident) => {
-        impl<C: $bound_scalar, T: $bound<C>, M> Display for $share<T, M> {
+    ($share:ident, $bound:ident) => {
+        impl<T: $bound, M> Display for $share<T, M> {
             fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
                 write!(f, "{}", self.val)
             }
         }
-        impl<C: $bound_scalar, T: $bound<C>, M> Debug for $share<T, M> {
+        impl<T: $bound, M> Debug for $share<T, M> {
             fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
                 write!(f, "{:?}", self.val)
             }
         }
-        impl<C: $bound_scalar, T: $bound<C>, M> ToBytes for $share<T, M> {
+        impl<T: $bound, M> ToBytes for $share<T, M> {
             fn write_le<W: Write>(&self, _writer: W) -> io::Result<()> {
                 unimplemented!("write")
             }
         }
-        impl<C: $bound_scalar, T: $bound<C>, M> FromBytes for $share<T, M> {
+        impl<T: $bound, M> FromBytes for $share<T, M> {
             fn read_le<R: Read>(_reader: R) -> io::Result<Self> {
                 unimplemented!("read")
             }
         }
-        impl<C: $bound_scalar, T: $bound<C>, M> CanonicalSerialize for $share<T, M> {
-            fn serialize_with_mode<W: Write>(&self, _compress: Compress, _writer: W) -> Result<(), SerializationError> {
+        impl<T: $bound, M> Valid for $share<T, M> {
+            fn check(&self) -> Result<(), SerializationError> {
+                unimplemented!("check")
+            }
+        }        
+        impl<T: $bound, M> CanonicalSerialize for $share<T, M> {
+            fn serialize_with_mode<W: Write>(&self, _writer: W, _compress: Compress) -> Result<(), SerializationError> {
                 unimplemented!("serialize_with_mode")
             }
-            fn serialized_size(&self) -> usize {
+            fn serialized_size(&self, _compress: Compress) -> usize {
                 unimplemented!("serialized_size")
             }
         }
-        impl<C: $bound_scalar, T: $bound<C>, M> CanonicalSerializeWithFlags for $share<T, M> {
+        impl<T: $bound, M> CanonicalSerializeWithFlags for $share<T, M> {
             fn serialize_with_flags<W: Write, F: Flags>(
                 &self,
                 _writer: W,
@@ -367,22 +377,23 @@ macro_rules! impl_basics_2_param {
                 unimplemented!("serialized_size_with_flags")
             }
         }
-        impl<C: $bound_scalar, T: $bound<C>, M> CanonicalDeserialize for $share<T, M> {
+        impl<T: $bound, M> CanonicalDeserialize for $share<T, M> {
             fn deserialize_with_mode<R: Read>(
-                _compress: Compress,
                 _reader: R,
+                _compress: Compress,
+                _validate: Validate,
             ) -> Result<Self, SerializationError> {
                 unimplemented!("deserialize_with_mode")
             }
         }
-        impl<C: $bound_scalar, T: $bound<C>, M> CanonicalDeserializeWithFlags for $share<T, M> {
+        impl<T: $bound, M> CanonicalDeserializeWithFlags for $share<T, M> {
             fn deserialize_with_flags<R: Read, F: Flags>(
                 _reader: R,
             ) -> Result<(Self, F), SerializationError> {
                 unimplemented!("deserialize_with_flags")
             }
         }
-        impl<C: $bound_scalar, T: $bound<C>, M> Uniform for $share<T, M> {
+        impl<T: $bound, M> Uniform for $share<T, M> {
             fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
                 Reveal::from_add_shared(<T as Uniform>::rand(rng))
             }
@@ -391,7 +402,7 @@ macro_rules! impl_basics_2_param {
 }
 
 impl_basics!(AdditiveFieldShare, Field);
-impl_basics_2_param!(AdditiveGroupShare, ScalarTrait, GroupTrait);
+impl_basics_2_param!(AdditiveGroupShare, Group);
 
 #[derive(Debug, Derivative)]
 #[derivative(

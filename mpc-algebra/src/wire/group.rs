@@ -3,12 +3,12 @@ use log::debug;
 use rand::Rng;
 use zeroize::Zeroize;
 
-use snarkvm_console::prelude::{ScalarTrait, GroupTrait};
+use snarkvm_curves::Group;
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
 use snarkvm_utilities::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Flags, SerializationError, FromBytes, ToBytes, Uniform, Compress,
+    CanonicalSerializeWithFlags, Flags, SerializationError, FromBytes, ToBytes, Uniform, Compress, Validate,
 };
 use snarkvm_fields::{Zero, One};
 use mpc_trait::MpcWire;
@@ -26,12 +26,12 @@ use mpc_net::{MpcNet, MpcMultiNet as Net};
 use crate::Reveal;
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum MpcGroup<C: ScalarTrait, G: GroupTrait<C>, S: GroupShare<C, G>> {
+pub enum MpcGroup<G: Group, S: GroupShare<G>> {
     Public(G),
     Shared(S),
 }
 
-impl_basics_2!(GroupShare, ScalarTrait, GroupTrait, MpcGroup);
+impl_basics_2!(GroupShare, Group, MpcGroup);
 
 #[derive(Derivative)]
 #[derivative(Default(bound = ""), Clone(bound = ""), Copy(bound = ""))]
@@ -40,7 +40,7 @@ pub struct DummyGroupTripleSource<T, S> {
     _share: PhantomData<S>,
 }
 
-impl<C: ScalarTrait, T: GroupTrait, S: GroupShare<C, T>> BeaverSource<S, S::FieldShare, S>
+impl<T: Group, S: GroupShare<T>> BeaverSource<S, S::FieldShare, S>
     for DummyGroupTripleSource<T, S>
 {
     #[inline]
@@ -72,10 +72,10 @@ impl<C: ScalarTrait, T: GroupTrait, S: GroupShare<C, T>> BeaverSource<S, S::Fiel
     }
 }
 
-impl_ref_ops_group!(Add, AddAssign, add, add_assign, ScalarTrait, GroupTrait,GroupShare, MpcGroup);
-impl_ref_ops_group!(Sub, SubAssign, sub, sub_assign, ScalarTrait, GroupTrait,GroupShare, MpcGroup);
+impl_ref_ops_group!(Add, AddAssign, add, add_assign, Group,GroupShare, MpcGroup);
+impl_ref_ops_group!(Sub, SubAssign, sub, sub_assign, Group,GroupShare, MpcGroup);
 
-impl<C: ScalarTrait, T: GroupTrait, S: GroupShare<C, T>> MpcWire for MpcGroup<C, T, S> {
+impl<T: Group, S: GroupShare<T>> MpcWire for MpcGroup<T, S> {
     #[inline]
     fn publicize(&mut self) {
         match self {
@@ -103,7 +103,7 @@ impl<C: ScalarTrait, T: GroupTrait, S: GroupShare<C, T>> MpcWire for MpcGroup<C,
     }
 }
 
-impl<C: ScalarTrait, T: GroupTrait<C>, S: GroupShare<C, T>> Reveal for MpcGroup<C, T, S> {
+impl<T: Group, S: GroupShare<T>> Reveal for MpcGroup<T, S> {
     type Base = T;
     #[inline]
     fn reveal(self) -> Self::Base {
@@ -145,38 +145,38 @@ impl<C: ScalarTrait, T: GroupTrait<C>, S: GroupShare<C, T>> Reveal for MpcGroup<
     }
 }
 
-impl<C: ScalarTrait, T: GroupTrait, S: GroupShare<C, T>> Mul<MpcField<C, S::FieldShare>> for MpcGroup<C, T, S> {
+impl<T: Group, S: GroupShare<T>> Mul<MpcField<T::ScalarField, S::FieldShare>> for MpcGroup<T, S> {
     type Output = Self;
     #[inline]
-    fn mul(mut self, other: MpcField<C, S::FieldShare>) -> Self::Output {
+    fn mul(mut self, other: MpcField<T::ScalarField, S::FieldShare>) -> Self::Output {
         self *= &other;
         self
     }
 }
 
-impl<'a, C: ScalarTrait, T: GroupTrait, S: GroupShare<C, T>> Mul<&'a MpcField<C, S::FieldShare>>
-    for MpcGroup<C, T, S>
+impl<'a, T: Group, S: GroupShare<T>> Mul<&'a MpcField<T::ScalarField, S::FieldShare>>
+    for MpcGroup<T, S>
 {
     type Output = Self;
     #[inline]
-    fn mul(mut self, other: &MpcField<C, S::FieldShare>) -> Self::Output {
+    fn mul(mut self, other: &MpcField<T::ScalarField, S::FieldShare>) -> Self::Output {
         self *= other;
         self
     }
 }
-impl<C: ScalarTrait, T: GroupTrait, S: GroupShare<C, T>> MulAssign<MpcField<C, S::FieldShare>>
-    for MpcGroup<C, T, S>
+impl<T: Group, S: GroupShare<T>> MulAssign<MpcField<T::ScalarField, S::FieldShare>>
+    for MpcGroup<T, S>
 {
     #[inline]
-    fn mul_assign(&mut self, other: MpcField<C, S::FieldShare>) {
+    fn mul_assign(&mut self, other: MpcField<T::ScalarField, S::FieldShare>) {
         *self *= &other;
     }
 }
-impl<'a, C: ScalarTrait, T: GroupTrait, S: GroupShare<C, T>> MulAssign<&'a MpcField<C, S::FieldShare>>
-    for MpcGroup<C, T, S>
+impl<'a, T: Group, S: GroupShare<T>> MulAssign<&'a MpcField<T::ScalarField, S::FieldShare>>
+    for MpcGroup<T, S>
 {
     #[inline]
-    fn mul_assign(&mut self, other: &MpcField<C, S::FieldShare>) {
+    fn mul_assign(&mut self, other: &MpcField<T::ScalarField, S::FieldShare>) {
         match self {
             // for some reason, a two-stage match (rather than a tuple match) avoids moving
             // self
@@ -202,9 +202,9 @@ impl<'a, C: ScalarTrait, T: GroupTrait, S: GroupShare<C, T>> MulAssign<&'a MpcFi
     }
 }
 
-// impl<C: ScalarTrait, T: GroupTrait, S: GroupShare<C, T>> GroupTrait for MpcGroup<C, T, S> {
+// impl<T: Group, S: GroupShare<T>> Group for MpcGroup<T, S> {
 // }
-impl<C: ScalarTrait, T: GroupTrait, S: GroupShare<C, T>> MpcGroup<C, T, S> {
+impl<T: Group, S: GroupShare<T>> MpcGroup<T, S> {
     pub fn unwrap_as_public_or_add_shared(self) -> T {
         match self {
             Self::Public(p) => p,

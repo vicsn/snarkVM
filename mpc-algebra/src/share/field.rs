@@ -182,8 +182,8 @@ pub trait FieldShare<F: Field>:
     }
 
     fn univariate_div_qr<'a>(
-        _num: Polynomial<Self>,
-        _den: Polynomial<F>,
+        _num: DenseOrSparsePolynomial<Self>,
+        _den: DenseOrSparsePolynomial<F>,
     ) -> Option<(
         DensePolynomial<Self>,
         DensePolynomial<Self>,
@@ -195,7 +195,7 @@ pub trait FieldShare<F: Field>:
 
 pub type DensePolynomial<T> = Vec<T>;
 pub type SparsePolynomial<T> = Vec<(usize, T)>;
-pub type Polynomial<T> = Result<DensePolynomial<T>, SparsePolynomial<T>>;
+pub type DenseOrSparsePolynomial<T> = Result<DensePolynomial<T>, SparsePolynomial<T>>;
 
 pub trait ExtFieldShare<F: Field>:
     Clone + Copy + Debug + 'static + Send + Sync + PartialEq + Eq

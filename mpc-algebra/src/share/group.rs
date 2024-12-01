@@ -1,4 +1,4 @@
-use snarkvm_console::prelude::{GroupTrait, ScalarTrait};
+use snarkvm_curves::Group;
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
 use snarkvm_utilities::{
@@ -15,7 +15,7 @@ use super::BeaverSource;
 use crate::Reveal;
 
 /// Secret sharing scheme which support affine functions of secrets.
-pub trait GroupShare<C: ScalarTrait, G: GroupTrait<C>>:
+pub trait GroupShare<G: Group>:
     Clone
     + Copy
     + Display
@@ -34,13 +34,13 @@ pub trait GroupShare<C: ScalarTrait, G: GroupTrait<C>>:
     + 'static
     + Reveal<Base = G>
 {
-    type FieldShare: FieldShare<C>;
+    type FieldShare: FieldShare<G::ScalarField>;
 
     fn open(&self) -> G {
         <Self as Reveal>::reveal(*self)
     }
 
-    fn map_homo<G2: GroupTrait, S2: GroupShare<G2>, Fun: Fn(G) -> G2>(self, f: Fun) -> S2 {
+    fn map_homo<G2: Group, S2: GroupShare<G2>, Fun: Fn(G) -> G2>(self, f: Fun) -> S2 {
         S2::from_add_shared(f(self.unwrap_as_public()))
     }
 
@@ -58,10 +58,10 @@ pub trait GroupShare<C: ScalarTrait, G: GroupTrait<C>>:
         self
     }
     fn neg(&mut self) -> &mut Self {
-        self.scale_pub_scalar(&-<C as ark_ff::One>::one())
+        self.scale_pub_scalar(&-<G::ScalarField as ark_ff::One>::one())
     }
 
-    fn scale_pub_scalar(&mut self, scalar: &C) -> &mut Self;
+    fn scale_pub_scalar(&mut self, scalar: &G::ScalarField) -> &mut Self;
 
     fn scale_pub_group(base: G, scalar: &Self::FieldShare) -> Self;
 

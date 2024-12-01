@@ -15,7 +15,7 @@ use derivative::Derivative;
 
 pub trait BeaverSource<A, B, C>: Clone {
     fn triple(&mut self) -> (A, B, C);
-    fn triples(&mut self, n: usize) -> (Vec<A>, Vec<B>, Vec<C>) {
+    fn triples(&mut self, n: usize) -> (Vec<A>, Vec<B>, VecG::ScalarField) {
         let mut xs = Vec::new();
         let mut ys = Vec::new();
         let mut zs = Vec::new();

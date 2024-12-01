@@ -1,11 +1,12 @@
-use snarkvm_console::prelude::GroupTrait;
+use snarkvm_curves::bls12_377::{G1Affine, G2Affine};
+use snarkvm_curves::Group;
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
 use snarkvm_fields::{Field, FftField, PrimeField, Zero, One, SquareRootField};
 use snarkvm_utilities::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Flags, SerializationError, ToBytes, FromBytes, Uniform, Compress,
+    CanonicalSerializeWithFlags, Flags, SerializationError, ToBytes, FromBytes, Uniform, Compress, Validate,
 };
 use std::io::{self, Read, Write};
 use aleo_std::{end_timer, start_timer};
@@ -71,7 +72,7 @@ impl<E: PairingEngine, S: PairingShare<E>>
     Hash(bound = "E::G1Affine: Hash")
 )]
 pub struct MpcG1Affine<E: PairingEngine, PS: PairingShare<E>> {
-    pub val: MpcGroup<E::Fr, E::G1Affine, PS::G1AffineShare>,
+    pub val: MpcGroup<E::G1Affine, PS::G1AffineShare>,
 }
 
 #[derive(Debug, Derivative)]
@@ -83,13 +84,13 @@ pub struct MpcG1Affine<E: PairingEngine, PS: PairingShare<E>> {
     Hash(bound = "E::G1Affine: Hash")
 )]
 pub struct MpcG1Projective<E: PairingEngine, PS: PairingShare<E>> {
-    pub val: MpcGroup<E::Fr, E::G1Projective, PS::G1ProjectiveShare>,
+    pub val: MpcGroup<E::G1Projective, PS::G1ProjectiveShare>,
 }
 
 // #[derive(Debug, Derivative)]
-// #[derivative(Clone(bound = ""), Default(bound = "E::G1Prepared: Default"))]
+// #[derivative(Clone(bound = ""), Default(bound = "E::G1::Prepared: Default"))]
 // pub struct MpcG1Prep<E: PairingEngine, PS: PairingShare<E>> {
-//     pub val: E::G1Prepared,
+//     pub val: E::G1Affine::Prepared,
 //     pub _phants: PhantomData<(E, PS)>,
 // }
 
@@ -102,7 +103,7 @@ pub struct MpcG1Projective<E: PairingEngine, PS: PairingShare<E>> {
     Hash(bound = "E::G1Affine: Hash")
 )]
 pub struct MpcG2Affine<E: PairingEngine, PS: PairingShare<E>> {
-    pub val: MpcGroup<E::Fr, E::G2Affine, PS::G2AffineShare>,
+    pub val: MpcGroup<E::G2Affine, PS::G2AffineShare>,
 }
 
 #[derive(Debug, Derivative)]
@@ -114,13 +115,13 @@ pub struct MpcG2Affine<E: PairingEngine, PS: PairingShare<E>> {
     Hash(bound = "E::G1Affine: Hash")
 )]
 pub struct MpcG2Projective<E: PairingEngine, PS: PairingShare<E>> {
-    pub val: MpcGroup<E::Fr, E::G2Projective, PS::G2ProjectiveShare>,
+    pub val: MpcGroup<E::G2Projective, PS::G2ProjectiveShare>,
 }
 
 // #[derive(Debug, Derivative)]
-// #[derivative(Clone(bound = ""), Default(bound = "E::G1Prepared: Default"))]
+// #[derivative(Clone(bound = ""), Default(bound = "E::G2Affine::Prepared: Default"))]
 // pub struct MpcG2Prep<E: PairingEngine, PS: PairingShare<E>> {
-//     pub val: E::G2Prepared,
+//     pub val: E::G2Affine::Prepared,
 //     pub _phants: PhantomData<(E, PS)>,
 // }
 
@@ -273,8 +274,9 @@ macro_rules! impl_pairing_mpc_wrapper {
         }
         impl<E: $bound1, PS: $bound2<E>> CanonicalDeserialize for $wrap<E, PS> {
             fn deserialize_with_mode<R: Read>(
-                _compress: Compress,
                 _reader: R,
+                _compress: Compress,
+                _validate: Validate,
             ) -> Result<Self, SerializationError> {
                 unimplemented!("deserialize_with_mode")
             }
@@ -673,8 +675,8 @@ impl_pairing_curve_wrapper!(
 impl_ext_field_wrapper!(MpcField, MpcExtField);
 
 macro_rules! impl_aff_proj {
-    ($w_prep:ident, $prep:ident, $w_aff:ident, $w_pro:ident, $aff:ident, $pro:ident, $g_name:ident, $w_base:ident, $base:ident, $base_share:ident, $share_aff:ident, $share_proj:ident) => {
-        // impl<E: PairingEngine, PS: PairingShare<E>> GroupTrait for $w_aff<E, PS> {
+    ($w_aff:ident, $w_pro:ident, $aff:ident, $pro:ident, $g_name:ident, $w_base:ident, $base:ident, $base_share:ident, $share_aff:ident, $share_proj:ident) => {
+        // impl<E: PairingEngine, PS: PairingShare<E>> Group for $w_aff<E, PS> {
         //     type ScalarField = MpcField<E::Fr, PS::FrShare>;
         // }
         impl<E: PairingEngine, PS: PairingShare<E>> From<$w_pro<E, PS>> for $w_aff<E, PS> {
@@ -694,36 +696,36 @@ macro_rules! impl_aff_proj {
             }
         }
 
-        impl<E: PairingEngine, PS: PairingShare<E>> From<$w_aff<E, PS>> for $w_prep<E, PS> {
-            fn from(_o: $w_aff<E, PS>) -> Self {
-                unimplemented!("Prepared curves")
-            }
-        }
+        // impl<E: PairingEngine, PS: PairingShare<E>> From<$w_aff<E, PS>> for $w_prep<E, PS> {
+        //     fn from(_o: $w_aff<E, PS>) -> Self {
+        //         unimplemented!("Prepared curves")
+        //     }
+        // }
 
-        impl<E: PairingEngine, PS: PairingShare<E>> ToBytes for $w_prep<E, PS> {
-            fn write_le<W: Write>(&self, _writer: W) -> io::Result<()> {
-                unimplemented!("Prepared curves")
-            }
-        }
+        // impl<E: PairingEngine, PS: PairingShare<E>> ToBytes for $w_prep<E, PS> {
+        //     fn write_le<W: Write>(&self, _writer: W) -> io::Result<()> {
+        //         unimplemented!("Prepared curves")
+        //     }
+        // }
 
-        impl<E: PairingEngine, PS: PairingShare<E>> Reveal for $w_prep<E, PS> {
-            type Base = E::$prep;
-            #[inline]
-            fn reveal(self) -> E::$prep {
-                self.val
-            }
-            #[inline]
-            fn from_public(g: E::$prep) -> Self {
-                Self {
-                    val: g,
-                    _phants: PhantomData::default(),
-                }
-            }
-            #[inline]
-            fn from_add_shared(_g: E::$prep) -> Self {
-                panic!("Cannot add share a prepared curve")
-            }
-        }
+        // impl<E: PairingEngine, PS: PairingShare<E>> Reveal for $w_prep<E, PS> {
+        //     type Base = $aff::Prepared;
+        //     #[inline]
+        //     fn reveal(self) -> $aff::Prepared {
+        //         self.val
+        //     }
+        //     #[inline]
+        //     fn from_public(g: $aff::Prepared) -> Self {
+        //         Self {
+        //             val: g,
+        //             _phants: PhantomData::default(),
+        //         }
+        //     }
+        //     #[inline]
+        //     fn from_add_shared(_g: $aff::Prepared) -> Self {
+        //         panic!("Cannot add share a prepared curve")
+        //     }
+        // }
 
         impl<E: PairingEngine, PS: PairingShare<E>> AffineCurve for $w_aff<E, PS> {
             // type ScalarField = MpcField<E::Fr, PS::FrShare>;
@@ -865,7 +867,6 @@ macro_rules! impl_aff_proj {
 
 impl_aff_proj!(
     // MpcG1Prep,
-    // G1Prepared,
     MpcG1Affine,
     MpcG1Projective,
     G1Affine,
@@ -879,7 +880,6 @@ impl_aff_proj!(
 );
 impl_aff_proj!(
     // MpcG2Prep,
-    // G2Prepared,
     MpcG2Affine,
     MpcG2Projective,
     G2Affine,

@@ -1,5 +1,5 @@
 use snarkvm_curves::{AffineCurve, PairingEngine};
-use snarkvm_console::prelude::GroupTrait;
+use snarkvm_curves::Group;
 use snarkvm_fields::{FftField, Field, PrimeField, Uniform};
 use log::debug;
 use mpc_algebra::gsz20::group::GszGroupShare;
@@ -108,7 +108,7 @@ fn test_mul_field<E: PairingEngine>() {
     }
 }
 
-fn test_group<C: ScalarTrait, G: GroupTrait<C>>() {
+fn test_group<G: Group>() {
     let rng = &mut ark_std::test_rng();
     let (a, b) = group::double_rand::<G, NaiveMsm<G>>();
     let a_pub = group::open(&a);
@@ -116,7 +116,7 @@ fn test_group<C: ScalarTrait, G: GroupTrait<C>>() {
     assert_eq!(a_pub, b_pub);
 
     for _i in 0..2 {
-        let a_pub = C::rand(rng);
+        let a_pub = G::ScalarField::rand(rng);
         let b_pub = G::rand(rng);
         let a = GszFieldShare::from_public(a_pub);
         let b = GszGroupShare::<G, NaiveMsm<G>>::from_public(b_pub);
@@ -125,12 +125,12 @@ fn test_group<C: ScalarTrait, G: GroupTrait<C>>() {
         assert_eq!(c_pub, b_pub.mul(&a_pub));
     }
 
-    let s1_pub = C::rand(rng);
-    let s2_pub = C::rand(rng);
+    let s1_pub = Group::ScalarField::rand(rng);
+    let s2_pub = Group::ScalarField::rand(rng);
     let s2 = GszFieldShare::from_public(s1_pub);
     let mut a = a;
-    <GszGroupShare<G, NaiveMsm<G>> as GroupShare<C, G>>::scale_pub_scalar(&mut a, &s1_pub);
-    let as1s2 = <GszGroupShare<G, NaiveMsm<G>> as GroupShare<C, G>>::scale(
+    <GszGroupShare<G, NaiveMsm<G>> as GroupShare<G>>::scale_pub_scalar(&mut a, &s1_pub);
+    let as1s2 = <GszGroupShare<G, NaiveMsm<G>> as GroupShare<G>>::scale(
         a,
         s2,
         &mut mpc_algebra::wire::group::DummyGroupTripleSource::default(),
@@ -140,12 +140,12 @@ fn test_group<C: ScalarTrait, G: GroupTrait<C>>() {
     test_group_ip::<G>();
 }
 
-fn test_group_ip<C: ScalarTrait, G: GroupTrait<C>>() {
+fn test_group_ip<G: Group>() {
     let rng = &mut ark_std::test_rng();
     let iters = 2;
     let size = 10;
     for _iter in 0..iters {
-        let a_pubs: Vec<C> = (0..size).map(|_| C::rand(rng)).collect();
+        let a_pubs: Vec<G::ScalarField> = (0..size).map(|_| G::ScalarField::rand(rng)).collect();
         let b_pubs: Vec<G> = (0..size).map(|_| G::rand(rng)).collect();
         //let a_pubs: Vec<F> = (0..size).map(|i| F::from(i as u32)).collect();
         //let b_pubs: Vec<F> = (0..size).map(|i| F::from(i as u32)).collect();

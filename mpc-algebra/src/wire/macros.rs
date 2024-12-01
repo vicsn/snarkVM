@@ -1,6 +1,6 @@
 #![macro_use]
 
-use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, ToBytes, FromBytes, Compress};
+use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, ToBytes, FromBytes, Compress, Validate};
 use snarkvm_fields::{Zero, One};
 
 use crate::channel::{self, MpcSerNet};
@@ -39,8 +39,8 @@ pub fn check_eq<T: CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Disp
 }
 
 macro_rules! impl_basics_2 {
-    ($share:ident, $scalar_bound:ident, $bound:ident, $wrap:ident) => {
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> $wrap<C, T, S> {
+    ($share:ident, $bound:ident, $wrap:ident) => {
+        impl<T: $bound, S: $share<T>> $wrap<T, S> {
             #[inline]
             pub fn new(t: T, shared: bool) -> Self {
                 if shared {
@@ -58,14 +58,14 @@ macro_rules! impl_basics_2 {
                 self,
                 ft: FT,
                 fs: FS,
-            ) -> $wrap<C, TT, SS> {
+            ) -> $wrap<TT, SS> {
                 match self {
                     Self::Shared(s) => $wrap::Shared(fs(s)),
                     Self::Public(s) => $wrap::Public(ft(s)),
                 }
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> Display for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> Display for $wrap<T, S> {
             fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
                 match self {
                     $wrap::Public(x) => write!(f, "{} (public)", x),
@@ -73,7 +73,7 @@ macro_rules! impl_basics_2 {
                 }
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> ToBytes for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> ToBytes for $wrap<T, S> {
             fn write_le<W: Write>(&self, writer: W) -> io::Result<()> {
                 match self {
                     Self::Public(v) => v.write(writer),
@@ -81,12 +81,12 @@ macro_rules! impl_basics_2 {
                 }
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> FromBytes for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> FromBytes for $wrap<T, S> {
             fn read_le<R: Read>(_reader: R) -> io::Result<Self> {
                 unimplemented!("read")
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> CanonicalSerialize for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> CanonicalSerialize for $wrap<T, S> {
             fn serialize_with_mode<W: Write>(&self, compress: Compress, writer: W) -> Result<(), SerializationError> {
                 match self {
                     Self::Public(v) => v.serialize_with_mode(compress, writer),
@@ -101,7 +101,7 @@ macro_rules! impl_basics_2 {
             }
         }
         // NB: CanonicalSerializeWithFlags is unimplemented for Group.
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> CanonicalSerializeWithFlags for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> CanonicalSerializeWithFlags for $wrap<T, S> {
             fn serialize_with_flags<W: Write, F: Flags>(
                 &self,
                 _writer: W,
@@ -114,32 +114,33 @@ macro_rules! impl_basics_2 {
                 unimplemented!("serialized_size_with_flags")
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> CanonicalDeserialize for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> CanonicalDeserialize for $wrap<T, S> {
             fn deserialize_with_mode<R: Read>(
-                _compress: Compress,
                 _reader: R,
+                _compress: Compress,
+                _validate: Validate,
             ) -> Result<Self, SerializationError> {
                 unimplemented!("deserialize_with_mode")
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> CanonicalDeserializeWithFlags for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> CanonicalDeserializeWithFlags for $wrap<T, S> {
             fn deserialize_with_flags<R: Read, F: Flags>(
                 _reader: R,
             ) -> Result<(Self, F), SerializationError> {
                 unimplemented!("deserialize_with_flags")
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> Uniform for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> Uniform for $wrap<T, S> {
             fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
                 Self::Shared(<S as Uniform>::rand(rng))
             }
         }
-        // impl<C: $scalar_bound, T: $bound, S: $share<T>> PubUniform for $wrap<C, T, S> {
+        // impl<T: $bound, S: $share<T>> PubUniform for $wrap<T, S> {
         //     fn pub_rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
         //         Self::Public(<T as PubUniform>::pub_rand(rng))
         //     }
         // }
-        //impl<C: $scalar_bound, T: $bound, S: $share<T>> Add for $wrap<C, T, S> {
+        //impl<T: $bound, S: $share<T>> Add for $wrap<T, S> {
         //    type Output = Self;
         //    #[inline]
         //    fn add(self, other: Self) -> Self::Output {
@@ -151,7 +152,7 @@ macro_rules! impl_basics_2 {
         //        }
         //    }
         //}
-        impl<'a, C: $scalar_bound, T: $bound, S: $share<T>> AddAssign<&'a $wrap<C, T, S>> for $wrap<C, T, S> {
+        impl<'a, T: $bound, S: $share<T>> AddAssign<&'a $wrap<T, S>> for $wrap<T, S> {
             #[inline]
             fn add_assign(&mut self, other: &Self) {
                 match self {
@@ -178,19 +179,19 @@ macro_rules! impl_basics_2 {
                 }
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> Sum for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> Sum for $wrap<T, S> {
             #[inline]
             fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
                 iter.fold(Self::zero(), Add::add)
             }
         }
-        impl<'a, C: $scalar_bound, T: $bound, S: $share<T> + 'a> Sum<&'a $wrap<C, T, S>> for $wrap<C, T, S> {
+        impl<'a, T: $bound, S: $share<T> + 'a> Sum<&'a $wrap<T, S>> for $wrap<T, S> {
             #[inline]
             fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
                 iter.fold(Self::zero(), |x, y| x.add(y.clone()))
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> Neg for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> Neg for $wrap<T, S> {
             type Output = Self;
             #[inline]
             fn neg(self) -> Self::Output {
@@ -203,7 +204,7 @@ macro_rules! impl_basics_2 {
                 }
             }
         }
-        impl<'a, C: $scalar_bound, T: $bound, S: $share<T>> SubAssign<&'a $wrap<C, T, S>> for $wrap<C, T, S> {
+        impl<'a, T: $bound, S: $share<T>> SubAssign<&'a $wrap<T, S>> for $wrap<T, S> {
             #[inline]
             fn sub_assign(&mut self, other: &Self) {
                 match self {
@@ -230,7 +231,7 @@ macro_rules! impl_basics_2 {
                 }
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> Zero for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> Zero for $wrap<T, S> {
             #[inline]
             fn zero() -> Self {
                 $wrap::Public(T::zero())
@@ -246,13 +247,13 @@ macro_rules! impl_basics_2 {
                 }
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> Zeroize for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> Zeroize for $wrap<T, S> {
             #[inline]
             fn zeroize(&mut self) {
                 *self = $wrap::Public(T::zero());
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> Default for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> Default for $wrap<T, S> {
             fn default() -> Self {
                 Self::zero()
             }
@@ -338,8 +339,9 @@ macro_rules! impl_basics_field {
         }
         impl<T: $bound, S: $share<T>> CanonicalDeserialize for $wrap<T, S> {
             fn deserialize_with_mode<R: Read>(
-                _compress: Compress,
                 _reader: R,
+                _compress: Compress,
+                _validate: Validate,
             ) -> Result<Self, SerializationError> {
                 unimplemented!("deserialize_with_mode")
             }
@@ -483,32 +485,32 @@ macro_rules! impl_basics_field {
 }
 
 macro_rules! impl_ref_ops_group {
-    ($op:ident, $assop:ident, $opfn:ident, $assopfn:ident, $scalar_bound:ident, $bound:ident, $share:ident, $wrap:ident) => {
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> $op<$wrap<C, T, S>> for $wrap<C, T, S> {
+    ($op:ident, $assop:ident, $opfn:ident, $assopfn:ident, $bound:ident, $share:ident, $wrap:ident) => {
+        impl<T: $bound, S: $share<T>> $op<$wrap<T, S>> for $wrap<T, S> {
             type Output = Self;
             #[inline]
-            fn $opfn(mut self, other: $wrap<C, T, S>) -> Self::Output {
+            fn $opfn(mut self, other: $wrap<T, S>) -> Self::Output {
                 self.$assopfn(&other);
                 self
             }
         }
-        impl<'a, C: $scalar_bound, T: $bound, S: $share<T>> $op<&'a $wrap<C, T, S>> for $wrap<C, T, S> {
+        impl<'a, T: $bound, S: $share<T>> $op<&'a $wrap<T, S>> for $wrap<T, S> {
             type Output = Self;
             #[inline]
-            fn $opfn(mut self, other: &$wrap<C, T, S>) -> Self::Output {
+            fn $opfn(mut self, other: &$wrap<T, S>) -> Self::Output {
                 self.$assopfn(other);
                 self
             }
         }
-        impl<C: $scalar_bound, T: $bound, S: $share<T>> $assop<$wrap<C, T, S>> for $wrap<C, T, S> {
+        impl<T: $bound, S: $share<T>> $assop<$wrap<T, S>> for $wrap<T, S> {
             #[inline]
-            fn $assopfn(&mut self, other: $wrap<C, T, S>) {
+            fn $assopfn(&mut self, other: $wrap<T, S>) {
                 self.$assopfn(&other);
             }
         }
-        // impl<'a, C: $scalar_bound, T: $bound, S: $share<T>> $assop<&'a $wrap<C, T, S>> for $wrap<C, T, S> {
+        // impl<'a, T: $bound, S: $share<T>> $assop<&'a $wrap<T, S>> for $wrap<T, S> {
         //     #[inline]
-        //     fn $assopfn(&mut self, other: &$wrap<C, T, S>) {
+        //     fn $assopfn(&mut self, other: &$wrap<T, S>) {
         //         *self = self.clone().$opfn(other.clone());
         //     }
         // }

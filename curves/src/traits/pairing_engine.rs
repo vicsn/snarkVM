@@ -36,7 +36,8 @@ pub trait PairingEngine: Sized + 'static + Copy + Debug + PartialEq + Eq + Hash 
 
     /// The projective representation of an element in G2.
     type G2Projective: ProjectiveCurve<BaseField = Self::Fqe, ScalarField = Self::Fr, Affine = Self::G2Affine>
-        + From<Self::G2Affine>;
+        + From<Self::G2Affine>
+        + Group<ScalarField = Self::Fr>;
 
     /// The affine representation of an element in G2.
     type G2Affine: AffineCurve<BaseField = Self::Fqe, ScalarField = Self::Fr, Projective = Self::G2Projective>

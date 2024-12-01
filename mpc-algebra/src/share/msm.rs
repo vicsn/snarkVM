@@ -1,6 +1,6 @@
 use derivative::Derivative;
 use snarkvm_curves::{AffineCurve, ProjectiveCurve};
-use snarkvm_console::prelude::{GroupTrait, ScalarTrait};
+use snarkvm_curves::Group;
 use std::marker::PhantomData;
 
 /// Multi-scalar multiplications
@@ -11,10 +11,10 @@ pub trait Msm<G, S>: Send + Sync + 'static {
 
 #[derive(Debug, Derivative)]
 #[derivative(Default(bound = ""), Clone(bound = ""), Copy(bound = ""))]
-pub struct NaiveMsm<C: ScalarTrait, G: GroupTrait<C>>(pub PhantomData<G>);
+pub struct NaiveMsm<G: Group>(pub PhantomData<G>);
 
-impl<C: ScalarTrait, G: GroupTrait<C>> Msm<G, C> for NaiveMsm<G> {
-    fn msm(bases: &[G], scalars: &[C]) -> G {
+impl<G: Group> Msm<G, G::ScalarField> for NaiveMsm<G> {
+    fn msm(bases: &[G], scalars: &[G::ScalarField]) -> G {
         bases
             .iter()
             .zip(scalars.iter())
@@ -31,8 +31,8 @@ impl<C: ScalarTrait, G: GroupTrait<C>> Msm<G, C> for NaiveMsm<G> {
 #[derivative(Default(bound = ""), Clone(bound = ""), Copy(bound = ""))]
 pub struct AffineMsm<G: AffineCurve>(pub PhantomData<G>);
 
-impl<C: ScalarTrait, G: AffineCurve> Msm<G, C> for AffineMsm<G> {
-    fn msm(bases: &[G], scalars: &[C]) -> G {
+impl<G: AffineCurve> Msm<G, G::ScalarField> for AffineMsm<G> {
+    fn msm(bases: &[G], scalars: &[G::ScalarField]) -> G {
         G::multi_scalar_mul(bases, scalars).into()
     }
 }
@@ -41,8 +41,8 @@ impl<C: ScalarTrait, G: AffineCurve> Msm<G, C> for AffineMsm<G> {
 #[derivative(Default(bound = ""), Clone(bound = ""), Copy(bound = ""))]
 pub struct ProjectiveMsm<G: ProjectiveCurve>(pub PhantomData<G>);
 
-impl<C: ScalarTrait, G: ProjectiveCurve> Msm<G, C> for ProjectiveMsm<G> {
-    fn msm(bases: &[G], scalars: &[C]) -> G {
+impl<G: ProjectiveCurve> Msm<G, G::ScalarField> for ProjectiveMsm<G> {
+    fn msm(bases: &[G], scalars: &[G::ScalarField]) -> G {
         bases[0].clone()
         // TODO: implement this method.
         // let bases: Vec<G::Affine> = bases.iter().map(|s| s.clone().into()).collect();

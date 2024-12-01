@@ -4,7 +4,7 @@ use log::debug;
 
 use ark_bls12_377::Fr;
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
-use snarkvm_console::prelude::{GroupTrait, ScalarTrait>;
+use snarkvm_curves::Group;
 // use ark_ff::Field;
 // use ark_poly::domain::radix2::Radix2EvaluationDomain;
 use snarkvm_algorithms::fft::{EvaluationDomain, Polynomial, DensePolynomial}; //, UVPolynomial};
@@ -585,9 +585,9 @@ impl Computation {
         }
         outputs
     }
-    fn run_group<C: ScalarTrait, G: GroupTrait<C>>(
+    fn run_group<G: GroupG::ScalarField>(
         &self,
-        inputs: Vec<C>,
+        inputs: VecG::ScalarField,
         generator: G,
     ) {
         match self {

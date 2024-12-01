@@ -3,13 +3,13 @@ use derivative::Derivative;
 use rand::Rng;
 
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
-use snarkvm_console::prelude::{GroupTrait, ScalarTrait};
+use snarkvm_curves::Group;
 use snarkvm_fields::{Field, PrimeField};
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
 use snarkvm_utilities::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Flags, SerializationError, Compress, Uniform, FromBytes, ToBytes,
+    CanonicalSerializeWithFlags, Flags, SerializationError, Compress, Uniform, FromBytes, ToBytes, Validate,
 };
 
 use std::cmp::Ord;
@@ -22,7 +22,7 @@ use mpc_net::{MpcNet, MpcMultiNet as Net};
 use crate::channel::{can_cheat, MpcSerNet};
 
 use super::add::{AdditiveFieldShare, AdditiveGroupShare, MulFieldShare};
-use super::field::{Polynomial, DensePolynomial, ExtFieldShare, FieldShare};
+use super::field::{DenseOrSparsePolynomial, DensePolynomial, ExtFieldShare, FieldShare};
 use super::group::GroupShare;
 use super::msm::*;
 use super::pairing::{AffProjShare, PairingShare};
@@ -77,10 +77,10 @@ macro_rules! impl_basics_spdz {
             }
         }
         impl<T: $bound> CanonicalSerialize for $share<T> {
-            fn serialize_with_mode<W: Write>(&self, _compress: Compress, _writer: W) -> Result<(), SerializationError> {
+            fn serialize_with_mode<W: Write>(&self, _writer: W, _compress: Compress) -> Result<(), SerializationError> {
                 unimplemented!("serialize_with_mode")
             }
-            fn serialized_size(&self) -> usize {
+            fn serialized_size(&self, _compress: Compress) -> usize {
                 unimplemented!("serialized_size")
             }
         }
@@ -99,8 +99,9 @@ macro_rules! impl_basics_spdz {
         }
         impl<T: $bound> CanonicalDeserialize for $share<T> {
             fn deserialize_with_mode<R: Read>(
-                _compress: Compress,
                 _reader: R,
+                _compress: Compress,
+                _validate: Validate,
             ) -> Result<Self, SerializationError> {
                 unimplemented!("deserialize_with_mode")
             }
@@ -214,8 +215,8 @@ impl<F: Field> FieldShare<F> for SpdzFieldShare<F> {
     }
 
     fn univariate_div_qr<'a>(
-        num: Polynomial<Self>,
-        den: Polynomial<F>,
+        num: DenseOrSparsePolynomial<Self>,
+        den: DenseOrSparsePolynomial<F>,
     ) -> Option<(DensePolynomial<Self>, DensePolynomial<Self>)> {
         let (num_sh, num_mac) = match num {
             Ok(dense) => {
@@ -262,7 +263,7 @@ pub struct SpdzGroupShare<T, M> {
     mac: AdditiveGroupShare<T, M>,
 }
 
-impl<C: ScalarTrait, G: GroupTrait<C>, M> Reveal for SpdzGroupShare<G, M> {
+impl<G: Group, M> Reveal for SpdzGroupShare<G, M> {
     type Base = G;
 
     fn reveal(self) -> G {
@@ -271,7 +272,7 @@ impl<C: ScalarTrait, G: GroupTrait<C>, M> Reveal for SpdzGroupShare<G, M> {
         let x: G = vals.iter().sum();
         let dx_t: G = {
             let mut t = x.clone();
-            t *= mac_share::<C>();
+            t *= mac_share::<G::ScalarField>();
             t - self.mac.val
         };
         let all_dx_ts: Vec<G> = Net::atomic_broadcast(&dx_t);
@@ -284,7 +285,7 @@ impl<C: ScalarTrait, G: GroupTrait<C>, M> Reveal for SpdzGroupShare<G, M> {
             sh: Reveal::from_public(f),
             mac: Reveal::from_add_shared({
                 let mut t = f;
-                t *= mac_share::<C>();
+                t *= mac_share::<G::ScalarField>();
                 t
             }),
         }
@@ -294,7 +295,7 @@ impl<C: ScalarTrait, G: GroupTrait<C>, M> Reveal for SpdzGroupShare<G, M> {
             sh: Reveal::from_add_shared(f),
             mac: Reveal::from_add_shared({
                 let mut t = f;
-                t *= mac::<C>();
+                t *= mac::<G::ScalarField>();
                 t
             }),
         }
@@ -342,10 +343,10 @@ macro_rules! impl_spdz_basics_2_param {
             }
         }
         impl<T: $bound, M> CanonicalSerialize for $share<T, M> {
-            fn serialize_with_mode<W: Write>(&self, _compress: Compress, _writer: W) -> Result<(), SerializationError> {
+            fn serialize_with_mode<W: Write>(&self, _writer: W, _compress: Compress) -> Result<(), SerializationError> {
                 unimplemented!("serialize_with_mode")
             }
-            fn serialized_size(&self) -> usize {
+            fn serialized_size(&self, _compress: Compress) -> usize {
                 unimplemented!("serialized_size")
             }
         }
@@ -364,8 +365,9 @@ macro_rules! impl_spdz_basics_2_param {
         }
         impl<T: $bound, M> CanonicalDeserialize for $share<T, M> {
             fn deserialize_with_mode<R: Read>(
-                _compress: Compress,
                 _reader: R,
+                _compress: Compress,
+                _validate: Validate,
             ) -> Result<Self, SerializationError> {
                 unimplemented!("deserialize_with_mode")
             }
@@ -386,77 +388,10 @@ macro_rules! impl_spdz_basics_2_param {
     };
 }
 
-macro_rules! impl_spdz_basics_2_param_group {
-    ($share:ident, $scalar_trait:ident, $bound:ident) => {
-        impl<C: $scalar_trait, T: $bound<C>, M> Display for $share<T, M> {
-            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-                write!(f, "{}", self.sh.val)
-            }
-        }
-        impl<C: $scalar_trait, T: $bound<C>, M> Debug for $share<T, M> {
-            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-                write!(f, "{:?}", self.sh.val)
-            }
-        }
-        impl<C: $scalar_trait, T: $bound<C>, M> ToBytes for $share<T, M> {
-            fn write_le<W: Write>(&self, _writer: W) -> io::Result<()> {
-                unimplemented!("write")
-            }
-        }
-        impl<C: $scalar_trait, T: $bound<C>, M> FromBytes for $share<T, M> {
-            fn read_le<R: Read>(_reader: R) -> io::Result<Self> {
-                unimplemented!("read")
-            }
-        }
-        impl<C: $scalar_trait, T: $bound<C>, M> CanonicalSerialize for $share<T, M> {
-            fn serialize_with_mode<W: Write>(&self, _compress: Compress, _writer: W) -> Result<(), SerializationError> {
-                unimplemented!("serialize_with_mode")
-            }
-            fn serialized_size(&self) -> usize {
-                unimplemented!("serialized_size")
-            }
-        }
-        impl<C: $scalar_trait, T: $bound<C>, M> CanonicalSerializeWithFlags for $share<T, M> {
-            fn serialize_with_flags<W: Write, F: Flags>(
-                &self,
-                _writer: W,
-                _flags: F,
-            ) -> Result<(), SerializationError> {
-                unimplemented!("serialize_with_flags")
-            }
+impl_spdz_basics_2_param!(SpdzGroupShare, Group);
 
-            fn serialized_size_with_flags<F: Flags>(&self) -> usize {
-                unimplemented!("serialized_size_with_flags")
-            }
-        }
-        impl<C: $scalar_trait, T: $bound<C>, M> CanonicalDeserialize for $share<T, M> {
-            fn deserialize_with_mode<R: Read>(
-                _compress: Compress,
-                _reader: R,
-            ) -> Result<Self, SerializationError> {
-                unimplemented!("deserialize_with_mode")
-            }
-        }
-        impl<C: $scalar_trait, T: $bound<C>, M> CanonicalDeserializeWithFlags for $share<T, M> {
-            fn deserialize_with_flags<R: Read, F: Flags>(
-                _reader: R,
-            ) -> Result<(Self, F), SerializationError> {
-                unimplemented!("deserialize_with_flags")
-            }
-        }
-        impl<C: $scalar_trait, T: $bound<C>, M> Uniform for $share<T, M> {
-            fn rand<R: Rng + ?Sized>(_rng: &mut R) -> Self {
-                todo!()
-                //Self::from_add_shared(<T as Uniform>::rand(rng))
-            }
-        }
-    };
-}
-
-impl_spdz_basics_2_param_group!(SpdzGroupShare, ScalarTrait, GroupTrait);
-
-impl<C: ScalarTrait, G: GroupTrait<C>, M: Msm<G, C>> GroupShare<C, G> for SpdzGroupShare<G, M> {
-    type FieldShare = SpdzFieldShare<C>;
+impl<G: Group, M: Msm<G, G::ScalarField>> GroupShare<G> for SpdzGroupShare<G, M> {
+    type FieldShare = SpdzFieldShare<G::ScalarField>;
 
     fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
         let (s_vals, macs): (Vec<G>, Vec<G>) =
@@ -469,7 +404,7 @@ impl<C: ScalarTrait, G: GroupTrait<C>, M: Msm<G, C>> GroupShare<C, G> for SpdzGr
             macs
             .iter()
             .zip(vals.iter())
-            .map(|(mac, val)| val.mul(&mac_share::<C>()) - mac)
+            .map(|(mac, val)| val.mul(&mac_share::<G::ScalarField>()) - mac)
             .collect();
         let all_dx_ts: Vec<Vec<G>> = Net::atomic_broadcast(&dx_ts);
         for i in 0..n {
@@ -491,7 +426,7 @@ impl<C: ScalarTrait, G: GroupTrait<C>, M: Msm<G, C>> GroupShare<C, G> for SpdzGr
         self
     }
 
-    fn scale_pub_scalar(&mut self, scalar: &C) -> &mut Self {
+    fn scale_pub_scalar(&mut self, scalar: &G::ScalarField) -> &mut Self {
         self.sh.scale_pub_scalar(scalar);
         self.mac.scale_pub_scalar(scalar);
         self
@@ -508,14 +443,14 @@ impl<C: ScalarTrait, G: GroupTrait<C>, M: Msm<G, C>> GroupShare<C, G> for SpdzGr
             self.sh.shift(other);
         }
         let mut other = other.clone();
-        other *= mac_share::<C>();
+        other *= mac_share::<G::ScalarField>();
         self.mac.val += other;
         self
     }
 
     fn multi_scale_pub_group(bases: &[G], scalars: &[Self::FieldShare]) -> Self {
-        let shares: Vec<C> = scalars.into_iter().map(|s| s.sh.val.clone()).collect();
-        let macs: Vec<C> = scalars.into_iter().map(|s| s.sh.val.clone()).collect();
+        let shares: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.sh.val.clone()).collect();
+        let macs: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.sh.val.clone()).collect();
         let sh = AdditiveGroupShare::from_add_shared(M::msm(bases, &shares));
         let mac = AdditiveGroupShare::from_add_shared(M::msm(bases, &macs));
         Self { sh, mac }

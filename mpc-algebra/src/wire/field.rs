@@ -9,7 +9,7 @@ use zeroize::Zeroize;
 use snarkvm_fields::{Field, FftField, PrimeField, Zero, One, SquareRootField};
 use snarkvm_utilities::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Flags, SerializationError, FromBytes, ToBytes, Uniform, Compress,
+    CanonicalSerializeWithFlags, Flags, SerializationError, FromBytes, ToBytes, Uniform, Compress, Validate,
 };
 use mpc_trait::MpcWire;
 
