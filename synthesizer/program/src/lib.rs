@@ -812,6 +812,10 @@ function swap:
         assert_eq!(function.input_types()[0], ValueType::ExternalRecord(Locator::from_str("eth.aleo/eth")?));
         assert_eq!(function.input_types()[1], ValueType::ExternalRecord(Locator::from_str("usdc.aleo/usdc")?));
 
+        // Ensure the input variants are correct.
+        assert_eq!(function.input_types()[0].variant(), 4);
+        assert_eq!(function.input_types()[1].variant(), 4);
+
         // Ensure there are two instructions.
         assert_eq!(function.instructions().len(), 2);
 
@@ -826,6 +830,10 @@ function swap:
         // Ensure the outputs are external records.
         assert_eq!(function.output_types()[0], ValueType::ExternalRecord(Locator::from_str("eth.aleo/eth")?));
         assert_eq!(function.output_types()[1], ValueType::ExternalRecord(Locator::from_str("usdc.aleo/usdc")?));
+
+        // Ensure the output variants are correct.
+        assert_eq!(function.output_types()[0].variant(), 4);
+        assert_eq!(function.output_types()[1].variant(), 4);
 
         Ok(())
     }
