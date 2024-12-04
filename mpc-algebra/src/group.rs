@@ -1,5 +1,4 @@
 use rand::Rng;
-use snarkvm_curves::Group;
 use snarkvm_fields::{Field, PrimeField, Zero};
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;

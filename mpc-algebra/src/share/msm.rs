@@ -1,6 +1,5 @@
 use derivative::Derivative;
 use snarkvm_curves::{AffineCurve, ProjectiveCurve};
-use snarkvm_curves::Group;
 use std::marker::PhantomData;
 
 /// Multi-scalar multiplications
@@ -11,9 +10,9 @@ pub trait Msm<G, S>: Send + Sync + 'static {
 
 #[derive(Debug, Derivative)]
 #[derivative(Default(bound = ""), Clone(bound = ""), Copy(bound = ""))]
-pub struct NaiveMsm<G: Group>(pub PhantomData<G>);
+pub struct NaiveMsm<G>(pub PhantomData<G>);
 
-impl<G: Group> Msm<G, G::ScalarField> for NaiveMsm<G> {
+impl<G> Msm<G, G::ScalarField> for NaiveMsm<G> {
     fn msm(bases: &[G], scalars: &[G::ScalarField]) -> G {
         bases
             .iter()
@@ -43,9 +42,7 @@ pub struct ProjectiveMsm<G: ProjectiveCurve>(pub PhantomData<G>);
 
 impl<G: ProjectiveCurve> Msm<G, G::ScalarField> for ProjectiveMsm<G> {
     fn msm(bases: &[G], scalars: &[G::ScalarField]) -> G {
-        bases[0].clone()
-        // TODO: implement this method.
         // let bases: Vec<G::Affine> = bases.iter().map(|s| s.clone().into()).collect();
-        // <G::Affine as AffineCurve>::multi_scalar_mul(&bases, scalars)
+        G::multi_scalar_mul(&bases, scalars)
     }
 }

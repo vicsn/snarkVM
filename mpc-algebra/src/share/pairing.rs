@@ -1,5 +1,4 @@
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
-use snarkvm_curves::Group;
 use snarkvm_fields::Field;
 
 use std::fmt::Debug;
@@ -9,8 +8,8 @@ use super::group::GroupShare;
 
 pub trait AffProjShare<
     Fr: Field,
-    A: AffineCurve<ScalarField = Fr> + Group,
-    P: ProjectiveCurve<Affine = A> + Group,
+    A: AffineCurve<ScalarField = Fr>,
+    P: ProjectiveCurve<Affine = A>,
 >
 {
     type FrShare: FieldShare<Fr>;

@@ -1,4 +1,3 @@
-use snarkvm_curves::Group;
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
 use snarkvm_utilities::{
@@ -15,7 +14,7 @@ use super::BeaverSource;
 use crate::Reveal;
 
 /// Secret sharing scheme which support affine functions of secrets.
-pub trait GroupShare<G: Group>:
+pub trait GroupShare<G>:
     Clone
     + Copy
     + Display
@@ -40,7 +39,7 @@ pub trait GroupShare<G: Group>:
         <Self as Reveal>::reveal(*self)
     }
 
-    fn map_homo<G2: Group, S2: GroupShare<G2>, Fun: Fn(G) -> G2>(self, f: Fun) -> S2 {
+    fn map_homo<G2, S2: GroupShare<G2>, Fun: Fn(G) -> G2>(self, f: Fun) -> S2 {
         S2::from_add_shared(f(self.unwrap_as_public()))
     }
 

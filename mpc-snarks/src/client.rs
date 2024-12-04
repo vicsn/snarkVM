@@ -4,7 +4,6 @@ use log::debug;
 
 use ark_bls12_377::Fr;
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
-use snarkvm_curves::Group;
 // use ark_ff::Field;
 // use ark_poly::domain::radix2::Radix2EvaluationDomain;
 use snarkvm_algorithms::fft::{EvaluationDomain, Polynomial, DensePolynomial}; //, UVPolynomial};
@@ -505,9 +504,9 @@ impl Computation {
                 let c = inputs[2];
                 let g1 = <P as PairingEngine>::G1Projective::prime_subgroup_generator();
                 let g2 = <P as PairingEngine>::G2Projective::prime_subgroup_generator();
-                let g1a = <<P as PairingEngine>::G1Projective as Group>::mul(&g1, &a);
-                let g2b = <<P as PairingEngine>::G2Projective as Group>::mul(&g2, &b);
-                let g1c = <<P as PairingEngine>::G1Projective as Group>::mul(&g1, &c);
+                let g1a = <P as PairingEngine>::G1Projective::mul(&g1, &a);
+                let g2b = <P as PairingEngine>::G2Projective::mul(&g2, &b);
+                let g1c = <P as PairingEngine>::G1Projective::mul(&g1, &c);
                 let mut gc = P::pairing(g1c, g2);
                 gc.publicize();
                 let mut gcc = P::pairing(g1a, g2b);
@@ -529,12 +528,12 @@ impl Computation {
                 let cd = c + d;
                 let g1 = <P as PairingEngine>::G1Projective::prime_subgroup_generator();
                 let g2 = <P as PairingEngine>::G2Projective::prime_subgroup_generator();
-                let g1ab = <<P as PairingEngine>::G1Projective as Group>::mul(&g1, &ab);
-                let g2cd = <<P as PairingEngine>::G2Projective as Group>::mul(&g2, &cd);
-                let g1a = <<P as PairingEngine>::G1Projective as Group>::mul(&g1, &a);
-                let g1b = <<P as PairingEngine>::G1Projective as Group>::mul(&g1, &b);
-                let g2c = <<P as PairingEngine>::G2Projective as Group>::mul(&g2, &c);
-                let g2d = <<P as PairingEngine>::G2Projective as Group>::mul(&g2, &d);
+                let g1ab = <P as PairingEngine>::G1Projective::mul(&g1, &ab);
+                let g2cd = <P as PairingEngine>::G2Projective::mul(&g2, &cd);
+                let g1a = <P as PairingEngine>::G1Projective::mul(&g1, &a);
+                let g1b = <P as PairingEngine>::G1Projective::mul(&g1, &b);
+                let g2c = <P as PairingEngine>::G2Projective::mul(&g2, &c);
+                let g2d = <P as PairingEngine>::G2Projective::mul(&g2, &d);
                 let mut gtabcd = P::pairing(g1ab, g2cd);
                 let gtac = P::pairing(g1a, g2c);
                 let gtbc = P::pairing(g1b, g2c);
@@ -560,12 +559,12 @@ impl Computation {
                 let cd = c - d;
                 let g1 = <P as PairingEngine>::G1Projective::prime_subgroup_generator();
                 let g2 = <P as PairingEngine>::G2Projective::prime_subgroup_generator();
-                let g1ab = <<P as PairingEngine>::G1Projective as Group>::mul(&g1, &ab);
-                let g2cd = <<P as PairingEngine>::G2Projective as Group>::mul(&g2, &cd);
-                let g1a = <<P as PairingEngine>::G1Projective as Group>::mul(&g1, &a);
-                let g1b = <<P as PairingEngine>::G1Projective as Group>::mul(&g1, &b);
-                let g2c = <<P as PairingEngine>::G2Projective as Group>::mul(&g2, &c);
-                let g2d = <<P as PairingEngine>::G2Projective as Group>::mul(&g2, &d);
+                let g1ab = <P as PairingEngine>::G1Projective::mul(&g1, &ab);
+                let g2cd = <P as PairingEngine>::G2Projective::mul(&g2, &cd);
+                let g1a = <P as PairingEngine>::G1Projective::mul(&g1, &a);
+                let g1b = <P as PairingEngine>::G1Projective::mul(&g1, &b);
+                let g2c = <P as PairingEngine>::G2Projective::mul(&g2, &c);
+                let g2d = <P as PairingEngine>::G2Projective::mul(&g2, &d);
                 let mut gtabcd = P::pairing(g1ab, g2cd);
                 let gtac = P::pairing(g1a, g2c);
                 let gtbc = P::pairing(g1b, g2c);
@@ -585,9 +584,9 @@ impl Computation {
         }
         outputs
     }
-    fn run_group<G: Group>(
+    fn run_group<G>(
         &self,
-        inputs: Vec<<G as Group>::ScalarField>,
+        inputs: Vec<G::ScalarField>,
         generator: G,
     ) {
         match self {
@@ -603,16 +602,16 @@ impl Computation {
                 assert_eq!(alice, bob);
             }
             Computation::Msm => {
-                let _bases: Vec<G> = (0u8..).map(|i| generator.mul(&<G as Group>::ScalarField::from(i))).take(inputs.len()).collect();
+                let _bases: Vec<G> = (0u8..).map(|i| generator.mul(&G::ScalarField::from(i))).take(inputs.len()).collect();
                 todo!()
             }
             Computation::GroupOps => {
                 let g = generator;
-                let mut r1 = (g.mul(&inputs[0]) + &g - &g).mul(&<G as Group>::ScalarField::from(4u8));
+                let mut r1 = (g.mul(&inputs[0]) + &g - &g).mul(&G::ScalarField::from(4u8));
                 r1.publicize();
                 let mut t = inputs[0];
                 t.publicize();
-                let mut r2 = g.mul(&(t * <G as Group>::ScalarField::from(4u8)));
+                let mut r2 = g.mul(&(t * G::ScalarField::from(4u8)));
                 r2.publicize();
                 assert_eq!(r1, r2);
             }
@@ -621,7 +620,7 @@ impl Computation {
     }
     fn run_gp<G: ProjectiveCurve + MpcWire>(
         &self,
-        inputs: Vec<<G as Group>::ScalarField>,
+        inputs: Vec<G::ScalarField>,
     ) -> Vec<G> {
         let outputs = match self {
             Computation::Dh => {
@@ -630,9 +629,9 @@ impl Computation {
                 let b = inputs[1];
                 let c = inputs[2];
                 let g = G::prime_subgroup_generator();
-                let ga = <G as Group>::mul(&g, &a);
-                let gb = <G as Group>::mul(&g, &b);
-                let mut gc = <G as Group>::mul(&g, &c);
+                let ga = G::mul(&g, &a);
+                let gb = G::mul(&g, &b);
+                let mut gc = G::mul(&g, &c);
                 let mut gcc = ga + gb;
                 gc.publicize();
                 gcc.publicize();

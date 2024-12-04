@@ -3,7 +3,7 @@ use log::debug;
 use rand::Rng;
 use zeroize::Zeroize;
 
-use snarkvm_curves::Group;
+use snarkvm_curves::{ProjectiveCurve, AffineCurve};
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
 use snarkvm_utilities::{
@@ -26,12 +26,13 @@ use mpc_net::{MpcNet, MpcMultiNet as Net};
 use crate::Reveal;
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum MpcGroup<G: Group, S: GroupShare<G>> {
+pub enum MpcGroup<G, S: GroupShare<G>> {
     Public(G),
     Shared(S),
 }
 
-impl_basics_2!(GroupShare, Group, MpcGroup);
+impl_basics_2!(GroupShare, ProjectiveCurve, MpcGroup);
+impl_basics_2!(GroupShare, AffineCurve, MpcGroup);
 
 #[derive(Derivative)]
 #[derivative(Default(bound = ""), Clone(bound = ""), Copy(bound = ""))]
@@ -40,7 +41,7 @@ pub struct DummyGroupTripleSource<T, S> {
     _share: PhantomData<S>,
 }
 
-impl<T: Group, S: GroupShare<T>> BeaverSource<S, S::FieldShare, S>
+impl<T, S: GroupShare<T>> BeaverSource<S, S::FieldShare, S>
     for DummyGroupTripleSource<T, S>
 {
     #[inline]
@@ -72,10 +73,12 @@ impl<T: Group, S: GroupShare<T>> BeaverSource<S, S::FieldShare, S>
     }
 }
 
-impl_ref_ops_group!(Add, AddAssign, add, add_assign, Group,GroupShare, MpcGroup);
-impl_ref_ops_group!(Sub, SubAssign, sub, sub_assign, Group,GroupShare, MpcGroup);
+impl_ref_ops_group!(Add, AddAssign, add, add_assign, ProjectiveCurve,GroupShare, MpcGroup);
+impl_ref_ops_group!(Add, AddAssign, add, add_assign, AffineCurve,GroupShare, MpcGroup);
+impl_ref_ops_group!(Sub, SubAssign, sub, sub_assign, ProjectiveCurve,GroupShare, MpcGroup);
+impl_ref_ops_group!(Sub, SubAssign, sub, sub_assign, AffineCurve,GroupShare, MpcGroup);
 
-impl<T: Group, S: GroupShare<T>> MpcWire for MpcGroup<T, S> {
+impl<T, S: GroupShare<T>> MpcWire for MpcGroup<T, S> {
     #[inline]
     fn publicize(&mut self) {
         match self {
@@ -103,7 +106,7 @@ impl<T: Group, S: GroupShare<T>> MpcWire for MpcGroup<T, S> {
     }
 }
 
-impl<T: Group, S: GroupShare<T>> Reveal for MpcGroup<T, S> {
+impl<T, S: GroupShare<T>> Reveal for MpcGroup<T, S> {
     type Base = T;
     #[inline]
     fn reveal(self) -> Self::Base {
@@ -145,7 +148,7 @@ impl<T: Group, S: GroupShare<T>> Reveal for MpcGroup<T, S> {
     }
 }
 
-impl<T: Group, S: GroupShare<T>> Mul<MpcField<T::ScalarField, S::FieldShare>> for MpcGroup<T, S> {
+impl<T, S: GroupShare<T>> Mul<MpcField<T::ScalarField, S::FieldShare>> for MpcGroup<T, S> {
     type Output = Self;
     #[inline]
     fn mul(mut self, other: MpcField<T::ScalarField, S::FieldShare>) -> Self::Output {
@@ -154,7 +157,7 @@ impl<T: Group, S: GroupShare<T>> Mul<MpcField<T::ScalarField, S::FieldShare>> fo
     }
 }
 
-impl<'a, T: Group, S: GroupShare<T>> Mul<&'a MpcField<T::ScalarField, S::FieldShare>>
+impl<'a, T, S: GroupShare<T>> Mul<&'a MpcField<T::ScalarField, S::FieldShare>>
     for MpcGroup<T, S>
 {
     type Output = Self;
@@ -164,7 +167,7 @@ impl<'a, T: Group, S: GroupShare<T>> Mul<&'a MpcField<T::ScalarField, S::FieldSh
         self
     }
 }
-impl<T: Group, S: GroupShare<T>> MulAssign<MpcField<T::ScalarField, S::FieldShare>>
+impl<T, S: GroupShare<T>> MulAssign<MpcField<T::ScalarField, S::FieldShare>>
     for MpcGroup<T, S>
 {
     #[inline]
@@ -172,7 +175,7 @@ impl<T: Group, S: GroupShare<T>> MulAssign<MpcField<T::ScalarField, S::FieldShar
         *self *= &other;
     }
 }
-impl<'a, T: Group, S: GroupShare<T>> MulAssign<&'a MpcField<T::ScalarField, S::FieldShare>>
+impl<'a, T, S: GroupShare<T>> MulAssign<&'a MpcField<T::ScalarField, S::FieldShare>>
     for MpcGroup<T, S>
 {
     #[inline]
@@ -204,7 +207,7 @@ impl<'a, T: Group, S: GroupShare<T>> MulAssign<&'a MpcField<T::ScalarField, S::F
 
 // impl<T: Group, S: GroupShare<T>> Group for MpcGroup<T, S> {
 // }
-impl<T: Group, S: GroupShare<T>> MpcGroup<T, S> {
+impl<T, S: GroupShare<T>> MpcGroup<T, S> {
     pub fn unwrap_as_public_or_add_shared(self) -> T {
         match self {
             Self::Public(p) => p,

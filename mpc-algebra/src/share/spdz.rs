@@ -3,7 +3,6 @@ use derivative::Derivative;
 use rand::Rng;
 
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
-use snarkvm_curves::Group;
 use snarkvm_fields::{Field, PrimeField};
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
@@ -268,7 +267,7 @@ pub struct SpdzGroupShare<T, M> {
     mac: AdditiveGroupShare<T, M>,
 }
 
-impl<G: Group, M> Reveal for SpdzGroupShare<G, M> {
+impl<G, M> Reveal for SpdzGroupShare<G, M> {
     type Base = G;
 
     fn reveal(self) -> G {
@@ -398,9 +397,10 @@ macro_rules! impl_spdz_basics_2_param {
     };
 }
 
-impl_spdz_basics_2_param!(SpdzGroupShare, Group);
+impl_spdz_basics_2_param!(SpdzGroupShare, ProjectiveCurve);
+impl_spdz_basics_2_param!(SpdzGroupShare, AffineCurve);
 
-impl<G: Group, M: Msm<G, G::ScalarField>> GroupShare<G> for SpdzGroupShare<G, M> {
+impl<G, M: Msm<G, G::ScalarField>> GroupShare<G> for SpdzGroupShare<G, M> {
     type FieldShare = SpdzFieldShare<G::ScalarField>;
 
     fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {

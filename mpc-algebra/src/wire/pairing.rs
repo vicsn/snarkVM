@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use snarkvm_curves::bls12_377::{G1Affine, G2Affine};
-use snarkvm_curves::{Group, PairingCurve};
+use snarkvm_curves::PairingCurve;
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
@@ -637,8 +637,8 @@ macro_rules! impl_ext_field_wrapper {
         }
     };
 }
-macro_rules! impl_pairing_curve_wrapper {
-    ($wrapped:ident, $bound1:ident, $bound2:ident, $base:ident, $share:ident, $wrap:ident) => {
+macro_rules! impl_pairing_curve_wrapper_aff {
+    ($wrapped:ident, $bound1:ident, $bound2:ident, $base:ident, $share:ident, $aff_group:ident, $base_field:ident, $base_field_share:ident, $wrap:ident) => {
         impl<E: $bound1, PS: $bound2<E>> $wrap<E, PS> {
             #[inline]
             pub fn new(t: E::$base, shared: bool) -> Self {
@@ -671,27 +671,63 @@ macro_rules! impl_pairing_curve_wrapper {
                 self.val.to_field_elements()
             }
         }
-        impl<E: $bound1, PS: $bound2<E>> Group for $wrap<E, PS> {
+        impl<E: $bound1, PS: $bound2<E>> $aff_group for $wrap<E, PS> {
             type ScalarField = MpcField<E::Fr, PS::FrShare>;
+            type BaseField = MpcField<E::$base_field, PS::$base_field_share>;
+            type Projective = $aff_group::Affine;
+            type Coordinates = $aff_group::Coordinates;
 
+            /// Returns a fixed generator of unknown exponent.
             #[must_use]
-            fn double(&self) -> Self {
-                *self + *self
-            }
-        
-            /// Sets `self := self + self`.
-            fn double_in_place(&mut self) -> &mut Self {
-                *self += self.clone();
-                self
-            }
-        
-            #[must_use]
-            fn mul<'a>(&self, other: &'a Self::ScalarField) -> Self {
-                let mut copy = *self;
-                copy *= *other;
-                copy
+            fn prime_subgroup_generator() -> Self {
+                Self {
+                    val: $wrapped::prime_subgroup_generator(),
+                }
             }
 
+            /// Multiply this element by the cofactor and output the
+            /// resulting projective element.
+            #[must_use]
+            fn mul_by_cofactor_to_projective(&self) -> Self::Projective {
+                self.val.mul_by_cofactor_to_projective()
+            }
+
+            /// Converts this element into its projective representation.
+            #[must_use]
+            fn to_projective(&self) -> Self::Projective {
+                self.val.to_projective()
+            }
+
+            /// Multiply this element by the cofactor.
+            #[must_use]
+            fn mul_by_cofactor(&self) -> Self {
+                self.mul_by_cofactor_to_projective().into()
+            }
+
+            /// Multiply this element by the inverse of the cofactor modulo the size of
+            /// `Self::ScalarField`.
+            #[must_use]
+            fn mul_by_cofactor_inv(&self) -> Self {
+                self.mul_by_cofactor_to_projective().mul_by_cofactor_inv().into()
+            }
+
+            /// Checks that the point is in the prime order subgroup given the point on the curve.
+            #[must_use]
+            fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool {
+                self.val.is_in_correct_subgroup_assuming_on_curve()
+            }
+
+            /// Returns the x-coordinate of the point.
+            #[must_use]
+            fn to_x_coordinate(&self) -> Self::BaseField {
+                self.val.to_x_coordinate()
+            }
+
+            /// Returns the y-coordinate of the point.
+            #[must_use]
+            fn to_y_coordinate(&self) -> Self::BaseField {
+                self.val.to_y_coordinate()
+            }
         }
         impl<E: $bound1, PS: $bound2<E>> Reveal for $wrap<E, PS> {
             type Base = E::$base;
@@ -767,36 +803,193 @@ macro_rules! impl_pairing_curve_wrapper {
     };
 }
 
-impl_pairing_curve_wrapper!(
+macro_rules! impl_pairing_curve_wrapper_proj {
+    ($wrapped:ident, $bound1:ident, $bound2:ident, $base:ident, $share:ident, $proj_group:ident, $base_field:ident, $base_field_share:ident, $wrap:ident) => {
+        impl<E: $bound1, PS: $bound2<E>> $wrap<E, PS> {
+            #[inline]
+            pub fn new(t: E::$base, shared: bool) -> Self {
+                Self {
+                    val: $wrapped::new(t, shared),
+                }
+            }
+            #[inline]
+            pub fn from_public(t: E::$base) -> Self {
+                Self {
+                    val: $wrapped::from_public(t),
+                }
+            }
+        }
+        impl<'de, E: $bound1, PS: $bound2<E>> Deserialize<'de> for $wrap<E, PS> {
+            #[inline]
+            fn deserialize<R: Read>(reader: R) -> io::Result<Self> {
+                unimplemented!("impl_pairing_curve_wrapper::deserialize")
+            }
+        }
+        impl<'de, E: $bound1, PS: $bound2<E>> Serialize for $wrap<E, PS> {
+            #[inline]
+            fn serialize<W: Write>(&self, writer: W) -> io::Result<()> {
+                unimplemented!("impl_pairing_curve_wrapper::serialize")
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> ToConstraintField<E::Fq> for $wrap<E, PS> {
+            #[inline]
+            fn to_field_elements(&self) -> Result<Vec<E::Fq>, ConstraintFieldError> {
+                self.val.to_field_elements()
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> $proj_group for $wrap<E, PS> {
+            type ScalarField = MpcField<E::Fr, PS::FrShare>;
+            type BaseField = MpcField<E::$base_field, PS::$base_field_share>;
+            type Affine = $proj_group::Affine;
+
+            /// Returns a fixed generator of unknown exponent.
+            #[must_use]
+            fn prime_subgroup_generator() -> Self {
+                Self {
+                    val: $wrapped::prime_subgroup_generator(),
+                }
+            }
+
+            /// Checks if the point is already "normalized" so that
+            /// cheap affine conversion is possible.
+            #[must_use]
+            fn is_normalized(&self) -> bool {
+                self.val.is_normalized()
+            }
+
+            /// Returns `self + self`.
+            #[must_use]
+            fn double(&self) -> Self {
+                Self {
+                    val: self.val.double(),
+                }
+            }
+
+            /// Converts this element into its affine representation.
+            #[must_use]
+            #[allow(clippy::wrong_self_convention)]
+            fn to_affine(&self) -> Self::Affine {
+                Self::Affine {
+                    val: self.val.to_affine(),
+                }
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> Reveal for $wrap<E, PS> {
+            type Base = E::$base;
+            #[inline]
+            fn reveal(self) -> Self::Base {
+                self.val.reveal()
+            }
+            #[inline]
+            fn from_public(t: Self::Base) -> Self {
+                Self {
+                    val: $wrapped::from_public(t),
+                }
+            }
+            #[inline]
+            fn from_add_shared(t: Self::Base) -> Self {
+                Self {
+                    val: $wrapped::from_add_shared(t),
+                }
+            }
+            #[inline]
+            fn unwrap_as_public(self) -> Self::Base {
+                self.val.unwrap_as_public()
+            }
+            #[inline]
+            fn king_share<R: Rng>(f: Self::Base, rng: &mut R) -> Self {
+                Self {
+                    val: $wrapped::king_share(f, rng),
+                }
+            }
+            #[inline]
+            fn king_share_batch<R: Rng>(f: Vec<Self::Base>, rng: &mut R) -> Vec<Self> {
+                $wrapped::king_share_batch(f, rng)
+                    .into_iter()
+                    .map(|val| Self { val })
+                    .collect()
+            }
+        }
+        impl_pairing_mpc_wrapper!($wrapped, $bound1, $bound2, $base, $share, $wrap);
+        impl<E: $bound1, PS: $bound2<E>> Mul<MpcField<E::Fr, PS::FrShare>> for $wrap<E, PS> {
+            type Output = Self;
+            #[inline]
+            fn mul(self, other: MpcField<E::Fr, PS::FrShare>) -> Self::Output {
+                Self {
+                    val: self.val.mul(other),
+                }
+            }
+        }
+        impl<'a, E: $bound1, PS: $bound2<E>> Mul<&'a MpcField<E::Fr, PS::FrShare>>
+            for $wrap<E, PS>
+        {
+            type Output = Self;
+            #[inline]
+            fn mul(self, other: &'a MpcField<E::Fr, PS::FrShare>) -> Self::Output {
+                Self {
+                    val: self.val.mul(other),
+                }
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> MulAssign<MpcField<E::Fr, PS::FrShare>> for $wrap<E, PS> {
+            #[inline]
+            fn mul_assign(&mut self, other: MpcField<E::Fr, PS::FrShare>) {
+                self.val.mul_assign(other);
+            }
+        }
+        impl<'a, E: $bound1, PS: $bound2<E>> MulAssign<&'a MpcField<E::Fr, PS::FrShare>>
+            for $wrap<E, PS>
+        {
+            #[inline]
+            fn mul_assign(&mut self, other: &'a MpcField<E::Fr, PS::FrShare>) {
+                self.val.mul_assign(other);
+            }
+        }
+    };
+}
+
+impl_pairing_curve_wrapper_aff!(
     MpcGroup,
     PairingEngine,
     PairingShare,
     G1Affine,
     G1AffineShare,
+    AffineCurve,
+    Fq,
+    FqShare,
     MpcG1Affine
 );
-impl_pairing_curve_wrapper!(
+impl_pairing_curve_wrapper_proj!(
     MpcGroup,
     PairingEngine,
     PairingShare,
     G1Projective,
     G1ProjectiveShare,
+    ProjectiveCurve,
+    Fq,
+    FqShare,
     MpcG1Projective
 );
-impl_pairing_curve_wrapper!(
+impl_pairing_curve_wrapper_aff!(
     MpcGroup,
     PairingEngine,
     PairingShare,
     G2Affine,
     G2AffineShare,
+    AffineCurve,
+    Fqe,
+    FqeShare,
     MpcG2Affine
 );
-impl_pairing_curve_wrapper!(
+impl_pairing_curve_wrapper_proj!(
     MpcGroup,
     PairingEngine,
     PairingShare,
     G2Projective,
     G2ProjectiveShare,
+    ProjectiveCurve,
+    Fqe,
+    FqeShare,
     MpcG2Projective
 );
 impl_ext_field_wrapper!(MpcField, MpcExtField);

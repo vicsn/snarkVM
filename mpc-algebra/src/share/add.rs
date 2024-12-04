@@ -3,8 +3,7 @@ use derivative::Derivative;
 use rand::Rng;
 
 use snarkvm_algorithms::fft::Polynomial as Polynomial;
-use snarkvm_curves::Group;
-use snarkvm_curves::{PairingEngine, ProjectiveCurve};
+use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::Field;
 use snarkvm_utilities::bytes::{FromBytes, ToBytes};
 use snarkvm_utilities::{
@@ -171,92 +170,98 @@ pub struct AdditiveGroupShare<T, M> {
     _phants: PhantomData<M>,
 }
 
-impl<G: Group, M> Reveal for AdditiveGroupShare<G, M> {
-    type Base = G;
-
-    fn reveal(self) -> G {
-        Net::broadcast(&self.val).into_iter().sum()
-    }
-    fn from_public(f: G) -> Self {
-        Self {
-            val: if Net::am_king() { f } else { G::zero() },
-            _phants: PhantomData::default(),
+macro_rules! impl_additive_group_share {
+    ($bound:ident) => {
+        impl<G: $bound, M> Reveal for AdditiveGroupShare<G, M> {
+            type Base = G;
+        
+            fn reveal(self) -> G {
+                Net::broadcast(&self.val).into_iter().sum()
+            }
+            fn from_public(f: G) -> Self {
+                Self {
+                    val: if Net::am_king() { f } else { G::zero() },
+                    _phants: PhantomData::default(),
+                }
+            }
+            fn from_add_shared(f: G) -> Self {
+                Self {
+                    val: f,
+                    _phants: PhantomData::default(),
+                }
+            }
+            fn unwrap_as_public(self) -> G {
+                self.val
+            }
+            fn king_share<R: Rng>(f: Self::Base, rng: &mut R) -> Self {
+                let mut r: Vec<G> = (0..(Net::n_parties()-1)).map(|_| G::rand(rng)).collect();
+                let sum_r: G = r.iter().sum();
+                r.push(f - sum_r);
+                Self::from_add_shared(Net::recv_from_king( if Net::am_king() { Some(r) } else { None }))
+            }
+            fn king_share_batch<R: Rng>(f: Vec<Self::Base>, rng: &mut R) -> Vec<Self> {
+                let mut rs: Vec<Vec<Self::Base>> =
+                    (0..(Net::n_parties()-1)).map(|_| {
+                    (0..f.len()).map(|_| {
+                        Self::Base::rand(rng)
+                    }).collect()
+                }).collect();
+                let final_shares: Vec<Self::Base> = (0..rs[0].len()).map(|i| {
+                    f[i] - &rs.iter().map(|r| &r[i]).sum()
+                }).collect();
+                rs.push(final_shares);
+                Net::recv_from_king(if Net::am_king() { Some(rs) } else {None}).into_iter().map(Self::from_add_shared).collect()
+            }
         }
-    }
-    fn from_add_shared(f: G) -> Self {
-        Self {
-            val: f,
-            _phants: PhantomData::default(),
+        impl<G: $bound, M: Msm<G, G::ScalarField>> GroupShare<G> for AdditiveGroupShare<G, M> {
+            type FieldShare = AdditiveFieldShare<G::ScalarField>;
+        
+            fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
+                let self_vec: Vec<G> = selfs.into_iter().map(|s| s.val).collect();
+                let all_vals = Net::broadcast(&self_vec);
+                (0..self_vec.len()).map(|i| all_vals.iter().map(|v| v[i]).sum()).collect()
+            }
+        
+            fn add(&mut self, other: &Self) -> &mut Self {
+                self.val += &other.val;
+                self
+            }
+        
+            fn sub(&mut self, other: &Self) -> &mut Self {
+                self.val -= &other.val;
+                self
+            }
+        
+            fn scale_pub_scalar(&mut self, scalar: &G::ScalarField) -> &mut Self {
+                self.val *= *scalar;
+                self
+            }
+        
+            fn scale_pub_group(mut base: G, scalar: &Self::FieldShare) -> Self {
+                base *= scalar.val;
+                Self {
+                    val: base,
+                    _phants: PhantomData::default(),
+                }
+            }
+        
+            fn shift(&mut self, other: &G) -> &mut Self {
+                if Net::am_king() {
+                    self.val += *other;
+                }
+                self
+            }
+        
+            fn multi_scale_pub_group(bases: &[G], scalars: &[Self::FieldShare]) -> Self {
+                let scalars: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.val.clone()).collect();
+                Self::from_add_shared(M::msm(bases, &scalars))
+            }
         }
-    }
-    fn unwrap_as_public(self) -> G {
-        self.val
-    }
-    fn king_share<R: Rng>(f: Self::Base, rng: &mut R) -> Self {
-        let mut r: Vec<G> = (0..(Net::n_parties()-1)).map(|_| G::rand(rng)).collect();
-        let sum_r: G = r.iter().sum();
-        r.push(f - sum_r);
-        Self::from_add_shared(Net::recv_from_king( if Net::am_king() { Some(r) } else { None }))
-    }
-    fn king_share_batch<R: Rng>(f: Vec<Self::Base>, rng: &mut R) -> Vec<Self> {
-        let mut rs: Vec<Vec<Self::Base>> =
-            (0..(Net::n_parties()-1)).map(|_| {
-            (0..f.len()).map(|_| {
-                Self::Base::rand(rng)
-            }).collect()
-        }).collect();
-        let final_shares: Vec<Self::Base> = (0..rs[0].len()).map(|i| {
-            f[i] - &rs.iter().map(|r| &r[i]).sum()
-        }).collect();
-        rs.push(final_shares);
-        Net::recv_from_king(if Net::am_king() { Some(rs) } else {None}).into_iter().map(Self::from_add_shared).collect()
-    }
+    };
 }
+impl_additive_group_share!(ProjectiveCurve);
+impl_additive_group_share!(AffineCurve);
 
-impl<G: Group, M: Msm<G, G::ScalarField>> GroupShare<G> for AdditiveGroupShare<G, M> {
-    type FieldShare = AdditiveFieldShare<G::ScalarField>;
-
-    fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
-        let self_vec: Vec<G> = selfs.into_iter().map(|s| s.val).collect();
-        let all_vals = Net::broadcast(&self_vec);
-        (0..self_vec.len()).map(|i| all_vals.iter().map(|v| v[i]).sum()).collect()
-    }
-
-    fn add(&mut self, other: &Self) -> &mut Self {
-        self.val += &other.val;
-        self
-    }
-
-    fn sub(&mut self, other: &Self) -> &mut Self {
-        self.val -= &other.val;
-        self
-    }
-
-    fn scale_pub_scalar(&mut self, scalar: &G::ScalarField) -> &mut Self {
-        self.val *= *scalar;
-        self
-    }
-
-    fn scale_pub_group(mut base: G, scalar: &Self::FieldShare) -> Self {
-        base *= scalar.val;
-        Self {
-            val: base,
-            _phants: PhantomData::default(),
-        }
-    }
-
-    fn shift(&mut self, other: &G) -> &mut Self {
-        if Net::am_king() {
-            self.val += *other;
-        }
-        self
-    }
-
-    fn multi_scale_pub_group(bases: &[G], scalars: &[Self::FieldShare]) -> Self {
-        let scalars: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.val.clone()).collect();
-        Self::from_add_shared(M::msm(bases, &scalars))
-    }
-}
 
 macro_rules! impl_basics {
     ($share:ident, $bound:ident) => {
@@ -402,7 +407,8 @@ macro_rules! impl_basics_2_param {
 }
 
 impl_basics!(AdditiveFieldShare, Field);
-impl_basics_2_param!(AdditiveGroupShare, Group);
+impl_basics_2_param!(AdditiveGroupShare, ProjectiveCurve);
+impl_basics_2_param!(AdditiveGroupShare, AffineCurve);
 
 #[derive(Debug, Derivative)]
 #[derivative(

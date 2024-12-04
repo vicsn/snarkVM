@@ -17,31 +17,8 @@ use std::ops::{Add, AddAssign, MulAssign};
 
 use crate::{
     templates::short_weierstrass_jacobian::{Affine as SWAffine, Projective as SWProjective},
-    traits::ShortWeierstrassParameters, Group,
+    traits::ShortWeierstrassParameters,
 };
-
-impl<M: ShortWeierstrassParameters> Group for SWAffine<M>
-{
-    type ScalarField = M::ScalarField;
-
-    #[inline]
-    fn double(&self) -> Self {
-        *self + *self
-    }
-
-    #[inline]
-    fn double_in_place(&mut self) -> &mut Self {
-        *self += self.clone();
-        self
-    }
-
-    #[inline]
-    fn mul<'a>(&self, other: &'a Self::ScalarField) -> Self {
-        let mut copy = *self;
-        copy *= *other;
-        copy
-    }
-}
 
 impl<M: ShortWeierstrassParameters> Add<SWAffine<M>> for SWAffine<M>
 {
@@ -65,30 +42,5 @@ impl<M: ShortWeierstrassParameters> MulAssign<M::ScalarField> for SWAffine<M>
 {
     fn mul_assign(&mut self, other: M::ScalarField) {
         *self = (SWProjective::from(*self) * other).into();
-    }
-}
-
-
-
-impl<M: ShortWeierstrassParameters> Group for SWProjective<M>
-{
-    type ScalarField = M::ScalarField;
-
-    #[inline]
-    fn double(&self) -> Self {
-        *self + *self
-    }
-
-    #[inline]
-    fn double_in_place(&mut self) -> &mut Self {
-        *self += self.clone();
-        self
-    }
-
-    #[inline]
-    fn mul<'a>(&self, other: &'a Self::ScalarField) -> Self {
-        let mut copy = *self;
-        copy *= *other;
-        copy
     }
 }
