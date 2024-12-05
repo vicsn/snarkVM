@@ -11,6 +11,8 @@ use snarkvm_utilities::{
     CanonicalSerializeWithFlags, Flags, SerializationError, Compress, Uniform, FromBytes, ToBytes, Validate, Valid,
 };
 
+use snarkvm_curves::bls12_377::{G1Projective, G2Projective, G1Affine, G2Affine};
+
 use std::cmp::Ord;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::Hash;
@@ -20,9 +22,9 @@ use std::marker::PhantomData;
 use mpc_net::{MpcNet, MpcMultiNet as Net};
 use crate::channel::{can_cheat, MpcSerNet};
 
-use super::add::{AdditiveFieldShare, AdditiveGroupShare, MulFieldShare};
+use super::add::{AdditiveFieldShare, AdditiveProjectiveShare, AdditiveAffineShare, MulFieldShare};
 use super::field::{DenseOrSparsePolynomial, DensePolynomial, ExtFieldShare, FieldShare};
-use super::group::GroupShare;
+use super::group::{ProjectiveGroupShare, AffineGroupShare};
 use super::msm::*;
 use super::pairing::{AffProjShare, PairingShare};
 use super::{BeaverSource, PanicBeaverSource};
@@ -258,29 +260,45 @@ impl<F: Field> FieldShare<F> for SpdzFieldShare<F> {
     Copy(bound = "T: Copy"),
     PartialEq(bound = "T: PartialEq"),
     Eq(bound = "T: Eq"),
-    PartialOrd(bound = "T: PartialOrd"),
-    Ord(bound = "T: Ord"),
+    // PartialOrd(bound = "T: PartialOrd"),
+    // Ord(bound = "T: Ord"),
     Hash(bound = "T: Hash")
 )]
-pub struct SpdzGroupShare<T, M> {
-    sh: AdditiveGroupShare<T, M>,
-    mac: AdditiveGroupShare<T, M>,
+pub struct SpdzProjectiveShare<T: ProjectiveCurve, M> {
+    sh: AdditiveProjectiveShare<T, M>,
+    mac: AdditiveProjectiveShare<T, M>,
 }
 
-impl<G, M> Reveal for SpdzGroupShare<G, M> {
+#[derive(Derivative)]
+#[derivative(
+    Default(bound = "T: Default"),
+    Clone(bound = "T: Clone"),
+    Copy(bound = "T: Copy"),
+    PartialEq(bound = "T: PartialEq"),
+    Eq(bound = "T: Eq"),
+    // PartialOrd(bound = "T: PartialOrd"),
+    // Ord(bound = "T: Ord"),
+    Hash(bound = "T: Hash")
+)]
+pub struct SpdzAffineShare<T: AffineCurve, M> {
+    sh: AdditiveAffineShare<T, M>,
+    mac: AdditiveAffineShare<T, M>,
+}
+
+impl<G: ProjectiveCurve, M> Reveal for SpdzProjectiveShare<G, M> {
     type Base = G;
 
     fn reveal(self) -> G {
         let vals: Vec<G> = Net::broadcast(&self.sh.val);
         // _Pragmatic MPC_ 6.6.2
-        let x: G = vals.iter().sum();
+        let x: G = vals.into_iter().sum();
         let dx_t: G = {
             let mut t = x.clone();
             t *= mac_share::<G::ScalarField>();
             t - self.mac.val
         };
         let all_dx_ts: Vec<G> = Net::atomic_broadcast(&dx_t);
-        let sum: G = all_dx_ts.iter().sum();
+        let sum: G = all_dx_ts.into_iter().sum();
         assert!(sum.is_zero());
         x
     }
@@ -305,10 +323,10 @@ impl<G, M> Reveal for SpdzGroupShare<G, M> {
         }
     }
     fn king_share<R: Rng>(f: Self::Base, rng: &mut R) -> Self {
-        let mut r: Vec<G> = (0..(Net::n_parties()-1)).map(|_| G::rand(rng)).collect();
-        let sum_r: G = r.iter().sum();
+        let mut r: Vec<Self::Base> = (0..(Net::n_parties()-1)).map(|_| Self::Base::rand(rng)).collect();
+        let sum_r: Self::Base = r.iter().cloned().sum();
         r.push(f - sum_r);
-        Self::from_add_shared(Net::recv_from_king( if Net::am_king() { Some(r) } else { None }))
+        Self::from_add_shared(Net::recv_from_king( if Net::am_king() { Some(r.into()) } else { None }))
     }
     fn king_share_batch<R: Rng>(f: Vec<Self::Base>, rng: &mut R) -> Vec<Self> {
         let mut rs: Vec<Vec<Self::Base>> =
@@ -318,12 +336,202 @@ impl<G, M> Reveal for SpdzGroupShare<G, M> {
             }).collect()
         }).collect();
         let final_shares: Vec<Self::Base> = (0..rs[0].len()).map(|i| {
-            f[i] - &rs.iter().map(|r| &r[i]).sum()
+            f[i] - rs.iter().map(|r| r[i]).sum::<Self::Base>()
         }).collect();
         rs.push(final_shares);
         Net::recv_from_king(if Net::am_king() { Some(rs) } else {None}).into_iter().map(Self::from_add_shared).collect()
     }
 }
+
+impl<G: ProjectiveCurve, M: Msm<G, G::ScalarField>> ProjectiveGroupShare<G> for SpdzProjectiveShare<G, M> {
+    type FieldShare = SpdzFieldShare<G::ScalarField>;
+
+    fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
+        let (s_vals, macs): (Vec<G>, Vec<G>) =
+            selfs.into_iter().map(|s| (s.sh.val, s.mac.val)).unzip();
+        let n = s_vals.len();
+        let all_vals = Net::broadcast(&s_vals);
+        let vals: Vec<G> =
+            (0..n).map(|i| all_vals.iter().map(|v| v[i]).sum()).collect();
+        let dx_ts: Vec<G> =
+            macs
+            .iter()
+            .zip(vals.iter())
+            .map(|(mac, val)| val.mul(&mac_share::<G::ScalarField>()) - *mac)
+            .collect();
+        let all_dx_ts: Vec<Vec<G>> = Net::atomic_broadcast(&dx_ts);
+        for i in 0..n {
+            let sum: G = all_dx_ts.iter().map(|dx_ts| dx_ts[i]).sum();
+            assert!(sum.is_zero());
+        }
+        vals
+    }
+
+    fn add(&mut self, other: &Self) -> &mut Self {
+        self.sh.add(&other.sh);
+        self.mac.add(&other.mac);
+        self
+    }
+
+    fn sub(&mut self, other: &Self) -> &mut Self {
+        self.sh.sub(&other.sh);
+        self.mac.sub(&other.mac);
+        self
+    }
+
+    fn scale_pub_scalar(&mut self, scalar: &G::ScalarField) -> &mut Self {
+        self.sh.scale_pub_scalar(scalar);
+        self.mac.scale_pub_scalar(scalar);
+        self
+    }
+
+    fn scale_pub_group(base: G, scalar: &Self::FieldShare) -> Self {
+        let sh = AdditiveProjectiveShare::scale_pub_group(base, &scalar.sh);
+        let mac = AdditiveProjectiveShare::scale_pub_group(base, &scalar.mac);
+        Self { sh, mac }
+    }
+
+    fn shift(&mut self, other: &G) -> &mut Self {
+        if Net::am_king() {
+            self.sh.shift(other);
+        }
+        let mut other = other.clone();
+        other *= mac_share::<G::ScalarField>();
+        self.mac.val += other;
+        self
+    }
+
+    fn multi_scale_pub_group(bases: &[G], scalars: &[Self::FieldShare]) -> Self {
+        let shares: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.sh.val.clone()).collect();
+        let macs: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.sh.val.clone()).collect();
+        let sh = AdditiveProjectiveShare::from_add_shared(M::msm(bases, &shares));
+        let mac = AdditiveProjectiveShare::from_add_shared(M::msm(bases, &macs));
+        Self { sh, mac }
+    }
+}
+impl<G: AffineCurve, M> Reveal for SpdzAffineShare<G, M> {
+    type Base = G;
+
+    fn reveal(self) -> G {
+        let vals: Vec<G> = Net::broadcast(&self.sh.val);
+        // _Pragmatic MPC_ 6.6.2
+        let x: <G as AffineCurve>::Projective = vals.iter().map(|&v|Into::<<G as AffineCurve>::Projective>::into(v)).sum();
+        let dx_t: <G as AffineCurve>::Projective = {
+            let mut t = x.clone();
+            t *= mac_share::<G::ScalarField>();
+            t - Into::<<G as AffineCurve>::Projective>::into(self.mac.val)
+        };
+        let all_dx_ts: Vec<<G as AffineCurve>::Projective> = Net::atomic_broadcast(&dx_t);
+        let sum: G = all_dx_ts.into_iter().sum<<G as AffineCurve>::Projective>().into();
+        assert!(sum.is_zero());
+        x
+    }
+    fn from_public(f: G) -> Self {
+        Self {
+            sh: Reveal::from_public(f),
+            mac: Reveal::from_add_shared({
+                (f * mac_share::<G::ScalarField>()).into()
+            }),
+        }
+    }
+    fn from_add_shared(f: G) -> Self {
+        Self {
+            sh: Reveal::from_add_shared(f),
+            mac: Reveal::from_add_shared({
+                (f * mac::<G::ScalarField>()).into()
+            }),
+        }
+    }
+    fn king_share<R: Rng>(f: Self::Base, rng: &mut R) -> Self {
+        let mut r: Vec<<G as AffineCurve>::Projective> = (0..(Net::n_parties()-1)).map(|_| <G as AffineCurve>::Projective::rand(rng)).collect();
+        let sum_r: <G as AffineCurve>::Projective = r.iter().cloned().sum();
+        r.push(f.into() - sum_r);
+        // Convert to Affine
+        let r = r.into_iter().map(Into::into).collect();
+        Self::from_add_shared(Net::recv_from_king( if Net::am_king() { Some(r) } else { None }))
+    }
+    fn king_share_batch<R: Rng>(f: Vec<Self::Base>, rng: &mut R) -> Vec<Self> {
+        let mut rs: Vec<Vec<<G as AffineCurve>::Projective>> =
+            (0..(Net::n_parties()-1)).map(|_| {
+            (0..f.len()).map(|_| {
+                <G as AffineCurve>::Projective::rand(rng)
+            }).collect()
+        }).collect();
+        let final_shares: Vec<<G as AffineCurve>::Projective> = (0..rs[0].len()).map(|i| {
+            f[i].into() - rs.iter().map(|r| r[i]).sum::<<G as AffineCurve>::Projective>()
+        }).collect();
+        rs.push(final_shares);
+        // Convert to Affine
+        let rs = rs.into_iter().map(|r| r.into_iter().map(Into::into).collect()).collect();
+        Net::recv_from_king(if Net::am_king() { Some(rs) } else {None}).into_iter().map(Self::from_add_shared).collect()
+    }
+}
+
+impl<G: AffineCurve, M: Msm<G, G::ScalarField>> AffineGroupShare<G> for SpdzAffineShare<G, M> {
+    type FieldShare = SpdzFieldShare<G::ScalarField>;
+
+    fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
+        let (s_vals, macs): (Vec<<G as AffineCurve>::Projective>, Vec<<G as AffineCurve>::Projective>) =
+            selfs.into_iter().map(|s| (s.sh.val.into(), s.mac.val.into())).unzip();
+        let n = s_vals.len();
+        let all_vals = Net::broadcast(&s_vals);
+        let vals: Vec<G> =
+            (0..n).map(|i| all_vals.iter().map(|v| v[i]).sum().into()).collect();
+        let dx_ts: Vec<<G as AffineCurve>::Projective> =
+            macs
+            .iter()
+            .zip(vals.iter())
+            .map(|(mac, val)| val.mul(&mac_share::<G::ScalarField>()) - *mac)
+            .collect();
+        let all_dx_ts: Vec<Vec<<G as AffineCurve>::Projective>> = Net::atomic_broadcast(&dx_ts);
+        for i in 0..n {
+            let sum: G = all_dx_ts.iter().map(|dx_ts| dx_ts[i]).sum().into();
+            assert!(sum.is_zero());
+        }
+        vals
+    }
+
+    fn add(&mut self, other: &Self) -> &mut Self {
+        self.sh.add(&other.sh);
+        self.mac.add(&other.mac);
+        self
+    }
+
+    fn sub(&mut self, other: &Self) -> &mut Self {
+        self.sh.sub(&other.sh);
+        self.mac.sub(&other.mac);
+        self
+    }
+
+    fn scale_pub_scalar(&mut self, scalar: &G::ScalarField) -> &mut Self {
+        self.sh.scale_pub_scalar(scalar);
+        self.mac.scale_pub_scalar(scalar);
+        self
+    }
+
+    fn scale_pub_group(base: G, scalar: &Self::FieldShare) -> Self {
+        let sh = AdditiveAffineShare::scale_pub_group(base, &scalar.sh);
+        let mac = AdditiveAffineShare::scale_pub_group(base, &scalar.mac);
+        Self { sh, mac }
+    }
+
+    fn shift(&mut self, other: &G) -> &mut Self {
+        if Net::am_king() {
+            self.sh.shift(other);
+        }
+        self.mac.val = Into::<G>::into(self.mac.val.into() + (*other * mac_share::<G::ScalarField>()));
+        self
+    }
+
+    fn multi_scale_pub_group(bases: &[G], scalars: &[Self::FieldShare]) -> Self {
+        let shares: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.sh.val.clone()).collect();
+        let macs: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.sh.val.clone()).collect();
+        let sh = AdditiveAffineShare::from_add_shared(M::msm(bases, &shares));
+        let mac = AdditiveAffineShare::from_add_shared(M::msm(bases, &macs));
+        Self { sh, mac }
+    }
+}
+
 macro_rules! impl_spdz_basics_2_param {
     ($share:ident, $bound:ident) => {
         impl<T: $bound, M> Display for $share<T, M> {
@@ -397,76 +605,8 @@ macro_rules! impl_spdz_basics_2_param {
     };
 }
 
-impl_spdz_basics_2_param!(SpdzGroupShare, ProjectiveCurve);
-impl_spdz_basics_2_param!(SpdzGroupShare, AffineCurve);
-
-impl<G, M: Msm<G, G::ScalarField>> GroupShare<G> for SpdzGroupShare<G, M> {
-    type FieldShare = SpdzFieldShare<G::ScalarField>;
-
-    fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
-        let (s_vals, macs): (Vec<G>, Vec<G>) =
-            selfs.into_iter().map(|s| (s.sh.val, s.mac.val)).unzip();
-        let n = s_vals.len();
-        let all_vals = Net::broadcast(&s_vals);
-        let vals: Vec<G> =
-            (0..n).map(|i| all_vals.iter().map(|v| v[i]).sum()).collect();
-        let dx_ts: Vec<G> =
-            macs
-            .iter()
-            .zip(vals.iter())
-            .map(|(mac, val)| val.mul(&mac_share::<G::ScalarField>()) - *mac)
-            .collect();
-        let all_dx_ts: Vec<Vec<G>> = Net::atomic_broadcast(&dx_ts);
-        for i in 0..n {
-            let sum: G = all_dx_ts.iter().map(|dx_ts| dx_ts[i]).sum();
-            assert!(sum.is_zero());
-        }
-        vals
-    }
-
-    fn add(&mut self, other: &Self) -> &mut Self {
-        self.sh.add(&other.sh);
-        self.mac.add(&other.mac);
-        self
-    }
-
-    fn sub(&mut self, other: &Self) -> &mut Self {
-        self.sh.sub(&other.sh);
-        self.mac.sub(&other.mac);
-        self
-    }
-
-    fn scale_pub_scalar(&mut self, scalar: &G::ScalarField) -> &mut Self {
-        self.sh.scale_pub_scalar(scalar);
-        self.mac.scale_pub_scalar(scalar);
-        self
-    }
-
-    fn scale_pub_group(base: G, scalar: &Self::FieldShare) -> Self {
-        let sh = AdditiveGroupShare::scale_pub_group(base, &scalar.sh);
-        let mac = AdditiveGroupShare::scale_pub_group(base, &scalar.mac);
-        Self { sh, mac }
-    }
-
-    fn shift(&mut self, other: &G) -> &mut Self {
-        if Net::am_king() {
-            self.sh.shift(other);
-        }
-        let mut other = other.clone();
-        other *= mac_share::<G::ScalarField>();
-        self.mac.val += other;
-        self
-    }
-
-    fn multi_scale_pub_group(bases: &[G], scalars: &[Self::FieldShare]) -> Self {
-        let shares: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.sh.val.clone()).collect();
-        let macs: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.sh.val.clone()).collect();
-        let sh = AdditiveGroupShare::from_add_shared(M::msm(bases, &shares));
-        let mac = AdditiveGroupShare::from_add_shared(M::msm(bases, &macs));
-        Self { sh, mac }
-    }
-}
-
+impl_spdz_basics_2_param!(SpdzProjectiveShare, ProjectiveCurve);
+impl_spdz_basics_2_param!(SpdzAffineShare, AffineCurve);
 #[derive(Derivative)]
 #[derivative(
     Clone(bound = "T: Clone"),
@@ -599,18 +739,18 @@ macro_rules! groups_share {
 
         impl<E: PairingEngine> AffProjShare<E::Fr, E::$affine, E::$proj> for $struct_name<E> {
             type FrShare = SpdzFieldShare<E::Fr>;
-            type AffineShare = SpdzGroupShare<E::$affine, AffineMsm<E::$affine>>;
-            type ProjectiveShare = SpdzGroupShare<E::$proj, ProjectiveMsm<E::$proj>>;
+            type AffineShare = SpdzAffineShare<E::$affine, AffineMsm<E::$affine>>;
+            type ProjectiveShare = SpdzProjectiveShare<E::$proj, ProjectiveMsm<E::$proj>>;
 
             fn sh_aff_to_proj(g: Self::AffineShare) -> Self::ProjectiveShare {
-                SpdzGroupShare {
+                SpdzProjectiveShare {
                     sh: g.sh.map_homo(|s| s.into()),
                     mac: g.mac.map_homo(|s| s.into()),
                 }
             }
 
             fn sh_proj_to_aff(g: Self::ProjectiveShare) -> Self::AffineShare {
-                SpdzGroupShare {
+                SpdzAffineShare {
                     sh: g.sh.map_homo(|s| s.into()),
                     mac: g.mac.map_homo(|s| s.into()),
                 }
@@ -631,7 +771,7 @@ macro_rules! groups_share {
                 if Net::am_king() {
                     a.sh.val.add_assign_mixed(&o);
                 }
-                a.mac.val += &o.scalar_mul(mac_share::<E::Fr>());
+                a.mac.val += &Into::<$proj>::into(o).scalar_mul(mac_share::<E::Fr>());
                 a
             }
             fn add_pub_proj_sh_aff(_a: &E::$proj, _o: Self::AffineShare) -> Self::ProjectiveShare {
@@ -649,9 +789,15 @@ groups_share!(SpdzG2Share, G2Affine, G2Projective);
     Default(bound = ""),
     Clone(bound = ""),
     Copy(bound = ""),
-    PartialEq(bound = "E::G1Affine: PartialEq"),
-    Eq(bound = "E::G1Affine: Eq"),
-    Hash(bound = "E::G1Affine: Hash")
+    PartialEq(
+        bound = "E::G1Affine: PartialEq<E::G1Projective>, E::G1Projective: PartialEq<E::G1Affine>"
+    ),
+    Eq(
+        bound = "E::G1Affine: Eq, E::G1Projective: Eq"
+    ),
+    Hash(
+        bound = "E::G1Affine: Hash, E::G1Projective: Hash"
+    )
 )]
 pub struct SpdzPairingShare<E: PairingEngine>(pub PhantomData<E>);
 
@@ -661,12 +807,12 @@ impl<E: PairingEngine> PairingShare<E> for SpdzPairingShare<E> {
     type FqeShare = SpdzExtFieldShare<E::Fqe>;
     // Not a typo. We want a multiplicative subgroup.
     type FqkShare = SpdzMulExtFieldShare<E::Fqk, E::Fr>;
-    type G1AffineShare = SpdzGroupShare<E::G1Affine, AffineMsm<E::G1Affine>>;
-    type G2AffineShare = SpdzGroupShare<E::G2Affine, AffineMsm<E::G2Affine>>;
+    type G1AffineShare = SpdzAffineShare<E::G1Affine, AffineMsm<E::G1Affine>>;
+    type G2AffineShare = SpdzAffineShare<E::G2Affine, AffineMsm<E::G2Affine>>;
     type G1ProjectiveShare =
-        SpdzGroupShare<E::G1Projective, ProjectiveMsm<E::G1Projective>>;
+        SpdzProjectiveShare<E::G1Projective, ProjectiveMsm<E::G1Projective>>;
     type G2ProjectiveShare =
-        SpdzGroupShare<E::G2Projective, ProjectiveMsm<E::G2Projective>>;
+        SpdzProjectiveShare<E::G2Projective, ProjectiveMsm<E::G2Projective>>;
     type G1 = SpdzG1Share<E>;
     type G2 = SpdzG2Share<E>;
 }

@@ -39,7 +39,7 @@ arg_enum! {
         Merkle,
         Fri,
         Dh,
-        NaiveMsm,
+        // NaiveMsm,
         GroupOps,
         PairingDh,
         PairingProd,
@@ -113,7 +113,8 @@ impl Opt {
                     ComputationDomain::G1
                 }
             }
-            Computation::NaiveMsm | Computation::GroupOps => {
+            // Computation::NaiveMsm | 
+            Computation::GroupOps => {
                 ComputationDomain::Group
             }
             Computation::PairingDh | Computation::PairingProd | Computation::PairingDiv => {

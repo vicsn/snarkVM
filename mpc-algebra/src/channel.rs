@@ -1,3 +1,4 @@
+use snarkvm_utilities::{Compress, Validate};
 use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize};
 use digest::Digest;
 use rand::RngCore;
@@ -12,22 +13,22 @@ pub trait MpcSerNet: MpcNet {
     #[inline]
     fn broadcast<T: CanonicalDeserialize + CanonicalSerialize>(out: &T) -> Vec<T> {
         let mut bytes_out = Vec::new();
-        out.serialize(&mut bytes_out).unwrap();
+        out.serialize_with_mode(&mut bytes_out, Compress::No).unwrap();
         let bytes_in = Self::broadcast_bytes(&bytes_out);
         bytes_in
             .into_iter()
-            .map(|b| T::deserialize(&b[..]).unwrap())
+            .map(|b| T::deserialize_with_mode(&b[..], Compress::No, Validate::No).unwrap())
             .collect()
     }
 
     #[inline]
     fn send_to_king<T: CanonicalDeserialize + CanonicalSerialize>(out: &T) -> Option<Vec<T>> {
         let mut bytes_out = Vec::new();
-        out.serialize(&mut bytes_out).unwrap();
+        out.serialize_with_mode(&mut bytes_out, Compress::No).unwrap();
         Self::send_bytes_to_king(&bytes_out).map(|bytes_in| {
             bytes_in
                 .into_iter()
-                .map(|b| T::deserialize(&b[..]).unwrap())
+                .map(|b| T::deserialize_with_mode(&b[..], Compress::No, Validate::No).unwrap())
                 .collect()
         })
     }
@@ -38,18 +39,18 @@ pub trait MpcSerNet: MpcNet {
             outs.iter()
                 .map(|out| {
                     let mut bytes_out = Vec::new();
-                    out.serialize(&mut bytes_out).unwrap();
+                    out.serialize_with_mode(&mut bytes_out, Compress::No).unwrap();
                     bytes_out
                 })
                 .collect()
         }));
-        T::deserialize(&bytes_in[..]).unwrap()
+        T::deserialize_with_mode(&bytes_in[..], Compress::No, Validate::No).unwrap()
     }
 
     #[inline]
     fn atomic_broadcast<T: CanonicalDeserialize + CanonicalSerialize>(out: &T) -> Vec<T> {
         let mut bytes_out = Vec::new();
-        out.serialize(&mut bytes_out).unwrap();
+        out.serialize_with_mode(&mut bytes_out, Compress::No).unwrap();
         let ser_len = bytes_out.len();
         bytes_out.resize(ser_len + COMMIT_RAND_BYTES, 0);
         rand::thread_rng().fill_bytes(&mut bytes_out[ser_len..]);
@@ -70,7 +71,7 @@ pub trait MpcSerNet: MpcNet {
         }
         all_data
             .into_iter()
-            .map(|d| T::deserialize(&d[..ser_len]).unwrap())
+            .map(|d| T::deserialize_with_mode(&d[..ser_len], Compress::No, Validate::No).unwrap())
             .collect()
     }
 
@@ -94,9 +95,9 @@ type CommitHash = Sha256;
 #[inline]
 pub fn exchange<F: CanonicalSerialize + CanonicalDeserialize>(f: &F) -> F {
     let mut bytes_out = Vec::new();
-    f.serialize(&mut bytes_out).unwrap();
+    f.serialize_with_mode(&mut bytes_out, Compress::No).unwrap();
     let bytes_in = net_two::exchange_bytes(&bytes_out).unwrap();
-    F::deserialize(&bytes_in[..]).unwrap()
+    F::deserialize_with_mode(&bytes_in[..], Compress::No, Validate::No).unwrap()
 }
 
 #[inline]
@@ -106,7 +107,7 @@ pub fn exchange<F: CanonicalSerialize + CanonicalDeserialize>(f: &F) -> F {
 /// other.
 pub fn atomic_exchange<F: CanonicalSerialize + CanonicalDeserialize>(f: &F) -> F {
     let mut bytes_out = Vec::new();
-    f.serialize(&mut bytes_out).unwrap();
+    f.serialize_with_mode(&mut bytes_out, Compress::No).unwrap();
     let ser_len = bytes_out.len();
     bytes_out.resize(ser_len + COMMIT_RAND_BYTES, 0);
     rand::thread_rng().fill_bytes(&mut bytes_out[ser_len..]);
@@ -121,7 +122,7 @@ pub fn atomic_exchange<F: CanonicalSerialize + CanonicalDeserialize>(f: &F) -> F
         &CommitHash::new().chain(&other_bytes).finalize()[..]
     );
     // parse data
-    F::deserialize(&other_bytes[..ser_len]).unwrap()
+    F::deserialize_with_mode(&other_bytes[..ser_len], Compress::No, Validate::No).unwrap()
 }
 
 #[inline]

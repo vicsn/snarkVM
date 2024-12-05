@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Deserializer, Serializer};
 use snarkvm_curves::bls12_377::{G1Affine, G2Affine};
 use snarkvm_curves::PairingCurve;
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
@@ -14,7 +14,7 @@ use std::io::{self, Read, Write};
 use aleo_std::{end_timer, start_timer};
 use core::ops::*;
 use derivative::Derivative;
-use rand::Rng;
+use rand::{Rng, distributions::{Distribution, Standard}};
 use std::cmp::Ord;
 use std::default::Default;
 use std::fmt::{self, Debug, Display, Formatter};
@@ -26,11 +26,11 @@ use zeroize::Zeroize;
 use mpc_trait::MpcWire;
 
 use super::super::share::field::ExtFieldShare;
-use super::super::share::group::GroupShare;
+// use super::super::share::group::GroupShare;
 use super::super::share::pairing::{AffProjShare, PairingShare};
 use super::super::share::BeaverSource;
 use super::field::MpcField;
-use super::group::MpcGroup;
+use super::group::{MpcProjectiveGroup, MpcAffineGroup};
 use crate::Reveal;
 
 #[derive(Derivative)]
@@ -69,24 +69,36 @@ impl<E: PairingEngine, S: PairingShare<E>>
 #[derivative(
     Clone(bound = ""),
     Copy(bound = ""),
-    PartialEq(bound = "E::G1Affine: PartialEq"),
+    PartialEq(bound = "E::G1Affine: PartialEq<E::G1Projective>"),
     Eq(bound = "E::G1Affine: Eq"),
     Hash(bound = "E::G1Affine: Hash")
 )]
 pub struct MpcG1Affine<E: PairingEngine, PS: PairingShare<E>> {
-    pub val: MpcGroup<E::G1Affine, PS::G1AffineShare>,
+    pub val: MpcAffineGroup<E::G1Affine, PS::G1AffineShare>,
+}
+
+impl<E: PairingEngine, PS: PairingShare<E>> PartialEq<MpcG1Projective<E, PS>> for MpcG1Affine<E, PS> {
+    fn eq(&self, other: &MpcG1Projective<E, PS>) -> bool {
+        self.val == other.val
+    }
 }
 
 #[derive(Debug, Derivative)]
 #[derivative(
     Clone(bound = ""),
     Copy(bound = ""),
-    PartialEq(bound = "E::G1Affine: PartialEq"),
-    Eq(bound = "E::G1Affine: Eq"),
-    Hash(bound = "E::G1Affine: Hash")
+    PartialEq(bound = "E::G1Projective: PartialEq<E::G1Affine>"),
+    Eq(bound = "E::G1Projective: Eq"),
+    Hash(bound = "E::G1Projective: Hash")
 )]
 pub struct MpcG1Projective<E: PairingEngine, PS: PairingShare<E>> {
-    pub val: MpcGroup<E::G1Projective, PS::G1ProjectiveShare>,
+    pub val: MpcProjectiveGroup<E::G1Projective, PS::G1ProjectiveShare>,
+}
+
+impl<E: PairingEngine, PS: PairingShare<E>> PartialEq<MpcG1Affine<E, PS>> for MpcG1Projective<E, PS> {
+    fn eq(&self, other: &MpcG1Affine<E, PS>) -> bool {
+        self.val == other.val
+    }
 }
 
 #[derive(Debug, Derivative)]
@@ -100,24 +112,36 @@ pub struct MpcG1Prep<E: PairingEngine, PS: PairingShare<E>> {
 #[derivative(
     Clone(bound = ""),
     Copy(bound = ""),
-    PartialEq(bound = "E::G1Affine: PartialEq"),
-    Eq(bound = "E::G1Affine: Eq"),
-    Hash(bound = "E::G1Affine: Hash")
+    PartialEq(bound = "E::G2Affine: PartialEq<E::G2Projective>"),
+    Eq(bound = "E::G2Affine: Eq"),
+    Hash(bound = "E::G2Affine: Hash")
 )]
 pub struct MpcG2Affine<E: PairingEngine, PS: PairingShare<E>> {
-    pub val: MpcGroup<E::G2Affine, PS::G2AffineShare>,
+    pub val: MpcAffineGroup<E::G2Affine, PS::G2AffineShare>,
+}
+
+impl<E: PairingEngine, PS: PairingShare<E>> PartialEq<MpcG2Projective<E, PS>> for MpcG2Affine<E, PS> {
+    fn eq(&self, other: &MpcG2Projective<E, PS>) -> bool {
+        self.val == other.val
+    }
 }
 
 #[derive(Debug, Derivative)]
 #[derivative(
     Clone(bound = ""),
     Copy(bound = ""),
-    PartialEq(bound = "E::G1Affine: PartialEq"),
-    Eq(bound = "E::G1Affine: Eq"),
-    Hash(bound = "E::G1Affine: Hash")
+    PartialEq(bound = "E::G2Projective: PartialEq<E::G2Affine>"),
+    Eq(bound = "E::G2Projective: Eq"),
+    Hash(bound = "E::G2Projective: Hash")
 )]
 pub struct MpcG2Projective<E: PairingEngine, PS: PairingShare<E>> {
-    pub val: MpcGroup<E::G2Projective, PS::G2ProjectiveShare>,
+    pub val: MpcProjectiveGroup<E::G2Projective, PS::G2ProjectiveShare>,
+}
+
+impl<E: PairingEngine, PS: PairingShare<E>> PartialEq<MpcG2Affine<E, PS>> for MpcG2Projective<E, PS> {
+    fn eq(&self, other: &MpcG2Affine<E, PS>) -> bool {
+        self.val == other.val
+    }
 }
 
 #[derive(Debug, Derivative)]
@@ -189,6 +213,7 @@ pub struct MpcPairingEngine<E: PairingEngine, PS: PairingShare<E>> {
 impl<E: PairingEngine, PS: PairingShare<E>> PairingEngine for MpcPairingEngine<E, PS> 
 where 
     <E::Fr as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
+
     MpcG1Affine<E, PS>: PairingCurve<
             BaseField = MpcField<E::Fq, PS::FqShare>,
             ScalarField = MpcField<E::Fr, PS::FrShare>,
@@ -196,7 +221,7 @@ where
             PairWith = MpcG2Affine<E, PS>,
             Prepared = MpcG1Prep<E, PS>,
             PairingResult = MpcExtField<E::Fqk, PS::FqkShare>,
-        >,
+        > + ToConstraintField<MpcField<E::Fq, PS::FqShare>>,
     MpcG2Affine<E, PS>: PairingCurve<
             BaseField = MpcExtField<E::Fqe, PS::FqeShare>,
             ScalarField = MpcField<E::Fr, PS::FrShare>,
@@ -204,7 +229,7 @@ where
             PairWith = MpcG1Affine<E, PS>,
             Prepared = MpcG2Prep<E, PS>,
             PairingResult = MpcExtField<E::Fqk, PS::FqkShare>,
-        >,
+        > + ToConstraintField<MpcField<E::Fq, PS::FqShare>>,
 {
     type Fr = MpcField<E::Fr, PS::FrShare>;
     type Fq = MpcField<E::Fq, PS::FqShare>;
@@ -217,7 +242,8 @@ where
 
     fn miller_loop<'a, I>(_i: I) -> Self::Fqk
     where
-        I: IntoIterator<Item = &'a (Self::G1Prepared, Self::G2Prepared)>,
+        I: (&'a <Self::G1Affine as PairingCurve>::Prepared, &'a <Self::G2Affine as PairingCurve>::Prepared),
+        // I: IntoIterator<Item = &'a (<Self::G1Affine as PairingCurve>::Prepared, <Self::G2Affine as PairingCurve>::Prepared)>,
     {
         unimplemented!("miller_loop")
         // <Bls12_377 as PairingEngine>::miller_loop(i)
@@ -226,17 +252,6 @@ where
     fn final_exponentiation(_f: &Self::Fqk) -> Option<Self::Fqk> {
         unimplemented!("final_exponentiation")
         // <Bls12_377 as PairingEngine>::final_exponentiation(f)
-    }
-
-    /// Computes a product of pairings.
-    #[must_use]
-    fn product_of_pairings<'a, I>(_i: I) -> Self::Fqk
-    where
-        I: IntoIterator<Item = &'a (Self::G1Prepared, Self::G2Prepared)>,
-    {
-        // TODO: MPC!
-        // <Bls12_377 as PairingEngine>::product_of_pairings(i)
-        unimplemented!("pairing product")
     }
 
     /// Performs multiple pairing operations
@@ -349,6 +364,12 @@ macro_rules! impl_pairing_mpc_wrapper {
                 }
             }
         }
+        // impl<E: $bound1, PS: $bound2<E>> Distribution<$wrap<E, PS>> for Standard {
+        //     #[inline]
+        //     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> $wrap<E, PS> {
+        //         $wrap::rand(rng)
+        //     }
+        // }
         // impl<E: $bound1, PS: $bound2<E>> PubUniform for $wrap<E, PS> {
         //     fn pub_rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
         //         Self {
@@ -429,13 +450,13 @@ macro_rules! impl_ext_field_wrapper {
     ($wrapped:ident, $wrap:ident) => {
         impl<'a, E: Field, PS: ExtFieldShare<E>> Deserialize<'a> for $wrap<E, PS> {
             #[inline]
-            fn deserialize<R: Read>(reader: R) -> io::Result<Self> {
+            fn deserialize<D: Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
                 unimplemented!("deserialize");
             }
         }
         impl<E: Field, PS: ExtFieldShare<E>> Serialize for $wrap<E, PS> {
             #[inline]
-            fn serialize<W: Write>(&self, writer: W) -> io::Result<()> {
+            fn serialize<SS: Serializer>(&self, serializer: SS) -> Result<SS::Ok, SS::Error> {
                 unimplemented!("serialize");
             }
         }
@@ -451,11 +472,11 @@ macro_rules! impl_ext_field_wrapper {
         }
         impl<E: Field, PS: ExtFieldShare<E>> FromBits for $wrap<E, PS> {
             #[inline]
-            fn from_bits_le(bits: &[bool]) -> Self {
+            fn from_bits_le(bits: &[bool]) -> snarkvm_console::prelude::Result<Self> {
                 unimplemented!("from_bits_le")
             }
             #[inline]
-            fn from_bits_be(bits: &[bool]) -> Self {
+            fn from_bits_be(bits: &[bool]) -> snarkvm_console::prelude::Result<Self> {
                 unimplemented!("from_bits_be")
             }
         }
@@ -473,7 +494,9 @@ macro_rules! impl_ext_field_wrapper {
                 Self::wrap($wrapped::from_public(t))
             }
         }
+
         impl_pairing_mpc_wrapper!($wrapped, Field, ExtFieldShare, BasePrimeField, Ext, $wrap);
+    
         impl<'a, E: Field, PS: ExtFieldShare<E>> MulAssign<&'a $wrap<E, PS>> for $wrap<E, PS> {
             #[inline]
             fn mul_assign(&mut self, other: &Self) {
@@ -638,7 +661,7 @@ macro_rules! impl_ext_field_wrapper {
     };
 }
 macro_rules! impl_pairing_curve_wrapper_aff {
-    ($wrapped:ident, $bound1:ident, $bound2:ident, $base:ident, $share:ident, $aff_group:ident, $base_field:ident, $base_field_share:ident, $wrap:ident) => {
+    ($wrapped:ident, $bound1:ident, $bound2:ident, $base:ident, $share:ident, $aff_group:ident, $base_field:ident, $base_field_share:ident, $wrap:ident, $proj_wrap:ident) => {
         impl<E: $bound1, PS: $bound2<E>> $wrap<E, PS> {
             #[inline]
             pub fn new(t: E::$base, shared: bool) -> Self {
@@ -655,80 +678,159 @@ macro_rules! impl_pairing_curve_wrapper_aff {
         }
         impl<'de, E: $bound1, PS: $bound2<E>> Deserialize<'de> for $wrap<E, PS> {
             #[inline]
-            fn deserialize<R: Read>(reader: R) -> io::Result<Self> {
+            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                 unimplemented!("impl_pairing_curve_wrapper::deserialize")
             }
         }
         impl<'de, E: $bound1, PS: $bound2<E>> Serialize for $wrap<E, PS> {
             #[inline]
-            fn serialize<W: Write>(&self, writer: W) -> io::Result<()> {
+            fn serialize<SS: Serializer>(&self, serializer: SS) -> Result<SS::Ok, SS::Error> {
                 unimplemented!("impl_pairing_curve_wrapper::serialize")
             }
         }
-        impl<E: $bound1, PS: $bound2<E>> ToConstraintField<E::Fq> for $wrap<E, PS> {
+        impl<E: $bound1, PS: $bound2<E>> ToConstraintField<MpcField<E::Fq, PS::FqShare>> for $wrap<E, PS> {
             #[inline]
-            fn to_field_elements(&self) -> Result<Vec<E::Fq>, ConstraintFieldError> {
+            fn to_field_elements(&self) -> Result<Vec<MpcField<E::Fq, PS::FqShare>>, ConstraintFieldError> {
                 self.val.to_field_elements()
             }
         }
-        impl<E: $bound1, PS: $bound2<E>> $aff_group for $wrap<E, PS> {
-            type ScalarField = MpcField<E::Fr, PS::FrShare>;
-            type BaseField = MpcField<E::$base_field, PS::$base_field_share>;
-            type Projective = $aff_group::Affine;
-            type Coordinates = $aff_group::Coordinates;
+        // impl<E: $bound1, PS: $bound2<E>> $aff_group for $wrap<E, PS> {
+        //     type ScalarField = MpcField<E::Fr, PS::FrShare>;
+        //     type BaseField = MpcField<E::$base_field, PS::$base_field_share>;
+        //     type Projective = $aff_group::Affine;
+        //     type Coordinates = $aff_group::Coordinates;
 
-            /// Returns a fixed generator of unknown exponent.
-            #[must_use]
-            fn prime_subgroup_generator() -> Self {
-                Self {
-                    val: $wrapped::prime_subgroup_generator(),
-                }
-            }
+        //     // For each member function of AffineCurve, use unimplemented!()
+            
+        //     /// Initializes a new affine group element from the given coordinates.
+        //     fn from_coordinates(coordinates: Self::Coordinates) -> Option<Self> {
+        //         unimplemented!()
+        //     }
 
-            /// Multiply this element by the cofactor and output the
-            /// resulting projective element.
-            #[must_use]
-            fn mul_by_cofactor_to_projective(&self) -> Self::Projective {
-                self.val.mul_by_cofactor_to_projective()
-            }
+        //     /// Initializes a new affine group element from the given coordinates.
+        //     /// Note: The resulting point is **not** enforced to be on the curve or in the correct subgroup.
+        //     fn from_coordinates_unchecked(coordinates: Self::Coordinates) -> Self {
+        //         unimplemented!()
+        //     }
 
-            /// Converts this element into its projective representation.
-            #[must_use]
-            fn to_projective(&self) -> Self::Projective {
-                self.val.to_projective()
-            }
+        //     /// Returns the cofactor of the curve.
+        //     fn cofactor() -> &'static [u64] {
+        //         unimplemented!()
+        //     }
 
-            /// Multiply this element by the cofactor.
-            #[must_use]
-            fn mul_by_cofactor(&self) -> Self {
-                self.mul_by_cofactor_to_projective().into()
-            }
+        //     /// Returns a fixed generator of unknown exponent.
+        //     #[must_use]
+        //     fn prime_subgroup_generator() -> Self {
+        //         unimplemented!()
+        //     }
 
-            /// Multiply this element by the inverse of the cofactor modulo the size of
-            /// `Self::ScalarField`.
-            #[must_use]
-            fn mul_by_cofactor_inv(&self) -> Self {
-                self.mul_by_cofactor_to_projective().mul_by_cofactor_inv().into()
-            }
+        //     /// Attempts to construct an affine point given an x-coordinate. The
+        //     /// point is not guaranteed to be in the prime order subgroup.
+        //     ///
+        //     /// If and only if `greatest` is set will the lexicographically
+        //     /// largest y-coordinate be selected.
+        //     fn from_x_coordinate(x: Self::BaseField, greatest: bool) -> Option<Self> {
+        //         unimplemented!()
+        //     }
 
-            /// Checks that the point is in the prime order subgroup given the point on the curve.
-            #[must_use]
-            fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool {
-                self.val.is_in_correct_subgroup_assuming_on_curve()
-            }
+        //     /// Attempts to construct both possible affine points given an x-coordinate.
+        //     /// Points are not guaranteed to be in the prime order subgroup.
+        //     ///
+        //     /// The affine points returned should be in lexicographically growing order.
+        //     ///
+        //     /// Calling this should be equivalent (but likely more performant) to
+        //     /// `(AffineCurve::from_x_coordinate(x, false), AffineCurve::from_x_coordinate(x, true))`.
+        //     fn pair_from_x_coordinate(x: Self::BaseField) -> Option<(Self, Self)> {
+        //         unimplemented!()
+        //     }
 
-            /// Returns the x-coordinate of the point.
-            #[must_use]
-            fn to_x_coordinate(&self) -> Self::BaseField {
-                self.val.to_x_coordinate()
-            }
+        //     /// Attempts to construct an affine point given a y-coordinate. The
+        //     /// point is not guaranteed to be in the prime order subgroup.
+        //     ///
+        //     /// If and only if `greatest` is set will the lexicographically
+        //     /// largest y-coordinate be selected.
+        //     fn from_y_coordinate(y: Self::BaseField, greatest: bool) -> Option<Self> {
+        //         unimplemented!()
+        //     }
 
-            /// Returns the y-coordinate of the point.
-            #[must_use]
-            fn to_y_coordinate(&self) -> Self::BaseField {
-                self.val.to_y_coordinate()
-            }
-        }
+        //     /// Multiply this element by the cofactor and output the
+        //     /// resulting projective element.
+        //     #[must_use]
+        //     fn mul_by_cofactor_to_projective(&self) -> Self::Projective {
+        //         unimplemented!()
+        //     }
+
+        //     /// Converts this element into its projective representation.
+        //     #[must_use]
+        //     fn to_projective(&self) -> Self::Projective {
+        //         unimplemented!()
+        //     }
+
+        //     /// Returns a group element if the set of bytes forms a valid group element,
+        //     /// otherwise returns None. This function is primarily intended for sampling
+        //     /// random group elements from a hash-function or RNG output.
+        //     fn from_random_bytes(bytes: &[u8]) -> Option<Self> {
+        //         unimplemented!()
+        //     }
+
+        //     /// Multiply this element by a big-endian boolean representation of
+        //     /// an integer.
+        //     fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Self::Projective {
+        //         unimplemented!()
+        //     }
+
+        //     /// Multiply this element by the cofactor.
+        //     #[must_use]
+        //     fn mul_by_cofactor(&self) -> Self {
+        //         unimplemented!()
+        //     }
+
+        //     /// Multiply this element by the inverse of the cofactor modulo the size of
+        //     /// `Self::ScalarField`.
+        //     #[must_use]
+        //     fn mul_by_cofactor_inv(&self) -> Self {
+        //         self.mul_by_cofactor_to_projective().into()
+        //     }
+
+        //     /// Checks that the point is in the prime order subgroup given the point on the curve.
+        //     #[must_use]
+        //     fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool {
+        //         unimplemented!()
+        //     }
+
+        //     /// Returns the x-coordinate of the point.
+        //     #[must_use]
+        //     fn to_x_coordinate(&self) -> Self::BaseField {
+        //         unimplemented!()
+        //     }
+
+        //     /// Returns the y-coordinate of the point.
+        //     #[must_use]
+        //     fn to_y_coordinate(&self) -> Self::BaseField {
+        //         unimplemented!()
+        //     }
+
+        //     /// Checks that the current point is on the elliptic curve.
+        //     fn is_on_curve(&self) -> bool {
+        //         unimplemented!()
+        //     }
+
+        //     /// Performs the first half of batch addition in-place.
+        //     fn batch_add_loop_1(
+        //         a: &mut Self,
+        //         b: &mut Self,
+        //         half: &Self::BaseField, // The value 2.inverse().
+        //         inversion_tmp: &mut Self::BaseField,
+        //     ) {
+        //         unimplemented!()
+        //     }
+
+        //     /// Performs the second half of batch addition in-place.
+        //     fn batch_add_loop_2(a: &mut Self, b: Self, inversion_tmp: &mut Self::BaseField) {
+        //         unimplemented!()
+        //     }
+
+        // }
         impl<E: $bound1, PS: $bound2<E>> Reveal for $wrap<E, PS> {
             type Base = E::$base;
             #[inline]
@@ -765,9 +867,132 @@ macro_rules! impl_pairing_curve_wrapper_aff {
                     .collect()
             }
         }
-        impl_pairing_mpc_wrapper!($wrapped, $bound1, $bound2, $base, $share, $wrap);
-        impl<E: $bound1, PS: $bound2<E>> Mul<MpcField<E::Fr, PS::FrShare>> for $wrap<E, PS> {
+
+        impl<E: $bound1, PS: $bound2<E>> Display for $wrap<E, PS> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self.val)
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> ToBytes for $wrap<E, PS> {
+            fn write_le<W: Write>(&self, writer: W) -> io::Result<()> {
+                self.val.write_le(writer)
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> FromBytes for $wrap<E, PS> {
+            fn read_le<R: Read>(_reader: R) -> io::Result<Self> {
+                unimplemented!("read")
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> Valid for $wrap<E, PS> {
+            fn check(&self) -> Result<(), SerializationError> {
+                self.val.check()
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> CanonicalSerialize for $wrap<E, PS> {
+            fn serialize_with_mode<W: Write>(
+                &self,
+                writer: W,
+                compress: Compress,
+            ) -> Result<(), SerializationError> {
+                self.val.serialize_with_mode(writer, compress)
+            }
+            fn serialized_size(&self, compress: Compress) -> usize {
+                self.val.serialized_size(compress)
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> CanonicalSerializeWithFlags for $wrap<E, PS> {
+            fn serialize_with_flags<W: Write, F: Flags>(
+                &self,
+                writer: W,
+                flags: F,
+            ) -> Result<(), SerializationError> {
+                self.val.serialize_with_flags(writer, flags)
+            }
+
+            fn serialized_size_with_flags<F: Flags>(&self) -> usize {
+                self.val.serialized_size_with_flags::<F>()
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> CanonicalDeserialize for $wrap<E, PS> {
+            fn deserialize_with_mode<R: Read>(
+                _reader: R,
+                _compress: Compress,
+                _validate: Validate,
+            ) -> Result<Self, SerializationError> {
+                unimplemented!("deserialize_with_mode")
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> CanonicalDeserializeWithFlags for $wrap<E, PS> {
+            fn deserialize_with_flags<R: Read, F: Flags>(
+                _reader: R,
+            ) -> Result<(Self, F), SerializationError> {
+                unimplemented!("deserialize_with_flags")
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> Uniform for $wrap<E, PS> {
+            fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
+                Self {
+                    val: $wrapped::rand(rng),
+                }
+            }
+        }
+        // impl<E: $bound1, PS: $bound2<E>> Distribution<$wrap<E, PS>> for Standard {
+        //     #[inline]
+        //     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> $wrap<E, PS> {
+        //         $wrap::rand(rng)
+        //     }
+        // }
+        // impl<E: $bound1, PS: $bound2<E>> PubUniform for $wrap<E, PS> {
+        //     fn pub_rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
+        //         Self {
+        //             val: $wrapped::pub_rand(rng),
+        //         }
+        //     }
+        // }
+        impl<E: $bound1, PS: $bound2<E>> Neg for $wrap<E, PS> {
             type Output = Self;
+            #[inline]
+            fn neg(self) -> Self::Output {
+                Self { val: -self.val }
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> Zero for $wrap<E, PS> {
+            #[inline]
+            fn zero() -> Self {
+                Self {
+                    val: $wrapped::zero(),
+                }
+            }
+            #[inline]
+            fn is_zero(&self) -> bool {
+                self.val.is_zero()
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> Zeroize for $wrap<E, PS> {
+            #[inline]
+            fn zeroize(&mut self) {
+                self.val.zeroize();
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> Default for $wrap<E, PS> {
+            #[inline]
+            fn default() -> Self {
+                Self::zero()
+            }
+        }
+        impl<E: $bound1, PS: $bound2<E>> MpcWire for $wrap<E, PS> {
+            #[inline]
+            fn publicize(&mut self) {
+                self.val.publicize();
+            }
+            #[inline]
+            fn is_shared(&self) -> bool {
+                self.val.is_shared()
+            }
+        }
+
+        impl<E: $bound1, PS: $bound2<E>> Mul<MpcField<E::Fr, PS::FrShare>> for $wrap<E, PS> {
+            type Output = $proj_wrap<E, PS>;
             #[inline]
             fn mul(self, other: MpcField<E::Fr, PS::FrShare>) -> Self::Output {
                 Self {
@@ -778,26 +1003,12 @@ macro_rules! impl_pairing_curve_wrapper_aff {
         impl<'a, E: $bound1, PS: $bound2<E>> Mul<&'a MpcField<E::Fr, PS::FrShare>>
             for $wrap<E, PS>
         {
-            type Output = Self;
+            type Output = $proj_wrap<E, PS>;
             #[inline]
             fn mul(self, other: &'a MpcField<E::Fr, PS::FrShare>) -> Self::Output {
                 Self {
                     val: self.val.mul(other),
                 }
-            }
-        }
-        impl<E: $bound1, PS: $bound2<E>> MulAssign<MpcField<E::Fr, PS::FrShare>> for $wrap<E, PS> {
-            #[inline]
-            fn mul_assign(&mut self, other: MpcField<E::Fr, PS::FrShare>) {
-                self.val.mul_assign(other);
-            }
-        }
-        impl<'a, E: $bound1, PS: $bound2<E>> MulAssign<&'a MpcField<E::Fr, PS::FrShare>>
-            for $wrap<E, PS>
-        {
-            #[inline]
-            fn mul_assign(&mut self, other: &'a MpcField<E::Fr, PS::FrShare>) {
-                self.val.mul_assign(other);
             }
         }
     };
@@ -821,59 +1032,89 @@ macro_rules! impl_pairing_curve_wrapper_proj {
         }
         impl<'de, E: $bound1, PS: $bound2<E>> Deserialize<'de> for $wrap<E, PS> {
             #[inline]
-            fn deserialize<R: Read>(reader: R) -> io::Result<Self> {
+            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                 unimplemented!("impl_pairing_curve_wrapper::deserialize")
             }
         }
         impl<'de, E: $bound1, PS: $bound2<E>> Serialize for $wrap<E, PS> {
             #[inline]
-            fn serialize<W: Write>(&self, writer: W) -> io::Result<()> {
+            fn serialize<SS: Serializer>(&self, serializer: SS) -> Result<SS::Ok, SS::Error> {
                 unimplemented!("impl_pairing_curve_wrapper::serialize")
             }
         }
-        impl<E: $bound1, PS: $bound2<E>> ToConstraintField<E::Fq> for $wrap<E, PS> {
+        impl<E: $bound1, PS: $bound2<E>> ToConstraintField<MpcField<E::Fq, PS::FqShare>> for $wrap<E, PS> {
             #[inline]
-            fn to_field_elements(&self) -> Result<Vec<E::Fq>, ConstraintFieldError> {
+            fn to_field_elements(&self) -> Result<Vec<MpcField<E::Fq, PS::FqShare>>, ConstraintFieldError> {
                 self.val.to_field_elements()
             }
         }
-        impl<E: $bound1, PS: $bound2<E>> $proj_group for $wrap<E, PS> {
-            type ScalarField = MpcField<E::Fr, PS::FrShare>;
-            type BaseField = MpcField<E::$base_field, PS::$base_field_share>;
-            type Affine = $proj_group::Affine;
+        // impl<E: $bound1, PS: $bound2<E>> $proj_group for $wrap<E, PS> {
+        //     type ScalarField = MpcField<E::Fr, PS::FrShare>;
+        //     type BaseField = MpcField<E::$base_field, PS::$base_field_share>;
+        //     type Affine = $proj_group::Affine;
 
-            /// Returns a fixed generator of unknown exponent.
-            #[must_use]
-            fn prime_subgroup_generator() -> Self {
-                Self {
-                    val: $wrapped::prime_subgroup_generator(),
-                }
-            }
+        //     /// Returns a fixed generator of unknown exponent.
+        //     #[must_use]
+        //     fn prime_subgroup_generator() -> Self {
+        //         unimplemented!()
+        //     }
 
-            /// Checks if the point is already "normalized" so that
-            /// cheap affine conversion is possible.
-            #[must_use]
-            fn is_normalized(&self) -> bool {
-                self.val.is_normalized()
-            }
+        //     /// Normalizes a slice of projective elements so that
+        //     /// conversion to affine is cheap.
+        //     fn batch_normalization(v: &mut [Self]) {
+        //         unimplemented!()
+        //     }
 
-            /// Returns `self + self`.
-            #[must_use]
-            fn double(&self) -> Self {
-                Self {
-                    val: self.val.double(),
-                }
-            }
+        //     /// Normalizes a slice of projective elements and outputs a vector
+        //     /// containing the affine equivalents.
+        //     fn batch_normalization_into_affine(mut v: Vec<Self>) -> Vec<Self::Affine> {
+        //         Self::batch_normalization(&mut v);
+        //         v.into_iter().map(|v| v.into()).collect()
+        //     }
 
-            /// Converts this element into its affine representation.
-            #[must_use]
-            #[allow(clippy::wrong_self_convention)]
-            fn to_affine(&self) -> Self::Affine {
-                Self::Affine {
-                    val: self.val.to_affine(),
-                }
-            }
-        }
+        //     /// Checks if the point is already "normalized" so that
+        //     /// cheap affine conversion is possible.
+        //     #[must_use]
+        //     fn is_normalized(&self) -> bool {
+        //         unimplemented!()
+        //     }
+
+        //     /// Adds an affine element to this element.
+        //     fn add_assign_mixed(&mut self, other: &Self::Affine) {
+        //         unimplemented!()
+        //     }
+
+        //     /// Adds an affine element to this element.
+        //     fn add_mixed(&self, other: &Self::Affine) -> Self {
+        //         let mut copy = *self;
+        //         copy.add_assign_mixed(other);
+        //         copy
+        //     }
+
+        //     /// Adds an affine element to this element.
+        //     fn sub_assign_mixed(&mut self, other: &Self::Affine) {
+        //         self.add_assign_mixed(&-*other);
+        //     }
+
+        //     /// Returns `self + self`.
+        //     #[must_use]
+        //     fn double(&self) -> Self {
+        //         unimplemented!()
+        //     }
+
+        //     /// Sets `self := self + self`.
+        //     fn double_in_place(&mut self) {
+        //         unimplemented!()
+        //     }
+
+        //     /// Converts this element into its affine representation.
+        //     #[must_use]
+        //     #[allow(clippy::wrong_self_convention)]
+        //     fn to_affine(&self) -> Self::Affine {
+        //         unimplemented!()
+        //     }
+
+        // }
         impl<E: $bound1, PS: $bound2<E>> Reveal for $wrap<E, PS> {
             type Base = E::$base;
             #[inline]
@@ -910,7 +1151,9 @@ macro_rules! impl_pairing_curve_wrapper_proj {
                     .collect()
             }
         }
+
         impl_pairing_mpc_wrapper!($wrapped, $bound1, $bound2, $base, $share, $wrap);
+
         impl<E: $bound1, PS: $bound2<E>> Mul<MpcField<E::Fr, PS::FrShare>> for $wrap<E, PS> {
             type Output = Self;
             #[inline]
@@ -949,7 +1192,7 @@ macro_rules! impl_pairing_curve_wrapper_proj {
 }
 
 impl_pairing_curve_wrapper_aff!(
-    MpcGroup,
+    MpcAffineGroup,
     PairingEngine,
     PairingShare,
     G1Affine,
@@ -957,10 +1200,11 @@ impl_pairing_curve_wrapper_aff!(
     AffineCurve,
     Fq,
     FqShare,
-    MpcG1Affine
+    MpcG1Affine,
+    MpcG1Projective,
 );
 impl_pairing_curve_wrapper_proj!(
-    MpcGroup,
+    MpcProjectiveGroup,
     PairingEngine,
     PairingShare,
     G1Projective,
@@ -971,7 +1215,7 @@ impl_pairing_curve_wrapper_proj!(
     MpcG1Projective
 );
 impl_pairing_curve_wrapper_aff!(
-    MpcGroup,
+    MpcAffineGroup,
     PairingEngine,
     PairingShare,
     G2Affine,
@@ -979,10 +1223,11 @@ impl_pairing_curve_wrapper_aff!(
     AffineCurve,
     Fqe,
     FqeShare,
-    MpcG2Affine
+    MpcG2Affine,
+    MpcG2Projective
 );
 impl_pairing_curve_wrapper_proj!(
-    MpcGroup,
+    MpcProjectiveGroup,
     PairingEngine,
     PairingShare,
     G2Projective,
@@ -1047,9 +1292,23 @@ macro_rules! impl_aff_proj {
         //     }
         // }
 
+        // TODO: this conflicts with the other nested macro impl
+        // impl<E: PairingEngine, PS: PairingShare<E>> Zero for $w_aff<E, PS> {
+        //     #[inline]
+        //     fn zero() -> Self {
+        //         Self {
+        //             val: $aff::zero(),
+        //         }
+        //     }
+        //     #[inline]
+        //     fn is_zero(&self) -> bool {
+        //         self.val.is_zero()
+        //     }
+        // }
+
         impl<E: PairingEngine, PS: PairingShare<E>> AffineCurve for $w_aff<E, PS> {
             type ScalarField = MpcField<E::Fr, PS::FrShare>;
-            type Coordinates = E::$aff::Coordinates;
+            type Coordinates = <<E as PairingEngine>::$aff as AffineCurve>::Coordinates;
             // const COFACTOR: &'static [u64] = E::$aff::COFACTOR;
             type BaseField = $w_base<E::$base, PS::$base_share>;
             type Projective = $w_pro<E, PS>;
@@ -1079,46 +1338,40 @@ macro_rules! impl_aff_proj {
             fn from_coordinates_unchecked(coordinates: Self::Coordinates) -> Self {
                 todo!("AffineCurve::from_coordinates_unchecked")
             }
-            fn cofactor(&self) -> Self {
+            fn cofactor() -> &'static [u64] {
                 todo!("AffineCurve::cofactor")
             }
-            fn from_x_coordinate(x: Self::BaseField) -> Option<Self> {
+            fn from_x_coordinate(_x: Self::BaseField, _greatest: bool) -> Option<Self> {
                 todo!("AffineCurve::from_x_coordinate")
             }
-            fn pair_from_x_coordinate(x: Self::BaseField, _positive: bool) -> Option<Self> {
+            fn pair_from_x_coordinate(x: Self::BaseField) -> Option<(Self, Self)> {
                 todo!("AffineCurve::pair_from_x_coordinate")
             }
-            fn from_y_coordinate(y: Self::BaseField, _positive: bool) -> Option<Self> {
+            fn from_y_coordinate(_y: Self::BaseField, _positive: bool) -> Option<Self> {
                 todo!("AffineCurve::from_y_coordinate")
             }
             fn to_projective(&self) -> Self::Projective {
                 todo!("AffineCurve::to_projective")
             }
-            fn mul_bits<S: AsRef<[u64]>>(&self, bits: S) -> Self::Projective {
+            fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Self::Projective {
                 todo!("AffineCurve::mul_bits")
             }
             fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool {
                 todo!("AffineCurve::is_in_correct_subgroup_assuming_on_curve")
             }
-            fn to_x_coordinate(&self) -> Option<Self::BaseField> {
+            fn to_x_coordinate(&self) -> Self::BaseField {
                 todo!("AffineCurve::to_x_coordinate")
             }
-            fn to_y_coordinate(&self) -> Option<Self::BaseField> {
+            fn to_y_coordinate(&self) -> Self::BaseField {
                 todo!("AffineCurve::to_y_coordinate")
             }
             fn is_on_curve(&self) -> bool {
                 todo!("AffineCurve::is_on_curve")
             }
-            fn batch_add_loop_1(
-                _bases: &[Self],
-                _scalars: &[Self::ScalarField],
-            ) -> Self::Projective {
+            fn batch_add_loop_1(a: &mut Self, b: &mut Self, _half: &Self::BaseField, inversion_tmp: &mut Self::BaseField) {
                 todo!("AffineCurve::batch_add_loop_1")
             }
-            fn batch_add_loop_2(
-                _bases: &[Self],
-                _scalars: &[Self::ScalarField],
-            ) -> Self::Projective {
+            fn batch_add_loop_2(a: &mut Self, b: Self, inversion_tmp: &mut Self::BaseField) {
                 todo!("AffineCurve::batch_add_loop_2")
             }
             
@@ -1191,7 +1444,7 @@ macro_rules! impl_aff_proj {
             // }
         }
         impl<E: PairingEngine, PS: PairingShare<E>> ProjectiveCurve for $w_pro<E, PS> {
-            type ScalarField = MpcField<E::Fr, PS::FrShare>; // TODO: maybe I should be taking the given type (Field v.s. Extension Field)
+            type ScalarField = MpcField<E::Fr, PS::FrShare>;
             // const COFACTOR: &'static [u64] = E::$aff::COFACTOR;
             type BaseField = $w_base<E::$base, PS::$base_share>;
             type Affine = $w_aff<E, PS>;
@@ -1206,7 +1459,7 @@ macro_rules! impl_aff_proj {
                 todo!("ProjectiveCurve::is_normalized")
             }
             fn double_in_place(&mut self) {
-                self.val.double_in_place();
+                todo!("ProjectiveCurve::double_in_place")
             }
             fn double(&self) -> Self {
                 todo!("ProjectiveCurve::double")
@@ -1216,16 +1469,16 @@ macro_rules! impl_aff_proj {
             }
             fn add_assign_mixed(&mut self, o: &<Self as ProjectiveCurve>::Affine) {
                 let new_self = match (&self.val, &o.val) {
-                    (MpcGroup::Shared(a), MpcGroup::Shared(b)) => {
-                        MpcGroup::Shared(PS::$g_name::add_sh_proj_sh_aff(a.clone(), b))
+                    (MpcProjectiveGroup::Shared(a), MpcAffineGroup::Shared(b)) => {
+                        MpcProjectiveGroup::Shared(PS::$g_name::add_sh_proj_sh_aff(a.clone(), b))
                     }
-                    (MpcGroup::Shared(a), MpcGroup::Public(b)) => {
-                        MpcGroup::Shared(PS::$g_name::add_sh_proj_pub_aff(a.clone(), b))
+                    (MpcProjectiveGroup::Shared(a), MpcAffineGroup::Public(b)) => {
+                        MpcProjectiveGroup::Shared(PS::$g_name::add_sh_proj_pub_aff(a.clone(), b))
                     }
-                    (MpcGroup::Public(a), MpcGroup::Shared(b)) => {
-                        MpcGroup::Shared(PS::$g_name::add_pub_proj_sh_aff(a, b.clone()))
+                    (MpcProjectiveGroup::Public(a), MpcAffineGroup::Shared(b)) => {
+                        MpcProjectiveGroup::Shared(PS::$g_name::add_pub_proj_sh_aff(a, b.clone()))
                     }
-                    (MpcGroup::Public(a), MpcGroup::Public(b)) => MpcGroup::Public({
+                    (MpcProjectiveGroup::Public(a), MpcAffineGroup::Public(b)) => MpcProjectiveGroup::Public({
                         let mut a = a.clone();
                         a.add_assign_mixed(b);
                         a

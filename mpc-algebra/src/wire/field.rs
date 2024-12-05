@@ -608,7 +608,7 @@ mod poly_impl {
         type Base = Evaluations<F>;
 
         fn reveal(self) -> Self::Base {
-            let domain_size = self.evaluations.domain().size();
+            let domain_size = self.domain().size();
             Evaluations::from_vec_and_domain(
                 self.evaluations.reveal(),
                 EvaluationDomain::new(domain_size).unwrap(),

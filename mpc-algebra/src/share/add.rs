@@ -23,7 +23,7 @@ use crate::channel::MpcSerNet;
 use super::field::{
     DenseOrSparsePolynomial, DensePolynomial, ExtFieldShare, FieldShare, SparsePolynomial,
 };
-use super::group::GroupShare;
+use super::group::{ProjectiveGroupShare, AffineGroupShare};
 use super::pairing::{AffProjShare, PairingShare};
 use super::BeaverSource;
 use crate::msm::*;
@@ -53,8 +53,8 @@ impl<F: Field> AdditiveFieldShare<F> {
         )
     }
     fn s_poly_share(p: SparsePolynomial<Self>) -> snarkvm_algorithms::fft::SparsePolynomial<F> {
-        snarkvm_algorithms::fft::SparsePolynomial::from_coefficients_vec(
-            p.into_iter().map(|(i, s)| (i, s.val)).collect(),
+        snarkvm_algorithms::fft::SparsePolynomial::from_coefficients(
+            p.into_iter().map(|(i, s)| (i, s.val)),
         )
     }
     fn poly_share2<'a>(
@@ -65,7 +65,7 @@ impl<F: Field> AdditiveFieldShare<F> {
                 snarkvm_algorithms::fft::DensePolynomial::from_coefficients_vec(p),
             )),
             Err(p) => snarkvm_algorithms::fft::Polynomial::Sparse(Cow::Owned(
-                snarkvm_algorithms::fft::SparsePolynomial::from_coefficients_vec(p),
+                snarkvm_algorithms::fft::SparsePolynomial::from_coefficients_slice(&p),
             )),
         }
     }
@@ -149,119 +149,220 @@ impl<F: Field> FieldShare<F> for AdditiveFieldShare<F> {
     ) -> Option<(DensePolynomial<Self>, DensePolynomial<Self>)> {
         let num = Self::poly_share(num);
         let den = Self::poly_share2(den);
-        num.divide_with_q_and_r(&den)
-            .map(|(q, r)| (Self::d_poly_unshare(q), Self::d_poly_unshare(r)))
+        let (q, r) = num.divide_with_q_and_r(&den).unwrap();
+        Some((Self::d_poly_unshare(q), Self::d_poly_unshare(r)))
     }
 }
 
 #[derive(Derivative)]
 #[derivative(
-    Default(bound = "T: Default"),
-    Clone(bound = "T: Clone"),
-    Copy(bound = "T: Copy"),
-    PartialEq(bound = "T: PartialEq"),
-    Eq(bound = "T: Eq"),
-    PartialOrd(bound = "T: PartialOrd"),
-    Ord(bound = "T: Ord"),
-    Hash(bound = "T: Hash")
+    Default(bound = "P: Default"),
+    Clone(bound = "P: Clone"),
+    Copy(bound = "P: Copy"),
+    PartialEq(bound = "P: PartialEq<P::Affine>"),
+    Eq(bound = "P: Eq"),
+    // PartialOrd(bound = "P: PartialOrd"),
+    // Ord(bound = "P: Ord"),
+    Hash(bound = "P: Hash")
 )]
-pub struct AdditiveGroupShare<T, M> {
-    pub val: T,
+pub struct AdditiveProjectiveShare<P: ProjectiveCurve, M> {
+    pub val: P,
     _phants: PhantomData<M>,
 }
 
-macro_rules! impl_additive_group_share {
-    ($bound:ident) => {
-        impl<G: $bound, M> Reveal for AdditiveGroupShare<G, M> {
-            type Base = G;
-        
-            fn reveal(self) -> G {
-                Net::broadcast(&self.val).into_iter().sum()
-            }
-            fn from_public(f: G) -> Self {
-                Self {
-                    val: if Net::am_king() { f } else { G::zero() },
-                    _phants: PhantomData::default(),
-                }
-            }
-            fn from_add_shared(f: G) -> Self {
-                Self {
-                    val: f,
-                    _phants: PhantomData::default(),
-                }
-            }
-            fn unwrap_as_public(self) -> G {
-                self.val
-            }
-            fn king_share<R: Rng>(f: Self::Base, rng: &mut R) -> Self {
-                let mut r: Vec<G> = (0..(Net::n_parties()-1)).map(|_| G::rand(rng)).collect();
-                let sum_r: G = r.iter().sum();
-                r.push(f - sum_r);
-                Self::from_add_shared(Net::recv_from_king( if Net::am_king() { Some(r) } else { None }))
-            }
-            fn king_share_batch<R: Rng>(f: Vec<Self::Base>, rng: &mut R) -> Vec<Self> {
-                let mut rs: Vec<Vec<Self::Base>> =
-                    (0..(Net::n_parties()-1)).map(|_| {
-                    (0..f.len()).map(|_| {
-                        Self::Base::rand(rng)
-                    }).collect()
-                }).collect();
-                let final_shares: Vec<Self::Base> = (0..rs[0].len()).map(|i| {
-                    f[i] - &rs.iter().map(|r| &r[i]).sum()
-                }).collect();
-                rs.push(final_shares);
-                Net::recv_from_king(if Net::am_king() { Some(rs) } else {None}).into_iter().map(Self::from_add_shared).collect()
-            }
-        }
-        impl<G: $bound, M: Msm<G, G::ScalarField>> GroupShare<G> for AdditiveGroupShare<G, M> {
-            type FieldShare = AdditiveFieldShare<G::ScalarField>;
-        
-            fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
-                let self_vec: Vec<G> = selfs.into_iter().map(|s| s.val).collect();
-                let all_vals = Net::broadcast(&self_vec);
-                (0..self_vec.len()).map(|i| all_vals.iter().map(|v| v[i]).sum()).collect()
-            }
-        
-            fn add(&mut self, other: &Self) -> &mut Self {
-                self.val += &other.val;
-                self
-            }
-        
-            fn sub(&mut self, other: &Self) -> &mut Self {
-                self.val -= &other.val;
-                self
-            }
-        
-            fn scale_pub_scalar(&mut self, scalar: &G::ScalarField) -> &mut Self {
-                self.val *= *scalar;
-                self
-            }
-        
-            fn scale_pub_group(mut base: G, scalar: &Self::FieldShare) -> Self {
-                base *= scalar.val;
-                Self {
-                    val: base,
-                    _phants: PhantomData::default(),
-                }
-            }
-        
-            fn shift(&mut self, other: &G) -> &mut Self {
-                if Net::am_king() {
-                    self.val += *other;
-                }
-                self
-            }
-        
-            fn multi_scale_pub_group(bases: &[G], scalars: &[Self::FieldShare]) -> Self {
-                let scalars: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.val.clone()).collect();
-                Self::from_add_shared(M::msm(bases, &scalars))
-            }
-        }
-    };
+#[derive(Derivative)]
+#[derivative(
+    Default(bound = "A: Default"),
+    Clone(bound = "A: Clone"),
+    Copy(bound = "A: Copy"),
+    PartialEq(bound = "A: PartialEq<A::Projective>"),
+    Eq(bound = "A: Eq"),
+    // PartialOrd(bound = "A: PartialOrd"),
+    // Ord(bound = "A: Ord"),
+    Hash(bound = "A: Hash")
+)]
+pub struct AdditiveAffineShare<A: AffineCurve, M> {
+    pub val: A,
+    _phants: PhantomData<M>,
 }
-impl_additive_group_share!(ProjectiveCurve);
-impl_additive_group_share!(AffineCurve);
 
+impl<G: ProjectiveCurve, M> Reveal for AdditiveProjectiveShare<G, M> {
+    type Base = G;
+
+    fn reveal(self) -> G {
+        Net::broadcast(&self.val).into_iter().sum::<G>().into()
+    }
+    fn from_public(f: G) -> Self {
+        Self {
+            val: if Net::am_king() { f } else { G::zero() },
+            _phants: PhantomData::default(),
+        }
+    }
+    fn from_add_shared(f: G) -> Self {
+        Self {
+            val: f,
+            _phants: PhantomData::default(),
+        }
+    }
+    fn unwrap_as_public(self) -> G {
+        self.val
+    }
+    fn king_share<R: Rng>(f: Self::Base, rng: &mut R) -> Self {
+        let mut r: Vec<Self::Base> = (0..(Net::n_parties()-1)).map(|_| Self::Base::rand(rng)).collect();
+        let sum_r: Self::Base = r.iter().cloned().sum();
+        r.push(f - sum_r);
+        Self::from_add_shared(Net::recv_from_king( if Net::am_king() { Some(r) } else { None }))
+    }
+    fn king_share_batch<R: Rng>(f: Vec<Self::Base>, rng: &mut R) -> Vec<Self> {
+        let mut rs: Vec<Vec<Self::Base>> =
+            (0..(Net::n_parties()-1)).map(|_| {
+            (0..f.len()).map(|_| {
+                Self::Base::rand(rng)
+            }).collect()
+        }).collect();
+        let final_shares: Vec<Self::Base> = (0..rs[0].len()).map(|i| {
+            f[i] - rs.iter().map(|r| r[i]).sum::<Self::Base>()
+        }).collect();
+        rs.push(final_shares);
+        Net::recv_from_king(if Net::am_king() { Some(rs) } else {None}).into_iter().map(Self::from_add_shared).collect()
+    }
+}
+impl<G: ProjectiveCurve, M: Msm<G, G::ScalarField>> ProjectiveGroupShare<G> for AdditiveProjectiveShare<G, M> {
+    type FieldShare = AdditiveFieldShare<G::ScalarField>;
+
+    fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
+        let self_vec: Vec<G> = selfs.into_iter().map(|s| s.val).collect();
+        let all_vals = Net::broadcast(&self_vec);
+        (0..self_vec.len()).map(|i| all_vals.iter().map(|v| v[i]).sum()).collect()
+    }
+
+    fn add(&mut self, other: &Self) -> &mut Self {
+        self.val += &other.val;
+        self
+    }
+
+    fn sub(&mut self, other: &Self) -> &mut Self {
+        self.val -= &other.val;
+        self
+    }
+
+    fn scale_pub_scalar(&mut self, scalar: &G::ScalarField) -> &mut Self {
+        self.val *= *scalar;
+        self
+    }
+
+    fn scale_pub_group(mut base: G, scalar: &Self::FieldShare) -> Self {
+        base *= scalar.val;
+        Self {
+            val: base,
+            _phants: PhantomData::default(),
+        }
+    }
+
+    fn shift(&mut self, other: &G) -> &mut Self {
+        if Net::am_king() {
+            self.val += *other;
+        }
+        self
+    }
+
+    fn multi_scale_pub_group(bases: &[G], scalars: &[Self::FieldShare]) -> Self {
+        let scalars: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.val.clone()).collect();
+        Self::from_add_shared(M::msm(bases, &scalars))
+    }
+}
+impl<G: AffineCurve, M> Reveal for AdditiveAffineShare<G, M> {
+    type Base = G;
+
+    fn reveal(self) -> G {
+        Net::broadcast(&self.val).into_iter().map(|v|v.into()).sum::<G::Projective>().into()
+    }
+    fn from_public(f: G) -> Self {
+        Self {
+            val: if Net::am_king() { f } else { G::zero() },
+            _phants: PhantomData::default(),
+        }
+    }
+    fn from_add_shared(f: G) -> Self {
+        Self {
+            val: f,
+            _phants: PhantomData::default(),
+        }
+    }
+    fn unwrap_as_public(self) -> G {
+        self.val
+    }
+    fn king_share<R: Rng>(f: Self::Base, rng: &mut R) -> Self {
+        let mut r: Vec<<G as AffineCurve>::Projective> = (0..(Net::n_parties()-1)).map(|_| <G as AffineCurve>::Projective::rand(rng)).collect();
+        let sum_r: <G as AffineCurve>::Projective = r.iter().cloned().sum();
+        r.push((Into::<<G as AffineCurve>::Projective>::into(f) - sum_r));
+        // Convert shares back to Self::Base
+        let r: Vec<Self::Base> = r.into_iter().map(|r| r.into()).collect();
+        Self::from_add_shared(Net::recv_from_king( if Net::am_king() { Some(r.into()) } else { None }))
+    }
+    fn king_share_batch<R: Rng>(f: Vec<Self::Base>, rng: &mut R) -> Vec<Self> {
+        let mut rs: Vec<Vec<<G as AffineCurve>::Projective>> =
+            (0..(Net::n_parties()-1)).map(|_| {
+            (0..f.len()).map(|_| {
+                <G as AffineCurve>::Projective::rand(rng)
+            }).collect()
+        }).collect();
+        let final_shares: Vec<<G as AffineCurve>::Projective> = (0..rs[0].len()).map(|i| {
+            f[i].into() - rs.iter().map(|r| &r[i]).sum()
+        }).collect();
+        rs.push(final_shares);
+        // Convert shares back to Self::Base
+        let mut rs_base = Vec::<Vec<Self::Base>>::with_capacity(rs.len());
+        for rs in rs.iter() {
+            rs_base.push(rs.iter().map(|r| (*r).into()).collect());
+        }
+        Net::recv_from_king(if Net::am_king() { Some(rs_base) } else {None}).into_iter().map(Self::from_add_shared).collect()
+    }
+}
+impl<G: AffineCurve, M: Msm<G, G::ScalarField>> AffineGroupShare<G> for AdditiveAffineShare<G, M> {
+    type FieldShare = AdditiveFieldShare<G::ScalarField>;
+
+    fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
+        let self_vec: Vec<<G as AffineCurve>::Projective> = selfs.into_iter().map(|s| s.val.into()).collect();
+        let all_vals = Net::broadcast(&self_vec);
+        (0..self_vec.len()).map(|i| all_vals.iter().map(|v| v[i]).sum().into()).collect()
+    }
+
+    fn add(&mut self, other: &Self) -> &mut Self {
+        self.val = (Into::<<G as AffineCurve>::Projective>::into(self.val) + Into::<<G as AffineCurve>::Projective>::into(other.val)).into();
+        self
+    }
+
+    fn sub(&mut self, other: &Self) -> &mut Self {
+        self.val = (Into::<<G as AffineCurve>::Projective>::into(self.val) - Into::<<G as AffineCurve>::Projective>::into(other.val)).into();
+        self
+    }
+
+    fn scale_pub_scalar(&mut self, scalar: &G::ScalarField) -> &mut Self {
+        self.val = (self.val * *scalar).into();
+        self
+    }
+
+    fn scale_pub_group(mut base: G, scalar: &Self::FieldShare) -> Self {
+        base = (base * scalar.val).into();
+        Self {
+            val: base,
+            _phants: PhantomData::default(),
+        }
+    }
+
+    fn shift(&mut self, other: &G) -> &mut Self {
+        if Net::am_king() {
+            self.val = (Into::<<G as AffineCurve>::Projective>::into(self.val) + Into::<<G as AffineCurve>::Projective>::into(*other)).into();
+        }
+        self
+    }
+
+    fn multi_scale_pub_group(bases: &[G], scalars: &[Self::FieldShare]) -> Self {
+        let scalars: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.val.clone()).collect();
+        Self::from_add_shared(M::msm(bases, &scalars))
+    }
+}
 
 macro_rules! impl_basics {
     ($share:ident, $bound:ident) => {
@@ -407,8 +508,8 @@ macro_rules! impl_basics_2_param {
 }
 
 impl_basics!(AdditiveFieldShare, Field);
-impl_basics_2_param!(AdditiveGroupShare, ProjectiveCurve);
-impl_basics_2_param!(AdditiveGroupShare, AffineCurve);
+impl_basics_2_param!(AdditiveProjectiveShare, ProjectiveCurve);
+impl_basics_2_param!(AdditiveAffineShare, AffineCurve);
 
 #[derive(Debug, Derivative)]
 #[derivative(
@@ -526,9 +627,9 @@ macro_rules! groups_share {
 
         impl<E: PairingEngine> AffProjShare<E::Fr, E::$affine, E::$proj> for $struct_name<E> {
             type FrShare = AdditiveFieldShare<E::Fr>;
-            type AffineShare = AdditiveGroupShare<E::$affine, crate::msm::AffineMsm<E::$affine>>;
+            type AffineShare = AdditiveAffineShare<E::$affine, crate::msm::AffineMsm<E::$affine>>;
             type ProjectiveShare =
-                AdditiveGroupShare<E::$proj, crate::msm::ProjectiveMsm<E::$proj>>;
+                AdditiveProjectiveShare<E::$proj, crate::msm::ProjectiveMsm<E::$proj>>;
 
             fn sh_aff_to_proj(g: Self::AffineShare) -> Self::ProjectiveShare {
                 g.map_homo(|s| s.into())
@@ -581,12 +682,12 @@ impl<E: PairingEngine> PairingShare<E> for AdditivePairingShare<E> {
     type FqeShare = AdditiveExtFieldShare<E::Fqe>;
     // Not a typo. We want a multiplicative subgroup.
     type FqkShare = MulExtFieldShare<E::Fqk>;
-    type G1AffineShare = AdditiveGroupShare<E::G1Affine, crate::msm::AffineMsm<E::G1Affine>>;
-    type G2AffineShare = AdditiveGroupShare<E::G2Affine, crate::msm::AffineMsm<E::G2Affine>>;
+    type G1AffineShare = AdditiveAffineShare<E::G1Affine, crate::msm::AffineMsm<E::G1Affine>>;
+    type G2AffineShare = AdditiveAffineShare<E::G2Affine, crate::msm::AffineMsm<E::G2Affine>>;
     type G1ProjectiveShare =
-        AdditiveGroupShare<E::G1Projective, crate::msm::ProjectiveMsm<E::G1Projective>>;
+        AdditiveProjectiveShare<E::G1Projective, crate::msm::ProjectiveMsm<E::G1Projective>>;
     type G2ProjectiveShare =
-        AdditiveGroupShare<E::G2Projective, crate::msm::ProjectiveMsm<E::G2Projective>>;
+        AdditiveProjectiveShare<E::G2Projective, crate::msm::ProjectiveMsm<E::G2Projective>>;
     type G1 = AdditiveG1Share<E>;
     type G2 = AdditiveG2Share<E>;
 }

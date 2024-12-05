@@ -12,13 +12,16 @@ pub mod wire;
 pub use wire::*;
 
 pub mod honest_but_curious {
+    use crate::msm::{AffineMsm, ProjectiveMsm};
+
     use super::{
         share::add::*,
-        share::msm::NaiveMsm,
+        // share::msm::NaiveMsm,
         wire::{field, group, pairing},
     };
     pub type MpcField<F> = field::MpcField<F, AdditiveFieldShare<F>>;
-    pub type MpcGroup<G> = group::MpcGroup<G, AdditiveGroupShare<G, NaiveMsm<G>>>;
+    pub type MpcProjectiveGroup<G> = group::MpcProjectiveGroup<G, AdditiveProjectiveShare<G, ProjectiveMsm<G>>>;
+    pub type MpcAffineGroup<G> = group::MpcAffineGroup<G, AdditiveAffineShare<G, AffineMsm<G>>>;
     pub type MpcG1Affine<E> = pairing::MpcG1Affine<E, AdditivePairingShare<E>>;
     pub type MpcG2Affine<E> = pairing::MpcG2Affine<E, AdditivePairingShare<E>>;
     pub type MpcG1Projective<E> = pairing::MpcG1Projective<E, AdditivePairingShare<E>>;
@@ -29,13 +32,16 @@ pub mod honest_but_curious {
 }
 
 pub mod malicious_majority {
+    use crate::msm::{AffineMsm, ProjectiveMsm};
+
     use super::{
-        share::msm::NaiveMsm,
+        // share::msm::NaiveMsm,
         share::spdz::*,
         wire::{field, group, pairing},
     };
     pub type MpcField<F> = field::MpcField<F, SpdzFieldShare<F>>;
-    pub type MpcGroup<G> = group::MpcGroup<G, SpdzGroupShare<G, NaiveMsm<G>>>;
+    pub type MpcProjectiveGroup<G> = group::MpcProjectiveGroup<G, SpdzProjectiveShare<G, ProjectiveMsm<G>>>;
+    pub type MpcAffineGroup<G> = group::MpcAffineGroup<G, SpdzAffineShare<G, AffineMsm<G>>>;
     pub type MpcG1Affine<E> = pairing::MpcG1Affine<E, SpdzPairingShare<E>>;
     pub type MpcG2Affine<E> = pairing::MpcG2Affine<E, SpdzPairingShare<E>>;
     pub type MpcG1Projective<E> = pairing::MpcG1Projective<E, SpdzPairingShare<E>>;

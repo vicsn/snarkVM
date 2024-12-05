@@ -38,7 +38,7 @@ pub fn check_eq<T: CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Disp
     })
 }
 
-macro_rules! impl_basics_2 {
+macro_rules! impl_basics_group {
     ($share:ident, $bound:ident, $wrap:ident) => {
         impl<T: $bound, S: $share<T>> $wrap<T, S> {
             #[inline]
@@ -160,45 +160,6 @@ macro_rules! impl_basics_2 {
         //        }
         //    }
         //}
-        impl<'a, T: $bound, S: $share<T>> AddAssign<&'a $wrap<T, S>> for $wrap<T, S> {
-            #[inline]
-            fn add_assign(&mut self, other: &Self) {
-                match self {
-                    // for some reason, a two-stage match (rather than a tuple match) avoids moving
-                    // self
-                    $wrap::Public(x) => match other {
-                        $wrap::Public(y) => {
-                            *x += *y;
-                        }
-                        $wrap::Shared(y) => {
-                            let mut tt = *y;
-                            tt.shift(x);
-                            *self = $wrap::Shared(tt);
-                        }
-                    },
-                    $wrap::Shared(x) => match other {
-                        $wrap::Public(y) => {
-                            x.shift(y);
-                        }
-                        $wrap::Shared(y) => {
-                            x.add(y);
-                        }
-                    },
-                }
-            }
-        }
-        impl<T: $bound, S: $share<T>> Sum for $wrap<T, S> {
-            #[inline]
-            fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-                iter.fold(Self::zero(), Add::add)
-            }
-        }
-        impl<'a, T: $bound, S: $share<T> + 'a> Sum<&'a $wrap<T, S>> for $wrap<T, S> {
-            #[inline]
-            fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
-                iter.fold(Self::zero(), |x, y| x.add(y.clone()))
-            }
-        }
         impl<T: $bound, S: $share<T>> Neg for $wrap<T, S> {
             type Output = Self;
             #[inline]
@@ -209,33 +170,6 @@ macro_rules! impl_basics_2 {
                         x.neg();
                         x
                     }),
-                }
-            }
-        }
-        impl<'a, T: $bound, S: $share<T>> SubAssign<&'a $wrap<T, S>> for $wrap<T, S> {
-            #[inline]
-            fn sub_assign(&mut self, other: &Self) {
-                match self {
-                    // for some reason, a two-stage match (rather than a tuple match) avoids moving
-                    // self
-                    $wrap::Public(x) => match other {
-                        $wrap::Public(y) => {
-                            *x -= y;
-                        }
-                        $wrap::Shared(y) => {
-                            let mut t = *y;
-                            t.neg().shift(&x);
-                            *self = $wrap::Shared(t);
-                        }
-                    },
-                    $wrap::Shared(x) => match other {
-                        $wrap::Public(y) => {
-                            x.shift(&-*y);
-                        }
-                        $wrap::Shared(y) => {
-                            x.sub(y);
-                        }
-                    },
                 }
             }
         }
@@ -506,7 +440,7 @@ macro_rules! impl_ref_ops_group {
             type Output = Self;
             #[inline]
             fn $opfn(mut self, other: $wrap<T, S>) -> Self::Output {
-                self.$assopfn(&other);
+                self.$assopfn(other);
                 self
             }
         }
@@ -514,14 +448,14 @@ macro_rules! impl_ref_ops_group {
             type Output = Self;
             #[inline]
             fn $opfn(mut self, other: &$wrap<T, S>) -> Self::Output {
-                self.$assopfn(other);
+                self.$assopfn(*other);
                 self
             }
         }
         impl<T: $bound, S: $share<T>> $assop<$wrap<T, S>> for $wrap<T, S> {
             #[inline]
             fn $assopfn(&mut self, other: $wrap<T, S>) {
-                self.$assopfn(&other);
+                self.$assopfn(other);
             }
         }
         // impl<'a, T: $bound, S: $share<T>> $assop<&'a $wrap<T, S>> for $wrap<T, S> {

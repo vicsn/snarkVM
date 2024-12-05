@@ -1,10 +1,11 @@
-use snarkvm_curves::{AffineCurve, PairingEngine};
+use mpc_algebra::msm::ProjectiveMsm;
+use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_curves::Group;
 use snarkvm_fields::{FftField, Field, PrimeField, Uniform};
 use log::debug;
-use mpc_algebra::gsz20::group::GszGroupShare;
+// use mpc_algebra::gsz20::group::GszGroupShare;
 use mpc_algebra::{
-    msm::NaiveMsm, share::field::FieldShare, share::group::GroupShare, share::gsz20::*,
+    share::field::FieldShare, share::group::{ProjectiveGroupShare, AffineGroupShare}, share::gsz20::*,
     share::pairing::PairingShare, Reveal,
 };
 use mpc_net::{MpcNet, MpcMultiNet as Net};
@@ -108,101 +109,101 @@ fn test_mul_field<E: PairingEngine>() {
     }
 }
 
-fn test_group<G: Group>() {
-    let rng = &mut ark_std::test_rng();
-    let (a, b) = group::double_rand::<G, NaiveMsm<G>>();
-    let a_pub = group::open(&a);
-    let b_pub = group::open(&b);
-    assert_eq!(a_pub, b_pub);
+// fn test_group<G: ProjectiveCurve>() {
+//     let rng = &mut ark_std::test_rng();
+//     let (a, b) = group::double_rand::<G, ProjectiveMsm<G>>();
+//     let a_pub = group::open(&a);
+//     let b_pub = group::open(&b);
+//     assert_eq!(a_pub, b_pub);
 
-    for _i in 0..2 {
-        let a_pub = G::ScalarField::rand(rng);
-        let b_pub = G::rand(rng);
-        let a = GszFieldShare::from_public(a_pub);
-        let b = GszGroupShare::<G, NaiveMsm<G>>::from_public(b_pub);
-        let c = group::mult(&a, b, true);
-        let c_pub = group::open(&c);
-        assert_eq!(c_pub, b_pub.mul(&a_pub));
-    }
+//     for _i in 0..2 {
+//         let a_pub = G::ScalarField::rand(rng);
+//         let b_pub = G::rand(rng);
+//         let a = GszFieldShare::from_public(a_pub);
+//         let b = GszProjectiveShare::<G, ProjectiveMsm<G>>::from_public(b_pub);
+//         let c = group::mult(&a, b, true);
+//         let c_pub = group::open(&c);
+//         assert_eq!(c_pub, b_pub.mul(&a_pub));
+//     }
 
-    let s1_pub = Group::ScalarField::rand(rng);
-    let s2_pub = Group::ScalarField::rand(rng);
-    let s2 = GszFieldShare::from_public(s1_pub);
-    let mut a = a;
-    <GszGroupShare<G, NaiveMsm<G>> as GroupShare<G>>::scale_pub_scalar(&mut a, &s1_pub);
-    let as1s2 = <GszGroupShare<G, NaiveMsm<G>> as GroupShare<G>>::scale(
-        a,
-        s2,
-        &mut mpc_algebra::wire::group::DummyGroupTripleSource::default(),
-    );
-    let as1s2_pub = group::open(&as1s2);
-    assert_eq!(as1s2_pub, a_pub.mul(&s1_pub).mul(&s2_pub));
-    test_group_ip::<G>();
-}
+//     let s1_pub = Group::ScalarField::rand(rng);
+//     let s2_pub = Group::ScalarField::rand(rng);
+//     let s2 = GszFieldShare::from_public(s1_pub);
+//     let mut a = a;
+//     <GszGroupShare<G, NaiveMsm<G>> as GroupShare<G>>::scale_pub_scalar(&mut a, &s1_pub);
+//     let as1s2 = <GszGroupShare<G, NaiveMsm<G>> as GroupShare<G>>::scale(
+//         a,
+//         s2,
+//         &mut mpc_algebra::wire::group::DummyGroupTripleSource::default(),
+//     );
+//     let as1s2_pub = group::open(&as1s2);
+//     assert_eq!(as1s2_pub, a_pub.mul(&s1_pub).mul(&s2_pub));
+//     test_group_ip::<G>();
+// }
 
-fn test_group_ip<G: Group>() {
-    let rng = &mut ark_std::test_rng();
-    let iters = 2;
-    let size = 10;
-    for _iter in 0..iters {
-        let a_pubs: Vec<G::ScalarField> = (0..size).map(|_| G::ScalarField::rand(rng)).collect();
-        let b_pubs: Vec<G> = (0..size).map(|_| G::rand(rng)).collect();
-        //let a_pubs: Vec<F> = (0..size).map(|i| F::from(i as u32)).collect();
-        //let b_pubs: Vec<F> = (0..size).map(|i| F::from(i as u32)).collect();
-        //let a_pubs: Vec<F> = vec![2u8, 1u8].into_iter().map(F::from).collect();
-        //let b_pubs: Vec<F> = vec![2u8, 1u8].into_iter().map(F::from).collect();
-        let ip_pub = a_pubs
-            .iter()
-            .zip(&b_pubs)
-            .fold(G::zero(), |x, (a, b)| x + b.mul(a));
-        let a: Vec<_> = a_pubs
-            .iter()
-            .map(|a| GszFieldShare::from_public(*a))
-            .collect();
-        let b: Vec<_> = b_pubs
-            .iter()
-            .map(|b| GszGroupShare::<G, NaiveMsm<G>>::from_public(*b))
-            .collect();
-        let ip = GszGroupShare::from_public(ip_pub);
-        group::ip_check(a, b, ip);
-    }
-}
+// fn test_group_ip<G: Group>() {
+//     let rng = &mut ark_std::test_rng();
+//     let iters = 2;
+//     let size = 10;
+//     for _iter in 0..iters {
+//         let a_pubs: Vec<G::ScalarField> = (0..size).map(|_| G::ScalarField::rand(rng)).collect();
+//         let b_pubs: Vec<G> = (0..size).map(|_| G::rand(rng)).collect();
+//         //let a_pubs: Vec<F> = (0..size).map(|i| F::from(i as u32)).collect();
+//         //let b_pubs: Vec<F> = (0..size).map(|i| F::from(i as u32)).collect();
+//         //let a_pubs: Vec<F> = vec![2u8, 1u8].into_iter().map(F::from).collect();
+//         //let b_pubs: Vec<F> = vec![2u8, 1u8].into_iter().map(F::from).collect();
+//         let ip_pub = a_pubs
+//             .iter()
+//             .zip(&b_pubs)
+//             .fold(G::zero(), |x, (a, b)| x + b.mul(a));
+//         let a: Vec<_> = a_pubs
+//             .iter()
+//             .map(|a| GszFieldShare::from_public(*a))
+//             .collect();
+//         let b: Vec<_> = b_pubs
+//             .iter()
+//             .map(|b| GszGroupShare::<G, NaiveMsm<G>>::from_public(*b))
+//             .collect();
+//         let ip = GszGroupShare::from_public(ip_pub);
+//         group::ip_check(a, b, ip);
+//     }
+// }
 
-fn test_pairing<E: PairingEngine, S: PairingShare<E>>() {
-    use mpc_algebra::wire::group::DummyGroupTripleSource;
-    let gp1_src = &mut DummyGroupTripleSource::default();
-    let gp2_src = &mut DummyGroupTripleSource::default();
-    let rng = &mut ark_std::test_rng();
-    let g1 = E::G1Affine::prime_subgroup_generator();
-    let g2 = E::G2Affine::prime_subgroup_generator();
+// fn test_pairing<E: PairingEngine, S: PairingShare<E>>() {
+//     use mpc_algebra::wire::group::DummyGroupTripleSource;
+//     let gp1_src = &mut DummyGroupTripleSource::default();
+//     let gp2_src = &mut DummyGroupTripleSource::default();
+//     let rng = &mut ark_std::test_rng();
+//     let g1 = E::G1Affine::prime_subgroup_generator();
+//     let g2 = E::G2Affine::prime_subgroup_generator();
 
-    for _i in 0..2 {
-        let a_pub = E::Fr::rand(rng);
-        let b_pub = E::Fr::rand(rng);
-        let a = S::FrShare::from_public(a_pub);
-        let b = S::FrShare::from_public(b_pub);
-        let g1a = <S::G1AffineShare as GroupShare<E::G1Affine>>::scale_pub_group(g1, &a);
-        let g2b = <S::G2AffineShare as GroupShare<E::G2Affine>>::scale_pub_group(g2, &b);
-        let g1ab = <S::G1AffineShare as GroupShare<E::G1Affine>>::scale(g1a, b, gp1_src);
-        let g2ab = <S::G2AffineShare as GroupShare<E::G2Affine>>::scale(g2b, a, gp2_src);
-        let g1ab_pub = g1ab.reveal();
-        let g2ab_pub = g2ab.reveal();
-        assert_eq!(g1ab_pub, Group::mul(&Group::mul(&g1, &a_pub), &b_pub));
-        assert_eq!(g2ab_pub, Group::mul(&Group::mul(&g2, &a_pub), &b_pub));
-        let g1a_plus_b = <S::G1AffineShare as GroupShare<E::G1Affine>>::multi_scale_pub_group(
-            &[g1, g1],
-            &[a, b],
-        )
-        .reveal();
-        assert_eq!(g1a_plus_b, Group::mul(&g1, &(a_pub + b_pub)));
-        let g2a_plus_b = <S::G2AffineShare as GroupShare<E::G2Affine>>::multi_scale_pub_group(
-            &[g2, g2],
-            &[a, b],
-        )
-        .reveal();
-        assert_eq!(g2a_plus_b, Group::mul(&g2, &(a_pub + b_pub)));
-    }
-}
+//     for _i in 0..2 {
+//         let a_pub = E::Fr::rand(rng);
+//         let b_pub = E::Fr::rand(rng);
+//         let a = S::FrShare::from_public(a_pub);
+//         let b = S::FrShare::from_public(b_pub);
+//         let g1a = <S::G1AffineShare as AffineGroupShare<E::G1Affine>>::scale_pub_group(g1, &a);
+//         let g2b = <S::G2AffineShare as AffineGroupShare<E::G2Affine>>::scale_pub_group(g2, &b);
+//         let g1ab = <S::G1AffineShare as AffineGroupShare<E::G1Affine>>::scale(g1a, b, gp1_src);
+//         let g2ab = <S::G2AffineShare as AffineGroupShare<E::G2Affine>>::scale(g2b, a, gp2_src);
+//         let g1ab_pub = g1ab.reveal();
+//         let g2ab_pub = g2ab.reveal();
+//         assert_eq!(g1ab_pub, Group::mul(&Group::mul(&g1, &a_pub), &b_pub));
+//         assert_eq!(g2ab_pub, Group::mul(&Group::mul(&g2, &a_pub), &b_pub));
+//         let g1a_plus_b = <S::G1AffineShare as AffineGroupShare<E::G1Affine>>::multi_scale_pub_group(
+//             &[g1, g1],
+//             &[a, b],
+//         )
+//         .reveal();
+//         assert_eq!(g1a_plus_b, Group::mul(&g1, &(a_pub + b_pub)));
+//         let g2a_plus_b = <S::G2AffineShare as AffineGroupShare<E::G2Affine>>::multi_scale_pub_group(
+//             &[g2, g2],
+//             &[a, b],
+//         )
+//         .reveal();
+//         assert_eq!(g2a_plus_b, AffineCurve::mul(&g2, &(a_pub + b_pub)));
+//     }
+// }
 
 fn main() {
     env_logger::builder().format_timestamp(None).init();

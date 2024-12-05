@@ -4,7 +4,7 @@ use snarkvm_fields::Field;
 use std::fmt::Debug;
 
 use super::field::{ExtFieldShare, FieldShare};
-use super::group::GroupShare;
+use super::group::{ProjectiveGroupShare, AffineGroupShare};
 
 pub trait AffProjShare<
     Fr: Field,
@@ -13,8 +13,8 @@ pub trait AffProjShare<
 >
 {
     type FrShare: FieldShare<Fr>;
-    type AffineShare: GroupShare<A, FieldShare = Self::FrShare>;
-    type ProjectiveShare: GroupShare<P, FieldShare = Self::FrShare>;
+    type AffineShare: AffineGroupShare<A, FieldShare = Self::FrShare>;
+    type ProjectiveShare: ProjectiveGroupShare<P, FieldShare = Self::FrShare>;
     fn sh_aff_to_proj(g: Self::AffineShare) -> Self::ProjectiveShare;
     fn sh_proj_to_aff(g: Self::ProjectiveShare) -> Self::AffineShare;
     fn add_sh_proj_sh_aff(
@@ -40,10 +40,10 @@ pub trait PairingShare<E: PairingEngine>:
     // TODO: wrong. Need to fix the PairingEngine interface though..
     type FqkShare: ExtFieldShare<E::Fqk>;
     //type FqkShare: GroupShare<MulFieldGroup<E::Fqk, E::Fr>, FieldShare = Self::FrShare>;
-    type G1AffineShare: GroupShare<E::G1Affine, FieldShare = Self::FrShare>;
-    type G2AffineShare: GroupShare<E::G2Affine, FieldShare = Self::FrShare>;
-    type G1ProjectiveShare: GroupShare<E::G1Projective, FieldShare = Self::FrShare>;
-    type G2ProjectiveShare: GroupShare<E::G2Projective, FieldShare = Self::FrShare>;
+    type G1AffineShare: AffineGroupShare<E::G1Affine, FieldShare = Self::FrShare>;
+    type G2AffineShare: AffineGroupShare<E::G2Affine, FieldShare = Self::FrShare>;
+    type G1ProjectiveShare: ProjectiveGroupShare<E::G1Projective, FieldShare = Self::FrShare>;
+    type G2ProjectiveShare: ProjectiveGroupShare<E::G2Projective, FieldShare = Self::FrShare>;
     type G1: AffProjShare<
         E::Fr,
         E::G1Affine,

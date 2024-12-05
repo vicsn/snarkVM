@@ -1,4 +1,5 @@
 use derivative::Derivative;
+use snarkvm_algorithms::msm::batched::msm;
 use snarkvm_curves::{AffineCurve, ProjectiveCurve};
 use std::marker::PhantomData;
 
@@ -8,23 +9,23 @@ pub trait Msm<G, S>: Send + Sync + 'static {
     fn pre_reveal_check() {}
 }
 
-#[derive(Debug, Derivative)]
-#[derivative(Default(bound = ""), Clone(bound = ""), Copy(bound = ""))]
-pub struct NaiveMsm<G>(pub PhantomData<G>);
+// #[derive(Debug, Derivative)]
+// #[derivative(Default(bound = ""), Clone(bound = ""), Copy(bound = ""))]
+// pub struct NaiveMsm<G>(pub PhantomData<G>);
 
-impl<G> Msm<G, G::ScalarField> for NaiveMsm<G> {
-    fn msm(bases: &[G], scalars: &[G::ScalarField]) -> G {
-        bases
-            .iter()
-            .zip(scalars.iter())
-            .map(|(b, s)| {
-                let mut b = b.clone();
-                b *= *s;
-                b
-            })
-            .fold(G::zero(), |a, b| a + b)
-    }
-}
+// impl<G> Msm<G, G::ScalarField> for NaiveMsm<G> {
+//     fn msm(bases: &[G], scalars: &[G::ScalarField]) -> G {
+//         bases
+//             .iter()
+//             .zip(scalars.iter())
+//             .map(|(b, s)| {
+//                 let mut b = b.clone();
+//                 b *= *s;
+//                 b
+//             })
+//             .fold(G::zero(), |a, b| a + b)
+//     }
+// }
 
 #[derive(Debug, Derivative)]
 #[derivative(Default(bound = ""), Clone(bound = ""), Copy(bound = ""))]
@@ -32,7 +33,8 @@ pub struct AffineMsm<G: AffineCurve>(pub PhantomData<G>);
 
 impl<G: AffineCurve> Msm<G, G::ScalarField> for AffineMsm<G> {
     fn msm(bases: &[G], scalars: &[G::ScalarField]) -> G {
-        G::multi_scalar_mul(bases, scalars).into()
+        let scalars: Vec<_> = scalars.iter().map(|&s| s.into()).collect();
+        msm(&bases, &scalars).into()
     }
 }
 
@@ -42,7 +44,8 @@ pub struct ProjectiveMsm<G: ProjectiveCurve>(pub PhantomData<G>);
 
 impl<G: ProjectiveCurve> Msm<G, G::ScalarField> for ProjectiveMsm<G> {
     fn msm(bases: &[G], scalars: &[G::ScalarField]) -> G {
-        // let bases: Vec<G::Affine> = bases.iter().map(|s| s.clone().into()).collect();
-        G::multi_scalar_mul(&bases, scalars)
+        let bases: Vec<G::Affine> = bases.iter().map(|&s| s.into()).collect();
+        let scalars: Vec<_> = scalars.iter().map(|&s| s.into()).collect();
+        msm(&bases, &scalars)
     }
 }

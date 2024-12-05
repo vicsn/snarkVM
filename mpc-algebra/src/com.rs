@@ -2,8 +2,8 @@ use digest::Digest;
 use rand::Rng;
 use sha2;
 
-use snarkvm_console::program::{Deserialize, Deserializer, Serialize, Serializer};
-use snarkvm_utilities::{Valid, SerializationError, ToBits, FromBits, CanonicalSerialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use snarkvm_utilities::{CanonicalSerialize, Compress, FromBits, SerializationError, ToBits, Valid};
 // use ark_ff::prelude::*;
 use std::io;
 use snarkvm_fields::{FftField, PrimeField};
@@ -83,7 +83,7 @@ impl<Fr: PrimeField, S: FieldShare<Fr>>  ComField for MpcField<Fr, S> {
             .enumerate()
             .map(|(_i, v)| {
                 let mut bytes_out = Vec::new();
-                v.unwrap_as_public().serialize(&mut bytes_out).unwrap();
+                v.unwrap_as_public().serialize_with_mode(&mut bytes_out, Compress::No).unwrap();
                 let o = sha2::Sha256::digest(&bytes_out[..]).as_slice().to_owned();
                 o
             })
@@ -140,10 +140,10 @@ impl<Fr: PrimeField, S: FieldShare<Fr>>  ComField for MpcField<Fr, S> {
             return false;
         }
         let mut hash0 = Vec::new();
-        p.0.serialize(&mut hash0).unwrap();
+        p.0.serialize_with_mode(&mut hash0, Compress::No).unwrap();
         hash0 = sha2::Sha256::digest(&hash0).as_slice().to_owned();
         let mut hash1 = Vec::new();
-        p.1.serialize(&mut hash1).unwrap();
+        p.1.serialize_with_mode(&mut hash1, Compress::No).unwrap();
         hash1 = sha2::Sha256::digest(&hash1).as_slice().to_owned();
         for (j, (sib0, sib1)) in p.2.into_iter().enumerate() {
             let mut h0 = sha2::Sha256::default();

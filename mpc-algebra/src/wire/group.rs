@@ -19,136 +19,288 @@ use std::iter::Sum;
 use std::marker::PhantomData;
 use std::ops::*;
 
-use super::super::share::group::GroupShare;
+use super::super::share::group::{ProjectiveGroupShare, AffineGroupShare};
 use super::super::share::BeaverSource;
 use super::field::MpcField;
 use mpc_net::{MpcNet, MpcMultiNet as Net};
 use crate::Reveal;
 
-#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum MpcGroup<G, S: GroupShare<G>> {
+#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq)]
+// #[derivative(
+//     PartialEq(bound = "G: PartialEq<G::Affine>"),
+// )]
+pub enum MpcProjectiveGroup<G: ProjectiveCurve, S: ProjectiveGroupShare<G>> {
     Public(G),
     Shared(S),
 }
 
-impl_basics_2!(GroupShare, ProjectiveCurve, MpcGroup);
-impl_basics_2!(GroupShare, AffineCurve, MpcGroup);
+#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq)]
+// #[derivative(
+//     PartialEq(bound = "G: PartialEq<G::Projective>"),
+// )]
+pub enum MpcAffineGroup<G: AffineCurve, S: AffineGroupShare<G>> {
+    Public(G),
+    Shared(S),
+}
+
+// impl<
+//     P: ProjectiveCurve,
+//     SP: ProjectiveGroupShare<P>,
+//     A: AffineCurve,
+//     SA: AffineGroupShare<A>,
+// > PartialEq<MpcAffineGroup<A, SA>> for MpcProjectiveGroup<P, SP> {
+//     fn eq(&self, other: &MpcAffineGroup<A, SA>) -> bool {
+//         unimplemented!("eq")
+//     }
+// }
+
+// impl<
+//     P: ProjectiveCurve,
+//     SP: ProjectiveGroupShare<P>,
+//     A: AffineCurve,
+//     SA: AffineGroupShare<A>,
+// > PartialEq<MpcProjectiveGroup<P, SP>> for MpcAffineGroup<A, SA> {
+//     fn eq(&self, other: &MpcProjectiveGroup<P, SP>) -> bool {
+//         unimplemented!("eq")
+//     }
+// }
+
+impl_basics_group!(ProjectiveGroupShare, ProjectiveCurve, MpcProjectiveGroup);
+impl_basics_group!(AffineGroupShare, AffineCurve, MpcAffineGroup);
+
+impl<'a, T: ProjectiveCurve, S: ProjectiveGroupShare<T>> AddAssign<&'a MpcProjectiveGroup<T, S>> for MpcProjectiveGroup<T, S> {
+    #[inline]
+    fn add_assign(&mut self, other: &Self) {
+        match self {
+            // for some reason, a two-stage match (rather than a tuple match) avoids moving
+            // self
+            MpcProjectiveGroup::Public(x) => match other {
+                MpcProjectiveGroup::Public(y) => {
+                    *x += *y;
+                }
+                MpcProjectiveGroup::Shared(y) => {
+                    let mut tt = *y;
+                    tt.shift(x);
+                    *self = MpcProjectiveGroup::Shared(tt);
+                }
+            },
+            MpcProjectiveGroup::Shared(x) => match other {
+                MpcProjectiveGroup::Public(y) => {
+                    x.shift(y);
+                }
+                MpcProjectiveGroup::Shared(y) => {
+                    x.add(y);
+                }
+            },
+        }
+    }
+}
+impl<T: ProjectiveCurve, S: ProjectiveGroupShare<T>> Sum for MpcProjectiveGroup<T, S> {
+    #[inline]
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
+    }
+}
+impl<'a, T: ProjectiveCurve, S: ProjectiveGroupShare<T> + 'a> Sum<&'a MpcProjectiveGroup<T, S>> for MpcProjectiveGroup<T, S> {
+    #[inline]
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), |x, y| x.add(y.clone()))
+    }
+}
+impl<'a, T: ProjectiveCurve, S: ProjectiveGroupShare<T>> SubAssign<&'a MpcProjectiveGroup<T, S>> for MpcProjectiveGroup<T, S> {
+    #[inline]
+    fn sub_assign(&mut self, other: &Self) {
+        match self {
+            // for some reason, a two-stage match (rather than a tuple match) avoids moving
+            // self
+            MpcProjectiveGroup::Public(x) => match other {
+                MpcProjectiveGroup::Public(y) => {
+                    *x -= y;
+                }
+                MpcProjectiveGroup::Shared(y) => {
+                    let mut t = *y;
+                    t.neg().shift(&x);
+                    *self = MpcProjectiveGroup::Shared(t);
+                }
+            },
+            MpcProjectiveGroup::Shared(x) => match other {
+                MpcProjectiveGroup::Public(y) => {
+                    x.shift(&-*y);
+                }
+                MpcProjectiveGroup::Shared(y) => {
+                    x.sub(y);
+                }
+            },
+        }
+    }
+}
+
 
 #[derive(Derivative)]
 #[derivative(Default(bound = ""), Clone(bound = ""), Copy(bound = ""))]
-pub struct DummyGroupTripleSource<T, S> {
+pub struct DummyGroupTripleSourceProjective<T: ProjectiveCurve, S> {
     _scalar: PhantomData<T>,
     _share: PhantomData<S>,
 }
 
-impl<T, S: GroupShare<T>> BeaverSource<S, S::FieldShare, S>
-    for DummyGroupTripleSource<T, S>
-{
-    #[inline]
-    fn triple(&mut self) -> (S, S::FieldShare, S) {
-        (
-            S::from_add_shared(T::zero()),
-            <S::FieldShare as Reveal>::from_add_shared(if Net::am_king() {
-                T::ScalarField::one()
-            } else {
-                T::ScalarField::zero()
-            }),
-            S::from_add_shared(T::zero()),
-        )
-    }
-    #[inline]
-    fn inv_pair(&mut self) -> (S::FieldShare, S::FieldShare) {
-        (
-            <S::FieldShare as Reveal>::from_add_shared(if Net::am_king() {
-                T::ScalarField::one()
-            } else {
-                T::ScalarField::zero()
-            }),
-            <S::FieldShare as Reveal>::from_add_shared(if Net::am_king() {
-                T::ScalarField::one()
-            } else {
-                T::ScalarField::zero()
-            }),
-        )
-    }
+#[derive(Derivative)]
+#[derivative(Default(bound = ""), Clone(bound = ""), Copy(bound = ""))]
+pub struct DummyGroupTripleSourceAffine<T: AffineCurve, S> {
+    _scalar: PhantomData<T>,
+    _share: PhantomData<S>,
 }
 
-impl_ref_ops_group!(Add, AddAssign, add, add_assign, ProjectiveCurve,GroupShare, MpcGroup);
-impl_ref_ops_group!(Add, AddAssign, add, add_assign, AffineCurve,GroupShare, MpcGroup);
-impl_ref_ops_group!(Sub, SubAssign, sub, sub_assign, ProjectiveCurve,GroupShare, MpcGroup);
-impl_ref_ops_group!(Sub, SubAssign, sub, sub_assign, AffineCurve,GroupShare, MpcGroup);
-
-impl<T, S: GroupShare<T>> MpcWire for MpcGroup<T, S> {
-    #[inline]
-    fn publicize(&mut self) {
-        match self {
-            MpcGroup::Shared(s) => {
-                *self = MpcGroup::Public(s.reveal());
+macro_rules! beaver_source_group_share {
+    ($base_bound:ident, $group_share:ident, $target:ident) => {
+        impl<T: $base_bound, S: $group_share<T>> BeaverSource<S, S::FieldShare, S>
+            for $target<T, S>
+        {
+            #[inline]
+            fn triple(&mut self) -> (S, S::FieldShare, S) {
+                (
+                    S::from_add_shared(T::zero()),
+                    <S::FieldShare as Reveal>::from_add_shared(if Net::am_king() {
+                        T::ScalarField::one()
+                    } else {
+                        T::ScalarField::zero()
+                    }),
+                    S::from_add_shared(T::zero()),
+                )
             }
-            _ => {}
+            #[inline]
+            fn inv_pair(&mut self) -> (S::FieldShare, S::FieldShare) {
+                (
+                    <S::FieldShare as Reveal>::from_add_shared(if Net::am_king() {
+                        T::ScalarField::one()
+                    } else {
+                        T::ScalarField::zero()
+                    }),
+                    <S::FieldShare as Reveal>::from_add_shared(if Net::am_king() {
+                        T::ScalarField::one()
+                    } else {
+                        T::ScalarField::zero()
+                    }),
+                )
+            }
         }
-        debug_assert!({
-            let self_val = if let MpcGroup::Public(s) = self {
-                s.clone()
-            } else {
-                unreachable!()
-            };
-            super::macros::check_eq(self_val);
-            true
-        })
-    }
-    #[inline]
-    fn is_shared(&self) -> bool {
-        match self {
-            MpcGroup::Shared(_) => true,
-            MpcGroup::Public(_) => false,
-        }
-    }
+    };
 }
 
-impl<T, S: GroupShare<T>> Reveal for MpcGroup<T, S> {
-    type Base = T;
-    #[inline]
-    fn reveal(self) -> Self::Base {
-        let result = match self {
-            Self::Shared(s) => s.reveal(),
-            Self::Public(s) => s,
-        };
-        super::macros::check_eq(result.clone());
-        result
-    }
-    #[inline]
-    fn from_public(b: Self::Base) -> Self {
-        Self::Public(b)
-    }
-    #[inline]
-    fn from_add_shared(b: Self::Base) -> Self {
-        Self::Shared(S::from_add_shared(b))
-    }
-    #[inline]
-    fn unwrap_as_public(self) -> Self::Base {
-        match self {
-            Self::Shared(s) => s.unwrap_as_public(),
-            Self::Public(s) => s,
+beaver_source_group_share!(ProjectiveCurve, ProjectiveGroupShare, DummyGroupTripleSourceProjective);
+beaver_source_group_share!(AffineCurve, AffineGroupShare, DummyGroupTripleSourceAffine);
+
+impl_ref_ops_group!(Add, AddAssign, add, add_assign, ProjectiveCurve,ProjectiveGroupShare, MpcProjectiveGroup);
+impl_ref_ops_group!(Add, AddAssign, add, add_assign, AffineCurve,AffineGroupShare, MpcAffineGroup);
+impl_ref_ops_group!(Sub, SubAssign, sub, sub_assign, ProjectiveCurve,ProjectiveGroupShare, MpcProjectiveGroup);
+impl_ref_ops_group!(Sub, SubAssign, sub, sub_assign, AffineCurve,AffineGroupShare, MpcAffineGroup);
+
+macro_rules! impl_mpc_group {
+    ($base_bound:ident, $group_share:ident, $mpc_group:ident, $triple:ident) => {
+        impl<T: $base_bound, S: $group_share<T>> MpcWire for $mpc_group<T, S> {
+            #[inline]
+            fn publicize(&mut self) {
+                match self {
+                    $mpc_group::Shared(s) => {
+                        *self = $mpc_group::Public(s.reveal());
+                    }
+                    _ => {}
+                }
+                debug_assert!({
+                    let self_val = if let $mpc_group::Public(s) = self {
+                        s.clone()
+                    } else {
+                        unreachable!()
+                    };
+                    super::macros::check_eq(self_val);
+                    true
+                })
+            }
+            #[inline]
+            fn is_shared(&self) -> bool {
+                match self {
+                    $mpc_group::Shared(_) => true,
+                    $mpc_group::Public(_) => false,
+                }
+            }
         }
-    }
-    #[inline]
-    fn king_share<R: Rng>(f: Self::Base, rng: &mut R) -> Self {
-        Self::Shared(S::king_share(f, rng))
-    }
-    #[inline]
-    fn king_share_batch<R: Rng>(f: Vec<Self::Base>, rng: &mut R) -> Vec<Self> {
-        S::king_share_batch(f, rng).into_iter().map(Self::Shared).collect()
-    }
-    fn init_protocol() {
-        S::init_protocol()
-    }
-    fn deinit_protocol() {
-        S::deinit_protocol()
-    }
+        
+        impl<T: $base_bound, S: $group_share<T>> Reveal for $mpc_group<T, S> {
+            type Base = T;
+            #[inline]
+            fn reveal(self) -> Self::Base {
+                let result = match self {
+                    Self::Shared(s) => s.reveal(),
+                    Self::Public(s) => s,
+                };
+                super::macros::check_eq(result.clone());
+                result
+            }
+            #[inline]
+            fn from_public(b: Self::Base) -> Self {
+                Self::Public(b)
+            }
+            #[inline]
+            fn from_add_shared(b: Self::Base) -> Self {
+                Self::Shared(S::from_add_shared(b))
+            }
+            #[inline]
+            fn unwrap_as_public(self) -> Self::Base {
+                match self {
+                    Self::Shared(s) => s.unwrap_as_public(),
+                    Self::Public(s) => s,
+                }
+            }
+            #[inline]
+            fn king_share<R: Rng>(f: Self::Base, rng: &mut R) -> Self {
+                Self::Shared(S::king_share(f, rng))
+            }
+            #[inline]
+            fn king_share_batch<R: Rng>(f: Vec<Self::Base>, rng: &mut R) -> Vec<Self> {
+                S::king_share_batch(f, rng).into_iter().map(Self::Shared).collect()
+            }
+            fn init_protocol() {
+                S::init_protocol()
+            }
+            fn deinit_protocol() {
+                S::deinit_protocol()
+            }
+        }
+        
+        
+        // impl<T: Group, S: $group_share<T>> Group for $mpc_group<T, S> {
+        // }
+        impl<T: $base_bound, S: $group_share<T>> $mpc_group<T, S> {
+            pub fn unwrap_as_public_or_add_shared(self) -> T {
+                match self {
+                    Self::Public(p) => p,
+                    Self::Shared(p) => p.unwrap_as_public(),
+                }
+            }
+            pub fn all_public_or_shared(v: impl IntoIterator<Item = Self>) -> Result<Vec<T>, Vec<S>> {
+                let mut out_a = Vec::new();
+                let mut out_b = Vec::new();
+                for s in v {
+                    match s {
+                        Self::Public(x) => out_a.push(x),
+                        Self::Shared(x) => out_b.push(x),
+                    }
+                }
+                if out_a.len() > 0 && out_b.len() > 0 {
+                    panic!("Heterogeous")
+                } else if out_b.len() > 0 {
+                    Err(out_b)
+                } else {
+                    Ok(out_a)
+                }
+            }
+        }
+    };
 }
 
-impl<T, S: GroupShare<T>> Mul<MpcField<T::ScalarField, S::FieldShare>> for MpcGroup<T, S> {
+impl_mpc_group!(ProjectiveCurve, ProjectiveGroupShare, MpcProjectiveGroup, DummyGroupTripleSourceProjective);
+impl_mpc_group!(AffineCurve, AffineGroupShare, MpcAffineGroup, DummyGroupTripleSourceAffine);
+
+impl<T: ProjectiveCurve, S: ProjectiveGroupShare<T>> Mul<MpcField<T::ScalarField, S::FieldShare>> for MpcProjectiveGroup<T, S> {
     type Output = Self;
     #[inline]
     fn mul(mut self, other: MpcField<T::ScalarField, S::FieldShare>) -> Self::Output {
@@ -157,8 +309,17 @@ impl<T, S: GroupShare<T>> Mul<MpcField<T::ScalarField, S::FieldShare>> for MpcGr
     }
 }
 
-impl<'a, T, S: GroupShare<T>> Mul<&'a MpcField<T::ScalarField, S::FieldShare>>
-    for MpcGroup<T, S>
+// impl<A: AffineCurve, P: ProjectiveCurve, SA: AffineGroupShare<T>, SP: ProjectiveGroupShare> Mul<MpcField<A::ScalarField, SA::FieldShare>> for MpcAffineGroup<A, SA> {
+//     type Output = MpcProjectiveGroup<P, SP>;
+//     #[inline]
+//     fn mul(mut self, other: MpcField<A::ScalarField, SA::FieldShare>) -> Self::Output {
+//         self *= &other;
+//         self
+//     }
+// }
+
+impl<'a, T: ProjectiveCurve, S: ProjectiveGroupShare<T>> Mul<&'a MpcField<T::ScalarField, S::FieldShare>>
+    for MpcProjectiveGroup<T, S>
 {
     type Output = Self;
     #[inline]
@@ -167,68 +328,40 @@ impl<'a, T, S: GroupShare<T>> Mul<&'a MpcField<T::ScalarField, S::FieldShare>>
         self
     }
 }
-impl<T, S: GroupShare<T>> MulAssign<MpcField<T::ScalarField, S::FieldShare>>
-    for MpcGroup<T, S>
+impl<T: ProjectiveCurve, S: ProjectiveGroupShare<T>> MulAssign<MpcField<T::ScalarField, S::FieldShare>>
+    for MpcProjectiveGroup<T, S>
 {
     #[inline]
     fn mul_assign(&mut self, other: MpcField<T::ScalarField, S::FieldShare>) {
         *self *= &other;
     }
 }
-impl<'a, T, S: GroupShare<T>> MulAssign<&'a MpcField<T::ScalarField, S::FieldShare>>
-    for MpcGroup<T, S>
+impl<'a, T: ProjectiveCurve, S: ProjectiveGroupShare<T>> MulAssign<&'a MpcField<T::ScalarField, S::FieldShare>>
+    for MpcProjectiveGroup<T, S>
 {
     #[inline]
-    fn mul_assign(&mut self, other: &MpcField<T::ScalarField, S::FieldShare>) {
+    fn mul_assign(&mut self, other: &MpcField<T::ScalarField, S::FieldShare>) { // TODO: many traits only exist for Projective
         match self {
             // for some reason, a two-stage match (rather than a tuple match) avoids moving
             // self
-            MpcGroup::Public(x) => match other {
+            MpcProjectiveGroup::Public(x) => match other {
                 MpcField::Public(y) => {
                     *x *= *y;
                 }
                 MpcField::Shared(y) => {
-                    let t = MpcGroup::Shared(S::scale_pub_group(*x, &y));
+                    let t = MpcProjectiveGroup::Shared(S::scale_pub_group(*x, &y));
                     *self = t;
                 }
             },
-            MpcGroup::Shared(x) => match other {
+            MpcProjectiveGroup::Shared(x) => match other {
                 MpcField::Public(y) => {
                     x.scale_pub_scalar(y);
                 }
                 MpcField::Shared(y) => {
-                    let t = x.scale(*y, &mut DummyGroupTripleSource::default());
+                    let t = x.scale(*y, &mut DummyGroupTripleSourceProjective::default());
                     *x = t;
                 }
             },
-        }
-    }
-}
-
-// impl<T: Group, S: GroupShare<T>> Group for MpcGroup<T, S> {
-// }
-impl<T, S: GroupShare<T>> MpcGroup<T, S> {
-    pub fn unwrap_as_public_or_add_shared(self) -> T {
-        match self {
-            Self::Public(p) => p,
-            Self::Shared(p) => p.unwrap_as_public(),
-        }
-    }
-    pub fn all_public_or_shared(v: impl IntoIterator<Item = Self>) -> Result<Vec<T>, Vec<S>> {
-        let mut out_a = Vec::new();
-        let mut out_b = Vec::new();
-        for s in v {
-            match s {
-                Self::Public(x) => out_a.push(x),
-                Self::Shared(x) => out_b.push(x),
-            }
-        }
-        if out_a.len() > 0 && out_b.len() > 0 {
-            panic!("Heterogeous")
-        } else if out_b.len() > 0 {
-            Err(out_b)
-        } else {
-            Ok(out_a)
         }
     }
 }
