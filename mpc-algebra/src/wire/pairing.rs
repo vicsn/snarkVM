@@ -213,7 +213,6 @@ pub struct MpcPairingEngine<E: PairingEngine, PS: PairingShare<E>> {
 impl<E: PairingEngine, PS: PairingShare<E>> PairingEngine for MpcPairingEngine<E, PS> 
 where 
     <E::Fr as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
-
     MpcG1Affine<E, PS>: PairingCurve<
             BaseField = MpcField<E::Fq, PS::FqShare>,
             ScalarField = MpcField<E::Fr, PS::FrShare>,
@@ -242,8 +241,8 @@ where
 
     fn miller_loop<'a, I>(_i: I) -> Self::Fqk
     where
-        I: (&'a <Self::G1Affine as PairingCurve>::Prepared, &'a <Self::G2Affine as PairingCurve>::Prepared),
-        // I: IntoIterator<Item = &'a (<Self::G1Affine as PairingCurve>::Prepared, <Self::G2Affine as PairingCurve>::Prepared)>,
+        // I: (&'a <Self::G1Affine as PairingCurve>::Prepared, &'a <Self::G2Affine as PairingCurve>::Prepared),
+        I: IntoIterator<Item = (&'a <Self::G1Affine as PairingCurve>::Prepared, &'a <Self::G2Affine as PairingCurve>::Prepared)>,
     {
         unimplemented!("miller_loop")
         // <Bls12_377 as PairingEngine>::miller_loop(i)
@@ -694,143 +693,6 @@ macro_rules! impl_pairing_curve_wrapper_aff {
                 self.val.to_field_elements()
             }
         }
-        // impl<E: $bound1, PS: $bound2<E>> $aff_group for $wrap<E, PS> {
-        //     type ScalarField = MpcField<E::Fr, PS::FrShare>;
-        //     type BaseField = MpcField<E::$base_field, PS::$base_field_share>;
-        //     type Projective = $aff_group::Affine;
-        //     type Coordinates = $aff_group::Coordinates;
-
-        //     // For each member function of AffineCurve, use unimplemented!()
-            
-        //     /// Initializes a new affine group element from the given coordinates.
-        //     fn from_coordinates(coordinates: Self::Coordinates) -> Option<Self> {
-        //         unimplemented!()
-        //     }
-
-        //     /// Initializes a new affine group element from the given coordinates.
-        //     /// Note: The resulting point is **not** enforced to be on the curve or in the correct subgroup.
-        //     fn from_coordinates_unchecked(coordinates: Self::Coordinates) -> Self {
-        //         unimplemented!()
-        //     }
-
-        //     /// Returns the cofactor of the curve.
-        //     fn cofactor() -> &'static [u64] {
-        //         unimplemented!()
-        //     }
-
-        //     /// Returns a fixed generator of unknown exponent.
-        //     #[must_use]
-        //     fn prime_subgroup_generator() -> Self {
-        //         unimplemented!()
-        //     }
-
-        //     /// Attempts to construct an affine point given an x-coordinate. The
-        //     /// point is not guaranteed to be in the prime order subgroup.
-        //     ///
-        //     /// If and only if `greatest` is set will the lexicographically
-        //     /// largest y-coordinate be selected.
-        //     fn from_x_coordinate(x: Self::BaseField, greatest: bool) -> Option<Self> {
-        //         unimplemented!()
-        //     }
-
-        //     /// Attempts to construct both possible affine points given an x-coordinate.
-        //     /// Points are not guaranteed to be in the prime order subgroup.
-        //     ///
-        //     /// The affine points returned should be in lexicographically growing order.
-        //     ///
-        //     /// Calling this should be equivalent (but likely more performant) to
-        //     /// `(AffineCurve::from_x_coordinate(x, false), AffineCurve::from_x_coordinate(x, true))`.
-        //     fn pair_from_x_coordinate(x: Self::BaseField) -> Option<(Self, Self)> {
-        //         unimplemented!()
-        //     }
-
-        //     /// Attempts to construct an affine point given a y-coordinate. The
-        //     /// point is not guaranteed to be in the prime order subgroup.
-        //     ///
-        //     /// If and only if `greatest` is set will the lexicographically
-        //     /// largest y-coordinate be selected.
-        //     fn from_y_coordinate(y: Self::BaseField, greatest: bool) -> Option<Self> {
-        //         unimplemented!()
-        //     }
-
-        //     /// Multiply this element by the cofactor and output the
-        //     /// resulting projective element.
-        //     #[must_use]
-        //     fn mul_by_cofactor_to_projective(&self) -> Self::Projective {
-        //         unimplemented!()
-        //     }
-
-        //     /// Converts this element into its projective representation.
-        //     #[must_use]
-        //     fn to_projective(&self) -> Self::Projective {
-        //         unimplemented!()
-        //     }
-
-        //     /// Returns a group element if the set of bytes forms a valid group element,
-        //     /// otherwise returns None. This function is primarily intended for sampling
-        //     /// random group elements from a hash-function or RNG output.
-        //     fn from_random_bytes(bytes: &[u8]) -> Option<Self> {
-        //         unimplemented!()
-        //     }
-
-        //     /// Multiply this element by a big-endian boolean representation of
-        //     /// an integer.
-        //     fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Self::Projective {
-        //         unimplemented!()
-        //     }
-
-        //     /// Multiply this element by the cofactor.
-        //     #[must_use]
-        //     fn mul_by_cofactor(&self) -> Self {
-        //         unimplemented!()
-        //     }
-
-        //     /// Multiply this element by the inverse of the cofactor modulo the size of
-        //     /// `Self::ScalarField`.
-        //     #[must_use]
-        //     fn mul_by_cofactor_inv(&self) -> Self {
-        //         self.mul_by_cofactor_to_projective().into()
-        //     }
-
-        //     /// Checks that the point is in the prime order subgroup given the point on the curve.
-        //     #[must_use]
-        //     fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool {
-        //         unimplemented!()
-        //     }
-
-        //     /// Returns the x-coordinate of the point.
-        //     #[must_use]
-        //     fn to_x_coordinate(&self) -> Self::BaseField {
-        //         unimplemented!()
-        //     }
-
-        //     /// Returns the y-coordinate of the point.
-        //     #[must_use]
-        //     fn to_y_coordinate(&self) -> Self::BaseField {
-        //         unimplemented!()
-        //     }
-
-        //     /// Checks that the current point is on the elliptic curve.
-        //     fn is_on_curve(&self) -> bool {
-        //         unimplemented!()
-        //     }
-
-        //     /// Performs the first half of batch addition in-place.
-        //     fn batch_add_loop_1(
-        //         a: &mut Self,
-        //         b: &mut Self,
-        //         half: &Self::BaseField, // The value 2.inverse().
-        //         inversion_tmp: &mut Self::BaseField,
-        //     ) {
-        //         unimplemented!()
-        //     }
-
-        //     /// Performs the second half of batch addition in-place.
-        //     fn batch_add_loop_2(a: &mut Self, b: Self, inversion_tmp: &mut Self::BaseField) {
-        //         unimplemented!()
-        //     }
-
-        // }
         impl<E: $bound1, PS: $bound2<E>> Reveal for $wrap<E, PS> {
             type Base = E::$base;
             #[inline]
@@ -1048,73 +910,6 @@ macro_rules! impl_pairing_curve_wrapper_proj {
                 self.val.to_field_elements()
             }
         }
-        // impl<E: $bound1, PS: $bound2<E>> $proj_group for $wrap<E, PS> {
-        //     type ScalarField = MpcField<E::Fr, PS::FrShare>;
-        //     type BaseField = MpcField<E::$base_field, PS::$base_field_share>;
-        //     type Affine = $proj_group::Affine;
-
-        //     /// Returns a fixed generator of unknown exponent.
-        //     #[must_use]
-        //     fn prime_subgroup_generator() -> Self {
-        //         unimplemented!()
-        //     }
-
-        //     /// Normalizes a slice of projective elements so that
-        //     /// conversion to affine is cheap.
-        //     fn batch_normalization(v: &mut [Self]) {
-        //         unimplemented!()
-        //     }
-
-        //     /// Normalizes a slice of projective elements and outputs a vector
-        //     /// containing the affine equivalents.
-        //     fn batch_normalization_into_affine(mut v: Vec<Self>) -> Vec<Self::Affine> {
-        //         Self::batch_normalization(&mut v);
-        //         v.into_iter().map(|v| v.into()).collect()
-        //     }
-
-        //     /// Checks if the point is already "normalized" so that
-        //     /// cheap affine conversion is possible.
-        //     #[must_use]
-        //     fn is_normalized(&self) -> bool {
-        //         unimplemented!()
-        //     }
-
-        //     /// Adds an affine element to this element.
-        //     fn add_assign_mixed(&mut self, other: &Self::Affine) {
-        //         unimplemented!()
-        //     }
-
-        //     /// Adds an affine element to this element.
-        //     fn add_mixed(&self, other: &Self::Affine) -> Self {
-        //         let mut copy = *self;
-        //         copy.add_assign_mixed(other);
-        //         copy
-        //     }
-
-        //     /// Adds an affine element to this element.
-        //     fn sub_assign_mixed(&mut self, other: &Self::Affine) {
-        //         self.add_assign_mixed(&-*other);
-        //     }
-
-        //     /// Returns `self + self`.
-        //     #[must_use]
-        //     fn double(&self) -> Self {
-        //         unimplemented!()
-        //     }
-
-        //     /// Sets `self := self + self`.
-        //     fn double_in_place(&mut self) {
-        //         unimplemented!()
-        //     }
-
-        //     /// Converts this element into its affine representation.
-        //     #[must_use]
-        //     #[allow(clippy::wrong_self_convention)]
-        //     fn to_affine(&self) -> Self::Affine {
-        //         unimplemented!()
-        //     }
-
-        // }
         impl<E: $bound1, PS: $bound2<E>> Reveal for $wrap<E, PS> {
             type Base = E::$base;
             #[inline]
@@ -1201,7 +996,7 @@ impl_pairing_curve_wrapper_aff!(
     Fq,
     FqShare,
     MpcG1Affine,
-    MpcG1Projective,
+    MpcG1Projective
 );
 impl_pairing_curve_wrapper_proj!(
     MpcProjectiveGroup,
@@ -1309,7 +1104,6 @@ macro_rules! impl_aff_proj {
         impl<E: PairingEngine, PS: PairingShare<E>> AffineCurve for $w_aff<E, PS> {
             type ScalarField = MpcField<E::Fr, PS::FrShare>;
             type Coordinates = <<E as PairingEngine>::$aff as AffineCurve>::Coordinates;
-            // const COFACTOR: &'static [u64] = E::$aff::COFACTOR;
             type BaseField = $w_base<E::$base, PS::$base_share>;
             type Projective = $w_pro<E, PS>;
             #[inline]
@@ -1374,74 +1168,6 @@ macro_rules! impl_aff_proj {
             fn batch_add_loop_2(a: &mut Self, b: Self, inversion_tmp: &mut Self::BaseField) {
                 todo!("AffineCurve::batch_add_loop_2")
             }
-            
-            // fn multi_scalar_mul(bases: &[Self], scalars: &[Self::ScalarField]) -> Self::Projective {
-            //     let b = {
-            //         assert!(bases.iter().all(|b| !b.is_shared()));
-            //         let scalars_shared = scalars.first().map(|s| s.is_shared()).unwrap_or(true);
-            //         assert!(scalars.iter().all(|b| scalars_shared == b.is_shared()));
-            //         let bases =
-            //             MpcGroup::all_public_or_shared(bases.into_iter().map(|i| i.val.clone()))
-            //                 .unwrap();
-            //         match MpcField::all_public_or_shared(scalars.into_iter().cloned()) {
-            //             Ok(pub_scalars) => {
-            //                 let t = start_timer!(|| "MSM inner");
-            //                 let r = $w_pro {
-            //                     // wat?
-            //                     val: if true {
-            //                         let t1 = start_timer!(|| "do msm");
-            //                         let r = <E::$aff as AffineCurve>::multi_scalar_mul(
-            //                             &bases,
-            //                             &pub_scalars,
-            //                         );
-            //                         end_timer!(t1);
-            //                         let t1 = start_timer!(|| "cast");
-            //                         let r = MpcGroup::Shared(
-            //                             <PS::$share_proj as Reveal>::from_public(r),
-            //                         );
-            //                         end_timer!(t1);
-            //                         r
-            //                     } else {
-            //                         MpcGroup::Public(<E::$aff as AffineCurve>::multi_scalar_mul(
-            //                             &bases,
-            //                             &pub_scalars,
-            //                         ))
-            //                     },
-            //                 };
-            //                 end_timer!(t);
-            //                 r
-            //             }
-            //             Err(priv_scalars) => {
-            //                 let t = start_timer!(|| "MSM inner");
-            //                 let r = $w_pro {
-            //                     val: MpcGroup::Shared(PS::$g_name::sh_aff_to_proj(
-            //                         <PS::$share_aff as GroupShare<E::$aff>>::multi_scale_pub_group(
-            //                             &bases,
-            //                             &priv_scalars,
-            //                         ),
-            //                     )),
-            //                 };
-            //                 end_timer!(t);
-            //                 r
-            //             }
-            //         }
-            //     };
-            //     // {
-            //     //     let mut pa = a;
-            //     //     let mut pb = b;
-            //     //     pa.publicize();
-            //     //     pb.publicize();
-            //     //     println!("{}\n->\n{}", a, pa);
-            //     //     println!("{}\n->\n{}", b, pb);
-            //     //     println!("Check eq!");
-            //     //     //assert_eq!(a, b);
-            //     //     assert_eq!(pa, pb);
-            //     // }
-            //     b
-            // }
-            // fn scalar_mul<S: Into<Self::ScalarField>>(&self, other: S) -> Self::Projective {
-            //     (*self * other.into()).into()
-            // }
         }
         impl<E: PairingEngine, PS: PairingShare<E>> ProjectiveCurve for $w_pro<E, PS> {
             type ScalarField = MpcField<E::Fr, PS::FrShare>;

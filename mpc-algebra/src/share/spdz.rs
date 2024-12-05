@@ -422,7 +422,7 @@ impl<G: AffineCurve, M> Reveal for SpdzAffineShare<G, M> {
             t - Into::<<G as AffineCurve>::Projective>::into(self.mac.val)
         };
         let all_dx_ts: Vec<<G as AffineCurve>::Projective> = Net::atomic_broadcast(&dx_t);
-        let sum: G = all_dx_ts.into_iter().sum<<G as AffineCurve>::Projective>().into();
+        let sum: G = all_dx_ts.into_iter().sum::<<G as AffineCurve>::Projective>().into();
         assert!(sum.is_zero());
         x
     }
