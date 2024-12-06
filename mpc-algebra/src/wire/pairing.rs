@@ -77,7 +77,13 @@ pub struct MpcG1Affine<E: PairingEngine, PS: PairingShare<E>> {
 
 impl<E: PairingEngine, PS: PairingShare<E>> PartialEq<MpcG1Projective<E, PS>> for MpcG1Affine<E, PS> {
     fn eq(&self, other: &MpcG1Projective<E, PS>) -> bool {
-        self.val == other.val
+        match (&self.val, &other.val) {
+            (MpcAffineGroup::Shared(_), MpcProjectiveGroup::Shared(_)) => {
+                unimplemented!("Shared group comparison")
+            },
+            (MpcAffineGroup::Public(a), MpcProjectiveGroup::Public(b)) => a == b,
+            _ => false,
+        }
     }
 }
 
@@ -95,7 +101,13 @@ pub struct MpcG1Projective<E: PairingEngine, PS: PairingShare<E>> {
 
 impl<E: PairingEngine, PS: PairingShare<E>> PartialEq<MpcG1Affine<E, PS>> for MpcG1Projective<E, PS> {
     fn eq(&self, other: &MpcG1Affine<E, PS>) -> bool {
-        self.val == other.val
+        match (&self.val, &other.val) {
+            (MpcProjectiveGroup::Shared(_), MpcAffineGroup::Shared(_)) => {
+                unimplemented!("Shared group comparison")
+            },
+            (MpcProjectiveGroup::Public(a), MpcAffineGroup::Public(b)) => a == b,
+            _ => false,
+        }
     }
 }
 
@@ -120,7 +132,13 @@ pub struct MpcG2Affine<E: PairingEngine, PS: PairingShare<E>> {
 
 impl<E: PairingEngine, PS: PairingShare<E>> PartialEq<MpcG2Projective<E, PS>> for MpcG2Affine<E, PS> {
     fn eq(&self, other: &MpcG2Projective<E, PS>) -> bool {
-        self.val == other.val
+        match (&self.val, &other.val) {
+            (MpcAffineGroup::Shared(_), MpcProjectiveGroup::Shared(_)) => {
+                unimplemented!("Shared group comparison")
+            },
+            (MpcAffineGroup::Public(a), MpcProjectiveGroup::Public(b)) => a == b,
+            _ => false,
+        }
     }
 }
 
@@ -138,7 +156,13 @@ pub struct MpcG2Projective<E: PairingEngine, PS: PairingShare<E>> {
 
 impl<E: PairingEngine, PS: PairingShare<E>> PartialEq<MpcG2Affine<E, PS>> for MpcG2Projective<E, PS> {
     fn eq(&self, other: &MpcG2Affine<E, PS>) -> bool {
-        self.val == other.val
+        match (&self.val, &other.val) {
+            (MpcProjectiveGroup::Shared(_), MpcAffineGroup::Shared(_)) => {
+                unimplemented!("Shared group comparison")
+            },
+            (MpcProjectiveGroup::Public(a), MpcAffineGroup::Public(b)) => a == b,
+            _ => false,
+        }
     }
 }
 
@@ -179,10 +203,10 @@ pub struct MpcPairingEngine<E: PairingEngine, PS: PairingShare<E>> {
     _phants: PhantomData<(E, PS)>,
 }
 
-pub struct BigIntegerWrapper<E: PairingEngine, PS: PairingShare<E>, T: BigInteger>{
-    pub val: T,
-    _marker: PhantomData<(E, PS)>,
-}
+// pub struct BigIntegerWrapper<E: PairingEngine, PS: PairingShare<E>, T: BigInteger>{
+//     pub val: T,
+//     _marker: PhantomData<(E, PS)>,
+// }
 // impl<E: PairingEngine, PS: PairingShare<E>, T: BigInteger> From<MpcField<E::Fr, PS::FrShare>> for BigIntegerWrapper<E, PS, T> {
 //     fn from(value: MpcField<E::Fr, PS::FrShare>) -> Self {
 //         match value {
@@ -193,6 +217,29 @@ pub struct BigIntegerWrapper<E: PairingEngine, PS: PairingShare<E>, T: BigIntege
 //             MpcField::Shared(f) => {
 //                 unimplemented!("Shared field into BigInteger")
 //             },
+//         }
+//     }
+// }
+
+// impl<E: PairingEngine, PS: PairingShare<E>, T: BigInteger> Deref for BigIntegerWrapper<E, PS, T> {
+//     type Target = T;
+
+//     fn deref(&self) -> &Self::Target {
+//         &self.0
+//     }
+// }
+// impl<E: PairingEngine, PS: PairingShare<E>> From<MpcField<E::Fr, PS::FrShare>> 
+//     for BigIntegerWrapper<E, PS, <<E as PairingEngine>::Fr as PrimeField>::BigInteger> 
+// {
+//     fn from(value: MpcField<E::Fr, PS::FrShare>) -> Self {
+//         match value {
+//             MpcField::Public(f) => BigIntegerWrapper{
+//                 val: f.to_bigint(),
+//                 _marker: PhantomData,
+//             },
+//             MpcField::Shared(_) => {
+//                 unimplemented!("Shared field into BigInteger")
+//             }
 //         }
 //     }
 // }
@@ -475,11 +522,11 @@ macro_rules! impl_ext_field_wrapper {
         impl<E: Field, PS: ExtFieldShare<E>> ToBits for $wrap<E, PS> {
             #[inline]
             fn write_bits_le(&self, vec: &mut Vec<bool>) {
-                self.val.write_bits_le(vec);
+                unimplemented!("write_bits_le")
             }
             #[inline]
             fn write_bits_be(&self, vec: &mut Vec<bool>) {
-                self.val.write_bits_be(vec);
+                unimplemented!("write_bits_be")
             }
         }
         impl<E: Field, PS: ExtFieldShare<E>> FromBits for $wrap<E, PS> {
@@ -577,7 +624,7 @@ macro_rules! impl_ext_field_wrapper {
                     .collect()
             }
         }
-        from_prim!(bool, Field, ExtFieldShare, $wrap);
+        // from_prim!(bool, Field, ExtFieldShare, $wrap);
         from_prim!(u8, Field, ExtFieldShare, $wrap);
         from_prim!(u16, Field, ExtFieldShare, $wrap);
         from_prim!(u32, Field, ExtFieldShare, $wrap);
@@ -700,10 +747,22 @@ macro_rules! impl_pairing_curve_wrapper_aff {
                 unimplemented!("impl_pairing_curve_wrapper::serialize")
             }
         }
-        impl<E: $bound1, PS: $bound2<E>> ToConstraintField<MpcField<E::Fq, PS::FqShare>> for $wrap<E, PS> {
+        impl<E: $bound1, PS: $bound2<E>> ToConstraintField<MpcField<E::Fq, PS::FqShare>> for $wrap<E, PS> 
+            where <E as PairingEngine>::G1Projective: PrimeField,
+        {
             #[inline]
             fn to_field_elements(&self) -> Result<Vec<MpcField<E::Fq, PS::FqShare>>, ConstraintFieldError> {
-                self.val.to_field_elements()
+                unimplemented!("aff wrapper to_field_elements")
+                // match &self.val {
+                //     MpcAffineGroup::Public(a) => a.to_field_elements().map(|v| {
+                //         v.into_iter()
+                //             .map(|e| MpcField::from_public(e))
+                //             .collect()
+                //     }),
+                //     MpcAffineGroup::Shared(a) => {
+                //         unimplemented!("Shared affine group to field elements")
+                //     },
+                // }
             }
         }
         impl<E: $bound1, PS: $bound2<E>> Reveal for $wrap<E, PS> {
@@ -870,9 +929,10 @@ macro_rules! impl_pairing_curve_wrapper_aff {
             type Output = $proj_wrap<E, PS>;
             #[inline]
             fn mul(self, other: MpcField<E::Fr, PS::FrShare>) -> Self::Output {
-                Self {
-                    val: self.val.mul(other),
-                }
+                unimplemented!("$wrap aff mul<MpcField>")
+                // Self {
+                //     val: self.val.mul(other),
+                // }
             }
         }
         impl<'a, E: $bound1, PS: $bound2<E>> Mul<&'a MpcField<E::Fr, PS::FrShare>>
@@ -881,9 +941,10 @@ macro_rules! impl_pairing_curve_wrapper_aff {
             type Output = $proj_wrap<E, PS>;
             #[inline]
             fn mul(self, other: &'a MpcField<E::Fr, PS::FrShare>) -> Self::Output {
-                Self {
-                    val: self.val.mul(other),
-                }
+                unimplemented!("$wrap aff mul<&MpcField>")
+                // Self {
+                //     val: self.val.mul(other),
+                // }
             }
         }
     };
@@ -920,7 +981,17 @@ macro_rules! impl_pairing_curve_wrapper_proj {
         impl<E: $bound1, PS: $bound2<E>> ToConstraintField<MpcField<E::Fq, PS::FqShare>> for $wrap<E, PS> {
             #[inline]
             fn to_field_elements(&self) -> Result<Vec<MpcField<E::Fq, PS::FqShare>>, ConstraintFieldError> {
-                self.val.to_field_elements()
+                unimplemented!("aff wrapper to_field_elements")
+                // match &self.val {
+                //     MpcProjectiveGroup::Public(a) => a.to_field_elements().map(|v| {
+                //         v.into_iter()
+                //             .map(|e| MpcField::from_public(e))
+                //             .collect()
+                //     }),
+                //     MpcProjectiveGroup::Shared(a) => {
+                //         unimplemented!("Shared projective group to field elements")
+                //     },
+                // }
             }
         }
         impl<E: $bound1, PS: $bound2<E>> Reveal for $wrap<E, PS> {
@@ -966,9 +1037,10 @@ macro_rules! impl_pairing_curve_wrapper_proj {
             type Output = Self;
             #[inline]
             fn mul(self, other: MpcField<E::Fr, PS::FrShare>) -> Self::Output {
-                Self {
-                    val: self.val.mul(other),
-                }
+                unimplemented!("$wrap proj mul<MpcField>")
+                // Self {
+                //     val: self.val.mul(other),
+                // }
             }
         }
         impl<'a, E: $bound1, PS: $bound2<E>> Mul<&'a MpcField<E::Fr, PS::FrShare>>
@@ -977,9 +1049,10 @@ macro_rules! impl_pairing_curve_wrapper_proj {
             type Output = Self;
             #[inline]
             fn mul(self, other: &'a MpcField<E::Fr, PS::FrShare>) -> Self::Output {
-                Self {
-                    val: self.val.mul(other),
-                }
+                unimplemented!("$wrap proj mul<&MpcField>")
+                // Self {
+                //     val: self.val.mul(other),
+                // }
             }
         }
         impl<E: $bound1, PS: $bound2<E>> MulAssign<MpcField<E::Fr, PS::FrShare>> for $wrap<E, PS> {
@@ -1049,10 +1122,10 @@ impl_ext_field_wrapper!(MpcField, MpcExtField);
 
 macro_rules! impl_aff_proj {
     ($w_aff:ident, $w_pro:ident, $aff:ident, $pro:ident, $g_name:ident, $w_base:ident, $base:ident, $base_share:ident, $share_aff:ident, $share_proj:ident) => {
-        // }
         impl<E: PairingEngine, PS: PairingShare<E>> From<$w_pro<E, PS>> for $w_aff<E, PS> {
             #[inline]
             fn from(o: $w_pro<E, PS>) -> Self {
+                // map(public_fn, private_fn)
                 Self {
                     val: o.val.map(|s| s.into(), PS::$g_name::sh_proj_to_aff),
                 }
@@ -1099,7 +1172,7 @@ macro_rules! impl_aff_proj {
         // }
 
         impl<E: PairingEngine, PS: PairingShare<E>> AffineCurve for $w_aff<E, PS> 
-        where <E::Fr as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
+        where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
         {
             type ScalarField = MpcField<E::Fr, PS::FrShare>;
             type Coordinates = <<E as PairingEngine>::$aff as AffineCurve>::Coordinates;
@@ -1168,9 +1241,10 @@ macro_rules! impl_aff_proj {
                 todo!("AffineCurve::batch_add_loop_2")
             }
         }
-        impl<E: PairingEngine, PS: PairingShare<E>> ProjectiveCurve for $w_pro<E, PS> {
+        impl<E: PairingEngine, PS: PairingShare<E>> ProjectiveCurve for $w_pro<E, PS> 
+        where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
+        {
             type ScalarField = MpcField<E::Fr, PS::FrShare>;
-            // const COFACTOR: &'static [u64] = E::$aff::COFACTOR;
             type BaseField = $w_base<E::$base, PS::$base_share>;
             type Affine = $w_aff<E, PS>;
             #[inline]

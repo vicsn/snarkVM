@@ -357,7 +357,7 @@ impl<G: ProjectiveCurve, M: Msm<G, G::ScalarField>> ProjectiveGroupShare<G> for 
             macs
             .iter()
             .zip(vals.iter())
-            .map(|(mac, val)| val.mul(&mac_share::<G::ScalarField>()) - *mac)
+            .map(|(mac, val)| val.mul(mac_share::<G::ScalarField>()) - *mac)
             .collect();
         let all_dx_ts: Vec<Vec<G>> = Net::atomic_broadcast(&dx_ts);
         for i in 0..n {
@@ -424,7 +424,7 @@ impl<G: AffineCurve, M> Reveal for SpdzAffineShare<G, M> {
         let all_dx_ts: Vec<<G as AffineCurve>::Projective> = Net::atomic_broadcast(&dx_t);
         let sum: G = all_dx_ts.into_iter().sum::<<G as AffineCurve>::Projective>().into();
         assert!(sum.is_zero());
-        x
+        x.into()
     }
     fn from_public(f: G) -> Self {
         Self {
@@ -445,7 +445,7 @@ impl<G: AffineCurve, M> Reveal for SpdzAffineShare<G, M> {
     fn king_share<R: Rng>(f: Self::Base, rng: &mut R) -> Self {
         let mut r: Vec<<G as AffineCurve>::Projective> = (0..(Net::n_parties()-1)).map(|_| <G as AffineCurve>::Projective::rand(rng)).collect();
         let sum_r: <G as AffineCurve>::Projective = r.iter().cloned().sum();
-        r.push(f.into() - sum_r);
+        r.push(Into::<<G as AffineCurve>::Projective>::into(f) - sum_r);
         // Convert to Affine
         let r = r.into_iter().map(Into::into).collect();
         Self::from_add_shared(Net::recv_from_king( if Net::am_king() { Some(r) } else { None }))
@@ -458,11 +458,11 @@ impl<G: AffineCurve, M> Reveal for SpdzAffineShare<G, M> {
             }).collect()
         }).collect();
         let final_shares: Vec<<G as AffineCurve>::Projective> = (0..rs[0].len()).map(|i| {
-            f[i].into() - rs.iter().map(|r| r[i]).sum::<<G as AffineCurve>::Projective>()
+            Into::<<G as AffineCurve>::Projective>::into(f[i]) - rs.iter().map(|r| r[i]).sum::<<G as AffineCurve>::Projective>()
         }).collect();
         rs.push(final_shares);
-        // Convert to Affine
-        let rs = rs.into_iter().map(|r| r.into_iter().map(Into::into).collect()).collect();
+        // Convert back to Affine
+        let rs = rs.into_iter().map(|r| r.into_iter().map(Into::<G>::into).collect::<Vec<_>>()).collect::<Vec<_>>();
         Net::recv_from_king(if Net::am_king() { Some(rs) } else {None}).into_iter().map(Self::from_add_shared).collect()
     }
 }
@@ -472,20 +472,20 @@ impl<G: AffineCurve, M: Msm<G, G::ScalarField>> AffineGroupShare<G> for SpdzAffi
 
     fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
         let (s_vals, macs): (Vec<<G as AffineCurve>::Projective>, Vec<<G as AffineCurve>::Projective>) =
-            selfs.into_iter().map(|s| (s.sh.val.into(), s.mac.val.into())).unzip();
+            selfs.into_iter().map(|s| (Into::<<G as AffineCurve>::Projective>::into(s.sh.val), Into::<<G as AffineCurve>::Projective>::into(s.mac.val))).unzip();
         let n = s_vals.len();
         let all_vals = Net::broadcast(&s_vals);
         let vals: Vec<G> =
-            (0..n).map(|i| all_vals.iter().map(|v| v[i]).sum().into()).collect();
+            (0..n).map(|i| all_vals.iter().map(|v| v[i]).sum::<<G as AffineCurve>::Projective>().into()).collect();
         let dx_ts: Vec<<G as AffineCurve>::Projective> =
             macs
             .iter()
             .zip(vals.iter())
-            .map(|(mac, val)| val.mul(&mac_share::<G::ScalarField>()) - *mac)
+            .map(|(mac, val)| val.mul(mac_share::<G::ScalarField>()) - *mac)
             .collect();
         let all_dx_ts: Vec<Vec<<G as AffineCurve>::Projective>> = Net::atomic_broadcast(&dx_ts);
         for i in 0..n {
-            let sum: G = all_dx_ts.iter().map(|dx_ts| dx_ts[i]).sum().into();
+            let sum: G = all_dx_ts.iter().map(|dx_ts| dx_ts[i]).sum::<<G as AffineCurve>::Projective>().into();
             assert!(sum.is_zero());
         }
         vals
@@ -519,7 +519,7 @@ impl<G: AffineCurve, M: Msm<G, G::ScalarField>> AffineGroupShare<G> for SpdzAffi
         if Net::am_king() {
             self.sh.shift(other);
         }
-        self.mac.val = Into::<G>::into(self.mac.val.into() + (*other * mac_share::<G::ScalarField>()));
+        self.mac.val = Into::<G>::into(Into::<<G as AffineCurve>::Projective>::into(self.mac.val) + (*other * mac_share::<G::ScalarField>()));
         self
     }
 
@@ -771,7 +771,7 @@ macro_rules! groups_share {
                 if Net::am_king() {
                     a.sh.val.add_assign_mixed(&o);
                 }
-                a.mac.val += &Into::<$proj>::into(o).scalar_mul(mac_share::<E::Fr>());
+                a.mac.val += (Into::<<E::$affine as AffineCurve>::Projective>::into(*o) * mac_share::<E::Fr>());
                 a
             }
             fn add_pub_proj_sh_aff(_a: &E::$proj, _o: Self::AffineShare) -> Self::ProjectiveShare {

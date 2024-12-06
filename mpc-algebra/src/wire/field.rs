@@ -297,7 +297,7 @@ impl<T: Field, S: FieldShare<T>> Reveal for MpcField<T, S> {
     }
 }
 
-from_prim!(bool, Field, FieldShare, MpcField);
+// from_prim!(bool, Field, FieldShare, MpcField);
 from_prim!(u8, Field, FieldShare, MpcField);
 from_prim!(u16, Field, FieldShare, MpcField);
 from_prim!(u32, Field, FieldShare, MpcField);
@@ -309,18 +309,6 @@ impl<T: PrimeField, S: FieldShare<T>> std::str::FromStr for MpcField<T, S> {
     #[inline]
     fn from_str(s: &str) -> Result<Self, T::Err> {
         T::from_str(s).map(Self::Public)
-    }
-}
-
-// Can't impl for a generic type
-#[allow(clippy::from_over_into)]
-impl<T: PrimeField, S: FieldShare<T>> Into<BigInteger256> for MpcField<T, S> {
-    #[inline]
-    fn into(self) -> BigInteger256 {
-        match self {
-            MpcField::Public(x) => x.into(),
-            MpcField::Shared(x) => unimplemented!(),
-        }
     }
 }
 

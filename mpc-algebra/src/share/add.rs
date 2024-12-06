@@ -190,7 +190,7 @@ impl<G: ProjectiveCurve, M> Reveal for AdditiveProjectiveShare<G, M> {
     type Base = G;
 
     fn reveal(self) -> G {
-        Net::broadcast(&self.val).into_iter().sum::<G>().into()
+        Net::broadcast(&self.val).into_iter().sum::<G>()
     }
     fn from_public(f: G) -> Self {
         Self {
@@ -308,7 +308,7 @@ impl<G: AffineCurve, M> Reveal for AdditiveAffineShare<G, M> {
             }).collect()
         }).collect();
         let final_shares: Vec<<G as AffineCurve>::Projective> = (0..rs[0].len()).map(|i| {
-            f[i].into() - rs.iter().map(|r| &r[i]).sum()
+            Into::<<G as AffineCurve>::Projective>::into(f[i]) - rs.iter().map(|r| r[i]).sum::<<G as AffineCurve>::Projective>()
         }).collect();
         rs.push(final_shares);
         // Convert shares back to Self::Base
@@ -325,7 +325,7 @@ impl<G: AffineCurve, M: Msm<G, G::ScalarField>> AffineGroupShare<G> for Additive
     fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
         let self_vec: Vec<<G as AffineCurve>::Projective> = selfs.into_iter().map(|s| s.val.into()).collect();
         let all_vals = Net::broadcast(&self_vec);
-        (0..self_vec.len()).map(|i| all_vals.iter().map(|v| v[i]).sum().into()).collect()
+        (0..self_vec.len()).map(|i| all_vals.iter().map(|v| v[i]).sum::<<G as AffineCurve>::Projective>().into()).collect()
     }
 
     fn add(&mut self, other: &Self) -> &mut Self {

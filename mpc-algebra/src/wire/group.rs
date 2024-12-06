@@ -65,8 +65,8 @@ pub enum MpcAffineGroup<G: AffineCurve, S: AffineGroupShare<G>> {
 //     }
 // }
 
-impl_basics_group!(ProjectiveGroupShare, ProjectiveCurve, MpcProjectiveGroup);
-impl_basics_group!(AffineGroupShare, AffineCurve, MpcAffineGroup);
+impl_basics_group!(ProjectiveGroupShare, ProjectiveCurve, MpcProjectiveGroup, MpcAffineGroup, AffineGroupShare, AffineCurve);
+impl_basics_group!(AffineGroupShare, AffineCurve, MpcAffineGroup, MpcProjectiveGroup, ProjectiveGroupShare, ProjectiveCurve);
 
 impl<'a, T: ProjectiveCurve, S: ProjectiveGroupShare<T>> AddAssign<&'a MpcProjectiveGroup<T, S>> for MpcProjectiveGroup<T, S> {
     #[inline]

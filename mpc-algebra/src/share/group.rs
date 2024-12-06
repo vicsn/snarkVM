@@ -40,7 +40,7 @@ pub trait ProjectiveGroupShare<G: ProjectiveCurve>:
         <Self as Reveal>::reveal(*self)
     }
 
-    fn map_homo<G2: ProjectiveCurve, S2: ProjectiveGroupShare<G2>, Fun: Fn(G) -> G2>(self, f: Fun) -> S2 {
+    fn map_homo<G2: AffineCurve, S2: AffineGroupShare<G2>, Fun: Fn(G) -> G2>(self, f: Fun) -> S2 {
         S2::from_add_shared(f(self.unwrap_as_public()))
     }
 
@@ -147,7 +147,7 @@ pub trait AffineGroupShare<G: AffineCurve>:
         <Self as Reveal>::reveal(*self)
     }
 
-    fn map_homo<G2: AffineCurve, S2: AffineGroupShare<G2>, Fun: Fn(G) -> G2>(self, f: Fun) -> S2 {
+    fn map_homo<G2: ProjectiveCurve, S2: ProjectiveGroupShare<G2>, Fun: Fn(G) -> G2>(self, f: Fun) -> S2 {
         S2::from_add_shared(f(self.unwrap_as_public()))
     }
 

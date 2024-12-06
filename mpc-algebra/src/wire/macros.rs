@@ -39,7 +39,7 @@ pub fn check_eq<T: CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Disp
 }
 
 macro_rules! impl_basics_group {
-    ($share:ident, $bound:ident, $wrap:ident) => {
+    ($share:ident, $bound:ident, $wrap:ident, $mapped:ident, $mapped_share:ident, $mapped_bound:ident) => {
         impl<T: $bound, S: $share<T>> $wrap<T, S> {
             #[inline]
             pub fn new(t: T, shared: bool) -> Self {
@@ -54,14 +54,14 @@ macro_rules! impl_basics_group {
                 Self::new(t, false)
             }
             #[inline]
-            pub fn map<TT: $bound, SS: $share<TT>, FT: Fn(T) -> TT, FS: Fn(S) -> SS>(
+            pub fn map<TT: $mapped_bound, SS: $mapped_share<TT>, FT: Fn(T) -> TT, FS: Fn(S) -> SS>(
                 self,
                 ft: FT,
                 fs: FS,
-            ) -> $wrap<TT, SS> {
+            ) -> $mapped<TT, SS> {
                 match self {
-                    Self::Shared(s) => $wrap::Shared(fs(s)),
-                    Self::Public(s) => $wrap::Public(ft(s)),
+                    Self::Shared(s) => $mapped::Shared(fs(s)),
+                    Self::Public(s) => $mapped::Public(ft(s)),
                 }
             }
         }
