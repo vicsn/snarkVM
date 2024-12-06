@@ -1,7 +1,7 @@
 [package]
 name = "mpc-algebra"
-version = "0.1.0"
-authors = ["Alex Ozdemir <aozdemir@hmc.edu>"]
+version = "1.0.0"
+authors = ["Victor Sint Nicolaas <victor@provable.com>", "Alex Ozdemir <aozdemir@hmc.edu>"]
 edition = "2021"
 
 [dependencies]

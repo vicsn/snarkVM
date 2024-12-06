@@ -34,6 +34,11 @@ name = "curves"
 path = "benches/curves.rs"
 harness = false
 
+[dependencies.mpc-trait]
+path = "../mpc-trait"
+version = "=1.0.0"
+default-features = false
+
 [dependencies.snarkvm-fields]
 path = "../fields"
 version = "=1.0.0"
