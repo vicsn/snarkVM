@@ -68,7 +68,7 @@ mod squarings {
         // use ark_marlin::Marlin;
         // use ark_marlin::*;
         // use ark_poly_commit::marlin::marlin_pc::MarlinKZG10;
-        use snarkvm_algorithms::{crypto_hash::PoseidonSponge, fft::DensePolynomial, snark::varuna::{AHPForR1CS, CircuitProvingKey, VarunaHidingMode, VarunaSNARK}, AlgebraicSponge, SNARK};
+        use snarkvm_algorithms::{crypto_hash::PoseidonSponge, fft::DensePolynomial, snark::varuna::{AHPForR1CS, CircuitProvingKey, VarunaHidingMode, test_circuit::TestCircuit, VarunaSNARK}, AlgebraicSponge, SNARK};
         use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
         use snarkvm_circuit::{prelude::{Field, *}, Environment, network::AleoV0};
         use snarkvm_utilities::TestRng;
@@ -116,25 +116,50 @@ mod squarings {
 
             fn mpc<E: PairingEngine, S: PairingShare<E>>(n: usize, timer_label: &str) { // Key entrypoint
 
+                type VarunaInst<E> = VarunaSNARK::<E, PoseidonSponge<<E as PairingEngine>::Fq, 2, 1>, VarunaHidingMode>;
+
+                // type MPC_FS = PoseidonSponge<E::Fq, 2, 1>; // TODO: may need to wrap Fq in MpcField
+                // type MPC_VarunaInst<E, S> = VarunaSNARK<MpcPairingEngine<E, S>, MPC_FS, VarunaHidingMode>;
+
                 let snarkvm_rng = &mut TestRng::default();
-                type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
-                type FS = PoseidonSponge<Fq, 2, 1>;
-                let _candidate_output = create_example_circuit::<Circuit>();
-                let assignment = Circuit::eject_assignment_and_reset();
+       
+                // NOTE: it might be theoretically possible to use a higher level Circuit crate representation...
+                // let _candidate_output = create_example_circuit::<Circuit>();
+                // let assignment = Circuit::eject_assignment_and_reset();
+               
+                let mul_depth = 2;
+                let num_constraints = 8;
+                let num_variables = 8;
+                let (circuit, _) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, snarkvm_rng);
+
                 let max_degree = 300;
-                let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
+                let universal_srs = VarunaInst::<E>::universal_setup(max_degree).unwrap();
                 let universal_prover = &universal_srs.to_universal_prover().unwrap();
                 let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
-                let fs_pp = FS::sample_parameters();
-                let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &assignment).unwrap();
+                let fs_pp = PoseidonSponge::<E::Fq, 2, 1>::sample_parameters();
+                let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
                 
-                // let mpc_pk = CircuitProvingKey::from_public(index_pk);
+                let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, &circuit, snarkvm_rng).unwrap();
+                // let one = <Circuit as Environment>::BaseField::one();
+                let one = <E as PairingEngine>::Fr::one();
+                let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap();
+                assert!(result);
 
-                // TODO: look at how all inputs needs to be parameterized.
-                // TODO: especially Assignment. We call generate_constraints still during proving. But perhaps, that is just a plain local linear transformation, so no worries.
-                let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, &assignment, snarkvm_rng).unwrap();
-                let one = <Circuit as Environment>::BaseField::one();
-                VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap();
+                // let mpc_fs_pp = MPC_FS::sample_parameters();
+                // let mpc_pk = CircuitProvingKey::from_public(index_pk);
+                // let mpc_universal_prover = UniversalProver::from_public(universal_prover);
+                // let mpc_assignment = Assignment::from_public(assignment); // TODO: we'll have to split among users.
+                // MpcMultiNet::reset_stats();
+                // let timer = start_timer!(|| timer_label);
+                // let snarkvm_rng = &mut TestRng::default();
+                // let proof = channel::without_cheating(|| {
+                //     MPC_VarunaInst::prove(mpc_universal_prover, &mpc_fs_pp, &mpc_pk, &mpc_assignment, snarkvm_rng)
+                //     .unwrap()
+                //     .reveal()
+                // });
+                // let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap();
+                // assert!(result);
+
 
                 // let rng = &mut TestRng::default();
                 // let circ_no_data = RepeatedSquaringCircuit::without_data(n);

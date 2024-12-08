@@ -1,6 +1,6 @@
 use log::debug;
 use mpc_net::multi as net;
-use mpc_algebra::share::gs20;
+use mpc_net::two::init_from_path;
 
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -21,11 +21,11 @@ fn main() {
     debug!("Start");
     let opt = Opt::from_args();
     println!("{:?}", opt);
-    multi::init_from_path(opt.input.to_str().unwrap(), opt.id);
-    let all = multi::broadcast(&[opt.id as u8]);
+    init_from_path(opt.input.to_str().unwrap(), opt.id);
+    let all = broadcast(&[opt.id as u8]);
     println!("{:?}", all);
-    let r = multi::send_to_king(&[opt.id as u8]);
-    let all = multi::recv_from_king(r);
+    let r = send_to_king(&[opt.id as u8]);
+    let all = recv_from_king(r);
     println!("{:?}", all);
-    multi::uninit();
+    uninit();
 }

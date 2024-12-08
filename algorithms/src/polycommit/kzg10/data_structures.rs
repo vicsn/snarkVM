@@ -33,7 +33,7 @@ use crate::srs::{UniversalProver, UniversalVerifier};
 use anyhow::Result;
 use core::ops::{Add, AddAssign};
 use rand_core::RngCore;
-use std::{collections::BTreeMap, io, ops::Range, sync::Arc};
+use std::{collections::BTreeMap, io, ops::Range, sync::Arc, marker::PhantomData};
 
 /// `UniversalParams` are the universal parameters for the KZG10 scheme.
 #[derive(Clone, Debug)]
@@ -92,7 +92,7 @@ impl<E: PairingEngine> UniversalParams<E> {
     }
 
     pub fn to_universal_prover(&self) -> Result<UniversalProver<E>> {
-        Ok(UniversalProver::<E> { max_degree: self.max_degree(), _unused: None })
+        Ok(UniversalProver::<E> { max_degree: self.max_degree(), _unused: PhantomData })
     }
 
     pub fn to_universal_verifier(&self) -> Result<UniversalVerifier<E>> {

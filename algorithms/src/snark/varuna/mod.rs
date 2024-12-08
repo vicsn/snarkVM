@@ -17,7 +17,7 @@
 pub mod ahp;
 pub use ahp::*;
 
-pub(crate) mod data_structures;
+pub mod data_structures;
 pub use data_structures::*;
 
 pub mod reveal;

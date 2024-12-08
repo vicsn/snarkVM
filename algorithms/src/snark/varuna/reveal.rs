@@ -2,15 +2,6 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-// use ark_ff::Field;
-// use ark_ec::PairingEngine;
-// use ark_poly::univariate::DensePolynomial;
-// use ark_poly_commit::marlin_pc::MarlinKZG10;
-// use ark_poly_commit::reveal as pc_reveal;
-// use blake2::Blake2s;
-// use mpc_algebra::*;
-// use Marlin;
-
 use super::*;
 // use crate::ahp::*;
 // use ark_poly::EvaluationDomain;
@@ -21,8 +12,10 @@ use crate::polycommit::*;
 use crate::snark::varuna::prover::*;
 use snarkvm_fft::fft::domain::{FFTPrecomputation, IFFTPrecomputation};
 use crate::snark::varuna::matrices::MatrixEvals;
+use crate::srs::UniversalProver;
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::PrimeField;
+use std::marker::PhantomData;
 
 use std::sync::Arc;
 
@@ -243,9 +236,29 @@ where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E:
     }
 }
 
-// impl<E: PairingEngine, PS: PairingShare<E>> Reveal for CircuitProvingKey<MpcPairingEngine<E, PS>, VarunaHidingMode>
-// where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>
-// {
-//     type Base = CircuitProvingKey<E, VarunaHidingMode>;
-//     struct_reveal_simp_impl!(CircuitProvingKey; circuit_verifying_key, circuit, committer_key);
-// }
+impl<E: PairingEngine, PS: PairingShare<E>> Reveal for UniversalProver<MpcPairingEngine<E, PS>>
+where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>
+{
+    type Base = UniversalProver<E>;
+
+    fn reveal(self) -> Self::Base {
+        UniversalProver::<E> {
+            max_degree: self.max_degree,
+            _unused: PhantomData,
+        }
+    }
+
+    fn from_add_shared(b: Self::Base) -> Self {
+        Self {
+            max_degree: b.max_degree,
+            _unused: PhantomData,
+        }
+    }
+
+    fn from_public(b: Self::Base) -> Self {
+        Self {
+            max_degree: b.max_degree,
+            _unused: PhantomData,
+        }
+    }
+}

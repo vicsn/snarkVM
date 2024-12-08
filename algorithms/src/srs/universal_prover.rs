@@ -14,11 +14,12 @@
 // limitations under the License.
 
 use snarkvm_curves::PairingEngine;
+use std::marker::PhantomData;
 
 /// `UniversalProver` is used to compute evaluation proofs for a given commitment.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct UniversalProver<E: PairingEngine> {
     /// The maximum degree supported by the universal SRS.
     pub max_degree: usize,
-    pub _unused: Option<E>,
+    pub _unused: PhantomData<E>,
 }
