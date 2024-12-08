@@ -1,11 +1,13 @@
 #![macro_use]
 #![feature(associated_type_defaults)]
 
-pub mod reveal;
-pub use reveal::*;
 pub mod channel;
 pub mod com;
 pub mod group;
+pub mod reveal_impl;
+pub use reveal_impl::*;
+pub mod reveal_trait;
+pub use reveal_trait::*;
 pub mod share;
 pub use share::*;
 pub mod wire;

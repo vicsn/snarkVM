@@ -10,7 +10,8 @@ use snarkvm_fields::{FftField, Field, One, PoseidonDefaultField, PoseidonParamet
 use snarkvm_utilities::{
     BigInteger, BigInteger256, BigInteger384, CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Compress, Flags, FromBytes, SerializationError, ToBytes, Uniform, Valid, Validate
 };
-use mpc_trait::MpcWire;
+use snarkvm_curves::MpcWire;
+use crate::{FieldShare, BeaverSource, Reveal};
 
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::{self, Read, Write};
@@ -20,18 +21,7 @@ use std::ops::*;
 
 use anyhow;
 
-use super::super::share::field::FieldShare;
-use super::super::share::BeaverSource;
-use crate::Reveal;
 use mpc_net::{MpcNet, MpcMultiNet as Net};
-
-// pub trait MpcFieldTrait: PrimeField + SquareRootField + Into<<Self as PrimeField>::BigInteger> {
-
-// }
-
-// impl<F: Field, S: FieldShare<F>> MpcFieldTrait for MpcField<F, S> {
-
-// }
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MpcField<F: Field, S: FieldShare<F>> {
@@ -480,13 +470,13 @@ impl<F: PrimeField, S: FieldShare<F>> Field for MpcField<F, S> {
     //     true
     // }
     // fn univariate_div_qr<'a>(
-    //     num: snarkvm_algorithms::fft::Polynomial<Self>,
-    //     den: snarkvm_algorithms::fft::Polynomial<Self>,
+    //     num: snarkvm_fft::fft::Polynomial<Self>,
+    //     den: snarkvm_fft::fft::Polynomial<Self>,
     // ) -> Option<(
     //     poly_stub::DensePolynomial<Self>,
     //     poly_stub::DensePolynomial<Self>,
     // )> {
-    //     use snarkvm_algorithms::fft::Polynomial::*;
+    //     use snarkvm_fft::fft::Polynomial::*;
     //     let shared_num = match num {
     //         DPolynomial(d) => Ok(d.into_owned().coeffs.into_iter().map(|c| match c {
     //             MpcField::Shared(s) => s,
@@ -581,11 +571,12 @@ impl<F: PrimeField, S: FieldShare<F>> SquareRootField for MpcField<F, S> {
 
 mod poly_impl {
 
-    use crate::share::*;
-    use crate::wire::*;
-    use crate::Reveal;
-    use snarkvm_fields::PrimeField;
-    use snarkvm_algorithms::fft::{EvaluationDomain, Evaluations, DensePolynomial};
+    use super::*;
+    // use crate::share::*;
+    // use crate::wire::*;
+    use crate::{Reveal, struct_reveal_simp_impl, FieldShare};
+    // use snarkvm_fields::PrimeField;
+    use snarkvm_fft::fft::{EvaluationDomain, Evaluations, DensePolynomial};
 
     impl<E: PrimeField, S: FieldShare<E>> Reveal for DensePolynomial<MpcField<E, S>> {
         type Base = DensePolynomial<E>;

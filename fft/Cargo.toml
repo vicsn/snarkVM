@@ -1,5 +1,5 @@
 [package]
-name = "snarkvm-algorithms"
+name = "snarkvm-fft"
 version = "1.0.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Algorithms for a decentralized virtual machine"
@@ -23,38 +23,6 @@ include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
 edition = "2021"
 
-[[bench]]
-name = "variable_base"
-path = "benches/msm/variable_base.rs"
-harness = false
-
-[[bench]]
-name = "poseidon_sponge"
-path = "benches/crypto_hash/poseidon.rs"
-harness = false
-
-[[bench]]
-name = "fft"
-path = "benches/fft/fft.rs"
-harness = false
-bench = false
-
-[[bench]]
-name = "varuna"
-path = "benches/snark/varuna.rs"
-harness = false
-required-features = [ "test" ]
-
-[dependencies.mpc-algebra]
-path = "../mpc-algebra"
-version = "=1.0.0"
-default-features = false
-
-[dependencies.mpc-trait]
-path = "../mpc-trait"
-version = "=1.0.0"
-default-features = false
-
 [dependencies.snarkvm-curves]
 path = "../curves"
 version = "=1.0.0"
@@ -62,16 +30,6 @@ default-features = false
 
 [dependencies.snarkvm-fields]
 path = "../fields"
-version = "=1.0.0"
-default-features = false
-
-[dependencies.snarkvm-fft]
-path = "../fft"
-version = "=1.0.0"
-default-features = false
-
-[dependencies.snarkvm-msm]
-path = "../msm"
 version = "=1.0.0"
 default-features = false
 
@@ -84,11 +42,6 @@ optional = true
 path = "../utilities"
 version = "=1.0.0"
 default-features = false
-
-[dependencies.snarkvm-algorithms-cuda]
-path = "./cuda"
-version = "=1.0.0"
-optional = true
 
 [dependencies.aleo-std]
 version = "0.1.24"
@@ -108,10 +61,6 @@ optional = true
 [dependencies.crossbeam-channel]
 version = "0.5"
 optional = true
-
-[dependencies.derivative]
-version = "2.0"
-features = ["use_core"]
 
 [dependencies.fxhash]
 version = "0.2.1"
@@ -203,33 +152,14 @@ default = [
   "snarkvm-fields/default",
   "snarkvm-utilities/default"
 ]
-full = [
-  "crypto_hash",
-  "msm",
-  "polycommit_full",
-  "r1cs",
-  "snark"
-]
-wasm = [
-  "crypto_hash",
-  "msm",
-  "polycommit_wasm",
-  "r1cs",
-  "snark",
-  "wasm-bindgen-futures"
-]
-cuda = [ "snarkvm-algorithms-cuda" ]
+full = [ ]
 profiler = [ "aleo-std/profiler" ]
 crypto_hash = [ ]
+fft = [ ]
 msm = [ ]
 test = [ ]
-polycommit = [ "crypto_hash", "msm", "rand_core" ]
-polycommit_wasm = [ "polycommit", "snarkvm-parameters/wasm" ]
-polycommit_full = [ "polycommit", "snarkvm-parameters/default" ]
-r1cs = [ "cfg-if", "fxhash", "indexmap" ]
 serial = [
   "snarkvm-curves/serial",
   "snarkvm-fields/serial",
   "snarkvm-utilities/serial"
 ]
-snark = [ "crypto_hash", "msm", "polycommit", "r1cs" ]

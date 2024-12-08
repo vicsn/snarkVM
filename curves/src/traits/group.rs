@@ -58,7 +58,7 @@ pub trait ProjectiveCurve:
     + ToBytes
     + iter::Sum
     + From<<Self as ProjectiveCurve>::Affine>
-    + mpc_trait::MpcWire
+    + crate::MpcWire
 {
     type Affine: AffineCurve<Projective = Self, ScalarField = Self::ScalarField> + From<Self> + Into<Self>;
     type BaseField: Field;
@@ -139,7 +139,7 @@ pub trait AffineCurve:
     + ToBytes
     + From<<Self as AffineCurve>::Projective>
     + Zero
-    + mpc_trait::MpcWire
+    + crate::MpcWire
 {
     type Projective: ProjectiveCurve<Affine = Self, ScalarField = Self::ScalarField> + From<Self> + Into<Self>;
     type BaseField: Field + SquareRootField;

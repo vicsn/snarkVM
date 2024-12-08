@@ -1,3 +1,18 @@
+// Copyright 2024 Aleo Network Foundation
+// This file is part of the snarkVM library.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at:
+
+// http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #![macro_use]
 use std::{collections::BTreeMap, marker::PhantomData, rc::Rc};
 use rand::Rng;
@@ -42,29 +57,61 @@ pub trait Reveal: Sized {
     fn deinit_protocol() {}
 }
 
-impl Reveal for usize {
-    type Base = usize;
-
-    fn reveal(self) -> Self::Base {
-        self
-    }
-
-    fn from_add_shared(b: Self::Base) -> Self {
-        b
-    }
-
-    fn from_public(b: Self::Base) -> Self {
-        b
-    }
-
-    fn unwrap_as_public(self) -> Self::Base {
-        self
-    }
-
-    fn king_share<R: Rng>(b: Self::Base, _rng: &mut R) -> Self {
-        b
+#[macro_export]
+macro_rules! primitive_reveal_impl {
+    ($primitive:ident) => {
+        impl Reveal for $primitive {
+            type Base = $primitive;
+        
+            fn reveal(self) -> Self::Base {
+                self
+            }
+        
+            fn from_add_shared(b: Self::Base) -> Self {
+                b
+            }
+        
+            fn from_public(b: Self::Base) -> Self {
+                b
+            }
+        
+            fn unwrap_as_public(self) -> Self::Base {
+                self
+            }
+        
+            fn king_share<R: Rng>(b: Self::Base, _rng: &mut R) -> Self {
+                b
+            }
+        }
     }
 }
+primitive_reveal_impl!(usize);
+primitive_reveal_impl!(u64);
+primitive_reveal_impl!(u32);
+
+// impl Reveal for usize {
+//     type Base = usize;
+
+//     fn reveal(self) -> Self::Base {
+//         self
+//     }
+
+//     fn from_add_shared(b: Self::Base) -> Self {
+//         b
+//     }
+
+//     fn from_public(b: Self::Base) -> Self {
+//         b
+//     }
+
+//     fn unwrap_as_public(self) -> Self::Base {
+//         self
+//     }
+
+//     fn king_share<R: Rng>(b: Self::Base, _rng: &mut R) -> Self {
+//         b
+//     }
+// }
 
 impl<T: Reveal> Reveal for PhantomData<T> {
     type Base = PhantomData<T::Base>;
@@ -320,3 +367,4 @@ macro_rules! dbg_disp {
         println!("{}: {}", std::stringify!($e), &$e)
     }
 }
+

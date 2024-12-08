@@ -4,7 +4,7 @@ use snarkvm_fields::Field;
 use snarkvm_utilities::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, FromBytes, ToBytes, Uniform, Valid, Validate,
 };
-//use snarkvm_algorithms::fft::{DensePolynomial,Polynomial};
+//use snarkvm_fft::fft::{DensePolynomial,Polynomial};
 use core::ops::*;
 use std::cmp::Ord;
 use std::fmt::{Debug, Display};

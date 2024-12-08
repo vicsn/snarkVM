@@ -1,8 +1,8 @@
 // use ark_ff::Field;
-use ark_relations::{
-    lc,
-    r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
-};
+// use ark_relations::{
+//     lc,
+//     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
+// };
 
 #[derive(Clone)]
 pub struct MySillyCircuit<F: Field> {

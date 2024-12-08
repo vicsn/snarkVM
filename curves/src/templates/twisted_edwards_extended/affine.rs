@@ -52,7 +52,7 @@ impl<P: Parameters> Affine<P> {
     }
 }
 
-impl<P: Parameters> mpc_trait::MpcWire for Affine<P> {
+impl<P: Parameters> crate::MpcWire for Affine<P> {
 }
 
 impl<P: Parameters> Zero for Affine<P> {

@@ -46,7 +46,7 @@ impl<P: Parameters> Projective<P> {
     }
 }
 
-impl<P: Parameters> mpc_trait::MpcWire for Projective<P> {
+impl<P: Parameters> crate::MpcWire for Projective<P> {
 }
 
 impl<P: Parameters> Zero for Projective<P> {

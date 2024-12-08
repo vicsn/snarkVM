@@ -16,6 +16,9 @@
 pub mod group;
 pub use group::*;
 
+pub mod mpc_wire;
+pub use mpc_wire::*;
+
 pub mod pairing_engine;
 pub use pairing_engine::*;
 

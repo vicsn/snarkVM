@@ -13,25 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(associated_type_defaults)]
+#![warn(unsafe_code)]
 #![allow(clippy::module_inception)]
-// #![cfg_attr(nightly, feature(doc_cfg, external_doc))]
-// #![cfg_attr(nightly, warn(missing_docs))]
+#![allow(clippy::type_complexity)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
-#![doc = include_str!("../documentation/the_aleo_curves/00_overview.md")]
 
-#[macro_use]
-extern crate thiserror;
+pub use snarkvm_utilities::{cfg_chunks, cfg_chunks_mut, cfg_into_iter, cfg_iter, cfg_iter_mut, cfg_reduce};
 
-pub mod bls12_377;
-
-pub mod edwards_bls12;
-
-pub mod errors;
-pub use errors::*;
-
-pub mod templates;
-
-#[cfg_attr(test, macro_use)]
-pub mod traits;
-pub use traits::*;
+pub mod fft;
+pub use fft::*;

@@ -1,12 +1,12 @@
+pub mod add;
+pub use add::*;
 pub mod field;
 pub use field::*;
 pub mod group;
 pub use group::*;
+pub mod msm;
 pub mod pairing;
 pub use pairing::*;
-pub mod msm;
-pub mod add;
-pub use add::*;
 pub mod spdz;
 pub use spdz::*;
 

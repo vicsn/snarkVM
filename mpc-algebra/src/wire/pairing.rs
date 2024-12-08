@@ -21,15 +21,16 @@ use std::iter::{Product, Sum};
 use std::marker::PhantomData;
 use zeroize::Zeroize;
 
-use mpc_trait::MpcWire;
+use snarkvm_curves::MpcWire;
+use crate::{MpcProjectiveGroup, MpcAffineGroup};
+use crate::MpcField;
 
-use super::super::share::field::ExtFieldShare;
-// use super::super::share::group::GroupShare;
-use super::super::share::pairing::{AffProjShare, PairingShare};
-use super::super::share::BeaverSource;
-use super::field::MpcField;
-use super::group::{MpcProjectiveGroup, MpcAffineGroup};
-use crate::Reveal;
+use crate::{
+    ExtFieldShare,
+    {AffProjShare, PairingShare},
+    BeaverSource,
+    Reveal,
+};
 
 #[derive(Derivative)]
 #[derivative(Default(bound = ""), Clone(bound = ""), Copy(bound = ""))]
@@ -75,6 +76,23 @@ pub struct MpcG1Affine<E: PairingEngine, PS: PairingShare<E>> {
     pub val: MpcAffineGroup<E::G1Affine, PS::G1AffineShare>,
 }
 
+impl<E: PairingEngine, PS: PairingShare<E>> PairingCurve for MpcG1Affine<E, PS> 
+where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
+{
+    type Engine = MpcPairingEngine<E, PS>;
+    type PairWith = MpcG2Affine<E, PS>;
+    type PairingResult = MpcExtField<E::Fqk, PS::FqkShare>;
+    type Prepared = MpcG1Prep<E, PS>;
+
+    fn prepare(&self) -> Self::Prepared {
+        Self::Prepared::from_affine(*self)
+    }
+
+    fn pairing_with(&self, other: &Self::PairWith) -> Self::PairingResult {
+        MpcPairingEngine::<E, PS>::pairing(*self, *other)
+    }
+}
+
 impl<E: PairingEngine, PS: PairingShare<E>> PartialEq<MpcG1Projective<E, PS>> for MpcG1Affine<E, PS> {
     fn eq(&self, other: &MpcG1Projective<E, PS>) -> bool {
         match (&self.val, &other.val) {
@@ -111,12 +129,73 @@ impl<E: PairingEngine, PS: PairingShare<E>> PartialEq<MpcG1Affine<E, PS>> for Mp
     }
 }
 
-#[derive(Debug, Derivative)]
+#[derive(Debug, Derivative, Eq, PartialEq)]
 #[derivative(Clone(bound = ""), Default(bound = "<E::G1Affine as PairingCurve>::Prepared: Default"))]
 pub struct MpcG1Prep<E: PairingEngine, PS: PairingShare<E>> {
     pub val: <E::G1Affine as PairingCurve>::Prepared,
     pub _phants: PhantomData<(E, PS)>,
 }
+
+// use snarkvm_curves::templates::bls12::G1Prepared;
+// use snarkvm_curves::bls12_377::Bls12_377Parameters;
+
+impl<E: PairingEngine, PS: PairingShare<E>> MpcG1Prep<E, PS> {
+    fn from_affine(affine: MpcG1Affine<E, PS>) -> Self {
+        match affine.val {
+            MpcAffineGroup::Public(val) => {
+                MpcG1Prep{
+                    val: <E::G1Affine as PairingCurve>::Prepared::from_affine(val),
+                    // G1Prepared::<Bls12_377Parameters>(val),
+                    _phants: PhantomData,
+                }
+            }
+            MpcAffineGroup::Shared(_) => {
+                unimplemented!("MpcG1Prep::from_affine");
+            }
+        }
+    }
+}
+impl<E: PairingEngine, PS: PairingShare<E>> FromBytes for MpcG1Prep<E, PS> {
+    fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
+        unimplemented!("MpcG1Prep::read_le")
+    }
+}
+impl<E: PairingEngine, PS: PairingShare<E>> ToBytes for MpcG1Prep<E, PS> {
+    fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        unimplemented!("MpcG1Prep::write_le")
+    }
+}
+impl<E: PairingEngine, PS: PairingShare<E>> CanonicalSerialize for MpcG1Prep<E, PS> {
+    fn serialize_with_mode<W: Write>(&self, mut writer: W, compress: Compress) -> Result<(), SerializationError> {
+        unimplemented!("MpcG1Prep::serialize_with_mode")
+    }
+
+    fn serialized_size(&self, compress: Compress) -> usize {
+        unimplemented!("MpcG1Prep::serialized_size")
+    }
+}
+impl<E: PairingEngine, PS: PairingShare<E>> CanonicalDeserialize for MpcG1Prep<E, PS> {
+    fn deserialize_with_mode<R: Read>(
+        mut reader: R,
+        compress: Compress,
+        validate: Validate,
+    ) -> Result<Self, SerializationError> {
+        unimplemented!("MpcG1Prep::deserialize_with_mode")
+    }
+}
+impl<E: PairingEngine, PS: PairingShare<E>> Valid for MpcG1Prep<E, PS> {
+    fn check(&self) -> Result<(), SerializationError> {
+        unimplemented!("MpcG1Prep::check")
+    }
+
+    fn batch_check<'a>(batch: impl Iterator<Item = &'a Self>) -> Result<(), SerializationError>
+    where
+        Self: 'a,
+    {
+        unimplemented!("MpcG1Prep::batch_check")
+    }
+}
+
 
 #[derive(Debug, Derivative)]
 #[derivative(
@@ -128,6 +207,23 @@ pub struct MpcG1Prep<E: PairingEngine, PS: PairingShare<E>> {
 )]
 pub struct MpcG2Affine<E: PairingEngine, PS: PairingShare<E>> {
     pub val: MpcAffineGroup<E::G2Affine, PS::G2AffineShare>,
+}
+
+impl<E: PairingEngine, PS: PairingShare<E>> PairingCurve for MpcG2Affine<E, PS> 
+where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
+{
+    type Engine = MpcPairingEngine<E, PS>;
+    type PairWith = MpcG1Affine<E, PS>;
+    type PairingResult = MpcExtField<E::Fqk, PS::FqkShare>;
+    type Prepared = MpcG2Prep<E, PS>;
+
+    fn prepare(&self) -> Self::Prepared {
+        Self::Prepared::from_affine(*self)
+    }
+
+    fn pairing_with(&self, other: &Self::PairWith) -> Self::PairingResult {
+        MpcPairingEngine::<E, PS>::pairing(*other, *self)
+    }
 }
 
 impl<E: PairingEngine, PS: PairingShare<E>> PartialEq<MpcG2Projective<E, PS>> for MpcG2Affine<E, PS> {
@@ -166,12 +262,69 @@ impl<E: PairingEngine, PS: PairingShare<E>> PartialEq<MpcG2Affine<E, PS>> for Mp
     }
 }
 
-#[derive(Debug, Derivative)]
+#[derive(Debug, Derivative, Eq, PartialEq)]
 #[derivative(Clone(bound = ""), Default(bound = "<E::G2Affine as PairingCurve>::Prepared: Default"))]
 pub struct MpcG2Prep<E: PairingEngine, PS: PairingShare<E>> {
     pub val: <E::G2Affine as PairingCurve>::Prepared,
     pub _phants: PhantomData<(E, PS)>,
 }
+
+impl<E: PairingEngine, PS: PairingShare<E>> MpcG2Prep<E, PS> {
+    fn from_affine(affine: MpcG2Affine<E, PS>) -> Self {
+        match affine.val {
+            MpcAffineGroup::Public(val) => {
+                MpcG2Prep{
+                    val: <E::G2Affine as PairingCurve>::Prepared::from_affine(val),
+                    _phants: PhantomData,
+                }
+            }
+            MpcAffineGroup::Shared(_) => {
+                unimplemented!("MpcG2Prep::from_affine");
+            }
+        }
+    }
+}
+impl<E: PairingEngine, PS: PairingShare<E>> FromBytes for MpcG2Prep<E, PS> {
+    fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
+        unimplemented!("MpcG2Prep::read_le")
+    }
+}
+impl<E: PairingEngine, PS: PairingShare<E>> ToBytes for MpcG2Prep<E, PS> {
+    fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        unimplemented!("MpcG2Prep::write_le")
+    }
+}
+impl<E: PairingEngine, PS: PairingShare<E>> CanonicalSerialize for MpcG2Prep<E, PS> {
+    fn serialize_with_mode<W: Write>(&self, mut writer: W, compress: Compress) -> Result<(), SerializationError> {
+        unimplemented!("MpcG2Prep::serialize_with_mode")
+    }
+
+    fn serialized_size(&self, compress: Compress) -> usize {
+        unimplemented!("MpcG2Prep::serialized_size")
+    }
+}
+impl<E: PairingEngine, PS: PairingShare<E>> CanonicalDeserialize for MpcG2Prep<E, PS> {
+    fn deserialize_with_mode<R: Read>(
+        mut reader: R,
+        compress: Compress,
+        validate: Validate,
+    ) -> Result<Self, SerializationError> {
+        unimplemented!("MpcG2Prep::deserialize_with_mode")
+    }
+}
+impl<E: PairingEngine, PS: PairingShare<E>> Valid for MpcG2Prep<E, PS> {
+    fn check(&self) -> Result<(), SerializationError> {
+        unimplemented!("MpcG2Prep::check")
+    }
+
+    fn batch_check<'a>(batch: impl Iterator<Item = &'a Self>) -> Result<(), SerializationError>
+    where
+        Self: 'a,
+    {
+        unimplemented!("MpcG2Prep::batch_check")
+    }
+}
+
 
 #[derive(Derivative)]
 #[derivative(
@@ -531,11 +684,11 @@ macro_rules! impl_ext_field_wrapper {
         }
         impl<E: Field, PS: ExtFieldShare<E>> FromBits for $wrap<E, PS> {
             #[inline]
-            fn from_bits_le(bits: &[bool]) -> snarkvm_console::prelude::Result<Self> {
+            fn from_bits_le(bits: &[bool]) -> anyhow::Result<Self> {
                 unimplemented!("from_bits_le")
             }
             #[inline]
-            fn from_bits_be(bits: &[bool]) -> snarkvm_console::prelude::Result<Self> {
+            fn from_bits_be(bits: &[bool]) -> anyhow::Result<Self> {
                 unimplemented!("from_bits_be")
             }
         }
@@ -748,7 +901,7 @@ macro_rules! impl_pairing_curve_wrapper_aff {
             }
         }
         impl<E: $bound1, PS: $bound2<E>> ToConstraintField<MpcField<E::Fq, PS::FqShare>> for $wrap<E, PS> 
-            where <E as PairingEngine>::G1Projective: PrimeField,
+            // where <E as PairingEngine>::G1Projective: PrimeField,
         {
             #[inline]
             fn to_field_elements(&self) -> Result<Vec<MpcField<E::Fq, PS::FqShare>>, ConstraintFieldError> {

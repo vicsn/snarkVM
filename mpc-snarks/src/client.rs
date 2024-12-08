@@ -2,15 +2,18 @@
 //! Mostly just for testing
 use log::debug;
 
-use ark_bls12_377::Fr;
+use snarkvm_algorithms::{SNARK, crypto_hash::PoseidonSponge, snark::varuna::{AHPForR1CS, VarunaHidingMode, VarunaSNARK}, AlgebraicSponge};
+use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+use snarkvm_circuit::{prelude::{Field, *}, Environment, network::AleoV0};
+// use ark_bls12_377::Fr;
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
 // use ark_ff::Field;
 // use ark_poly::domain::radix2::Radix2EvaluationDomain;
-use snarkvm_algorithms::fft::{EvaluationDomain, Polynomial, DensePolynomial}; //, UVPolynomial};
+use snarkvm_fft::fft::{EvaluationDomain, Polynomial, DensePolynomial}; //, UVPolynomial};
 // use ark_poly_commit::marlin_pc;
 // use ark_poly_commit::PolynomialCommitment;
-use snarkvm_utilities::CanonicalSerialize;
-use aleo_std::rand::SeedableRng;
+use snarkvm_utilities::{CanonicalSerialize, TestRng};
+// use aleo_std::rand::SeedableRng;
 use std::borrow::Cow;
 use std::path::PathBuf;
 
@@ -18,7 +21,7 @@ use mpc_algebra::com::ComField;
 use mpc_algebra::honest_but_curious as hbc;
 use mpc_algebra::malicious_majority as mm;
 use mpc_algebra::*;
-use mpc_trait::MpcWire;
+use snarkvm_curves::MpcWire;
 use mpc_net::{MpcNet, MpcMultiNet};
 
 use clap::arg_enum;
@@ -212,7 +215,7 @@ impl Computation {
                     Some(2),
                     Some(1),
                 )];
-                let rng = &mut aleo_std::test_rng();
+                let rng = &mut TestRng::default();
                 let srs = MarlinPc::setup(10, Some(1), rng).unwrap();
                 let (ck, vk) = MarlinPc::trim(&srs, 2, 1, Some(&[2])).unwrap();
                 let mpc_ck = <MarlinMPc as PolynomialCommitment<MFr, DensePolynomial<MFr>>>::CommitterKey::from_public(ck);
@@ -265,7 +268,7 @@ impl Computation {
                         Some(1),
                     ),
                 ];
-                let rng = &mut aleo_std::test_rng();
+                let rng = &mut TestRng::default();
                 let srs = MarlinPc::setup(10, Some(1), rng).unwrap();
                 let (ck, vk) = MarlinPc::trim(&srs, 2, 1, Some(&[2])).unwrap();
                 let mpc_ck = <MarlinMPc as PolynomialCommitment<MFr, DensePolynomial<MFr>>>::CommitterKey::from_public(ck);
@@ -314,10 +317,10 @@ impl Computation {
                     )
                 }
                 let poly = MP::from_coefficients_slice(&inputs);
-                let rng = &mut aleo_std::test_rng();
+                let rng = &mut TestRng::default();
                 let pp = ark_poly_commit::kzg10::KZG10::<
                     ark_bls12_377::Bls12_377,
-                    snarkvm_algorithms::fft::DensePolynomial<ark_bls12_377::Fr>,
+                    snarkvm_fft::fft::DensePolynomial<ark_bls12_377::Fr>,
                 >::setup(10, true, rng)
                 .unwrap();
                 let powers_of_gamma_g = (0..11)
@@ -353,7 +356,7 @@ impl Computation {
                 println!("{} -> {}", x, y);
                 let result = ark_poly_commit::kzg10::KZG10::<
                     ark_bls12_377::Bls12_377,
-                    snarkvm_algorithms::fft::DensePolynomial<ark_bls12_377::Fr>,
+                    snarkvm_fft::fft::DensePolynomial<ark_bls12_377::Fr>,
                 >::check(&vk, &commit, x, y, &pf)
                 .unwrap();
                 assert_eq!(result, true);
@@ -361,10 +364,10 @@ impl Computation {
             }
             Computation::KzgZk => {
                 let poly = MP::from_coefficients_slice(&inputs);
-                let rng = &mut aleo_std::test_rng();
+                let rng = &mut TestRng::default();
                 let pp = ark_poly_commit::kzg10::KZG10::<
                     ark_bls12_377::Bls12_377,
-                    snarkvm_algorithms::fft::DensePolynomial<ark_bls12_377::Fr>,
+                    snarkvm_fft::fft::DensePolynomial<ark_bls12_377::Fr>,
                 >::setup(10, true, rng)
                 .unwrap();
                 let powers_of_gamma_g = (0..11)
@@ -396,7 +399,7 @@ impl Computation {
                 println!("{} -> {}", x, y);
                 let result = ark_poly_commit::kzg10::KZG10::<
                     ark_bls12_377::Bls12_377,
-                    snarkvm_algorithms::fft::DensePolynomial<ark_bls12_377::Fr>,
+                    snarkvm_fft::fft::DensePolynomial<ark_bls12_377::Fr>,
                 >::check(&vk, &commit, x, y, &pf)
                 .unwrap();
                 assert_eq!(result, true);
@@ -406,10 +409,10 @@ impl Computation {
                 assert_eq!(inputs.len(), 6);
                 let poly = MP::from_coefficients_slice(&inputs[0..3]);
                 let poly2 = MP::from_coefficients_slice(&inputs[3..6]);
-                let rng = &mut aleo_std::test_rng();
+                let rng = &mut TestRng::default();
                 let pp = ark_poly_commit::kzg10::KZG10::<
                     ark_bls12_377::Bls12_377,
-                    snarkvm_algorithms::fft::DensePolynomial<ark_bls12_377::Fr>,
+                    snarkvm_fft::fft::DensePolynomial<ark_bls12_377::Fr>,
                 >::setup(10, true, rng)
                 .unwrap();
                 let powers_of_gamma_g = (0..11)
@@ -453,7 +456,7 @@ impl Computation {
                 println!("{} -> {}", x2, y2);
                 let result = ark_poly_commit::kzg10::KZG10::<
                     ark_bls12_377::Bls12_377,
-                    snarkvm_algorithms::fft::DensePolynomial<ark_bls12_377::Fr>,
+                    snarkvm_fft::fft::DensePolynomial<ark_bls12_377::Fr>,
                 >::batch_check(
                     &vk, &[commit, commit2], &[x, x2], &[y, y2], &[pf, pf2], rng
                 )
@@ -853,8 +856,8 @@ type ME = hbc::MpcPairingEngine<E>;
 type MFr = hbc::MpcField<Fr>;
 type MG1 = hbc::MpcG1Projective<E>;
 type MG2 = hbc::MpcG2Projective<E>;
-type P = snarkvm_algorithms::fft::DensePolynomial<Fr>;
-type MP = snarkvm_algorithms::fft::DensePolynomial<MFr>;
+type P = snarkvm_fft::fft::DensePolynomial<Fr>;
+type MP = snarkvm_fft::fft::DensePolynomial<MFr>;
 trait Pc = ark_poly_commit::PolynomialCommitment<Fr, DensePolynomial<Fr>>;
 trait MPc = ark_poly_commit::PolynomialCommitment<MFr, DensePolynomial<MFr>>;
 type MarlinPc = marlin_pc::MarlinKZG10<E, P>;

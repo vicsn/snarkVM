@@ -23,12 +23,15 @@ use mpc_net::{MpcNet, MpcMultiNet as Net};
 use crate::channel::{can_cheat, MpcSerNet};
 
 use super::add::{AdditiveFieldShare, AdditiveProjectiveShare, AdditiveAffineShare, MulFieldShare};
-use super::field::{DenseOrSparsePolynomial, DensePolynomial, ExtFieldShare, FieldShare};
-use super::group::{ProjectiveGroupShare, AffineGroupShare};
+use crate::{
+    {DenseOrSparsePolynomial, DensePolynomial, ExtFieldShare, FieldShare},
+    {ProjectiveGroupShare, AffineGroupShare},
+    {AffProjShare, PairingShare},
+    BeaverSource,
+    Reveal,
+};
 use super::msm::*;
-use super::pairing::{AffProjShare, PairingShare};
-use super::{BeaverSource, PanicBeaverSource};
-use crate::Reveal;
+use super::PanicBeaverSource;
 
 #[inline]
 pub fn mac_share<F: Field>() -> F {

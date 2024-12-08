@@ -5,7 +5,7 @@ use snarkvm_fields::{FftField, Field, PrimeField, Uniform};
 use log::debug;
 // use mpc_algebra::gsz20::group::GszGroupShare;
 use mpc_algebra::{
-    share::field::FieldShare, share::group::{ProjectiveGroupShare, AffineGroupShare}, share::gsz20::*,
+    share::field::FieldShare, share::{ProjectiveGroupShare, AffineGroupShare}, share::gsz20::*,
     share::pairing::PairingShare, Reveal,
 };
 use mpc_net::{MpcNet, MpcMultiNet as Net};

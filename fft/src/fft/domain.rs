@@ -51,7 +51,7 @@ use itertools::Itertools;
 /// Returns the ceiling of the base-2 logarithm of `x`.
 ///
 /// ```
-/// use snarkvm_algorithms::fft::domain::log2;
+/// use snarkvm_fft::fft::domain::log2;
 ///
 /// assert_eq!(log2(16), 4);
 /// assert_eq!(log2(17), 5);
@@ -881,8 +881,8 @@ impl<F: FftField> Iterator for Elements<F> {
 /// An iterator over the elements of the domain.
 #[derive(Clone, Eq, PartialEq, Debug, CanonicalDeserialize, CanonicalSerialize)]
 pub struct FFTPrecomputation<F: FftField> {
-    roots: Vec<F>,
-    domain: EvaluationDomain<F>,
+    pub roots: Vec<F>,
+    pub domain: EvaluationDomain<F>,
 }
 
 impl<F: FftField> FFTPrecomputation<F> {
@@ -911,8 +911,8 @@ impl<F: FftField> FFTPrecomputation<F> {
 /// An iterator over the elements of the domain.
 #[derive(Clone, Eq, PartialEq, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct IFFTPrecomputation<F: FftField> {
-    inverse_roots: Vec<F>,
-    domain: EvaluationDomain<F>,
+    pub inverse_roots: Vec<F>,
+    pub domain: EvaluationDomain<F>,
 }
 
 impl<F: FftField> IFFTPrecomputation<F> {

@@ -2,7 +2,7 @@
 use derivative::Derivative;
 use rand::Rng;
 
-use snarkvm_algorithms::fft::Polynomial as Polynomial;
+use snarkvm_fft::fft::Polynomial as Polynomial;
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::Field;
 use snarkvm_utilities::bytes::{FromBytes, ToBytes};
@@ -20,14 +20,16 @@ use std::marker::PhantomData;
 use mpc_net::{MpcNet, MpcMultiNet as Net};
 use crate::channel::MpcSerNet;
 
-use super::field::{
-    DenseOrSparsePolynomial, DensePolynomial, ExtFieldShare, FieldShare, SparsePolynomial,
+use crate::{
+    {
+        DenseOrSparsePolynomial, DensePolynomial, ExtFieldShare, FieldShare, SparsePolynomial
+    },
+    {ProjectiveGroupShare, AffineGroupShare},
+    {AffProjShare, PairingShare},
+    BeaverSource,
+    Reveal,
 };
-use super::group::{ProjectiveGroupShare, AffineGroupShare};
-use super::pairing::{AffProjShare, PairingShare};
-use super::BeaverSource;
 use crate::msm::*;
-use crate::Reveal;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AdditiveFieldShare<T> {
@@ -37,39 +39,39 @@ pub struct AdditiveFieldShare<T> {
 impl<F: Field> AdditiveFieldShare<F> {
     fn poly_share<'a>(
         p: DenseOrSparsePolynomial<Self>,
-    ) -> snarkvm_algorithms::fft::Polynomial<'a, F> {
+    ) -> snarkvm_fft::fft::Polynomial<'a, F> {
         match p {
-            Ok(p) => snarkvm_algorithms::fft::Polynomial::Dense(Cow::Owned(
+            Ok(p) => snarkvm_fft::fft::Polynomial::Dense(Cow::Owned(
                 Self::d_poly_share(p),
             )),
-            Err(p) => snarkvm_algorithms::fft::Polynomial::Sparse(Cow::Owned(
+            Err(p) => snarkvm_fft::fft::Polynomial::Sparse(Cow::Owned(
                 Self::s_poly_share(p),
             )),
         }
     }
-    fn d_poly_share(p: DensePolynomial<Self>) -> snarkvm_algorithms::fft::DensePolynomial<F> {
-        snarkvm_algorithms::fft::DensePolynomial::from_coefficients_vec(
+    fn d_poly_share(p: DensePolynomial<Self>) -> snarkvm_fft::fft::DensePolynomial<F> {
+        snarkvm_fft::fft::DensePolynomial::from_coefficients_vec(
             p.into_iter().map(|s| s.val).collect(),
         )
     }
-    fn s_poly_share(p: SparsePolynomial<Self>) -> snarkvm_algorithms::fft::SparsePolynomial<F> {
-        snarkvm_algorithms::fft::SparsePolynomial::from_coefficients(
+    fn s_poly_share(p: SparsePolynomial<Self>) -> snarkvm_fft::fft::SparsePolynomial<F> {
+        snarkvm_fft::fft::SparsePolynomial::from_coefficients(
             p.into_iter().map(|(i, s)| (i, s.val)),
         )
     }
     fn poly_share2<'a>(
         p: DenseOrSparsePolynomial<F>,
-    ) -> snarkvm_algorithms::fft::Polynomial<'a, F> {
+    ) -> snarkvm_fft::fft::Polynomial<'a, F> {
         match p {
-            Ok(p) => snarkvm_algorithms::fft::Polynomial::Dense(Cow::Owned(
-                snarkvm_algorithms::fft::DensePolynomial::from_coefficients_vec(p),
+            Ok(p) => snarkvm_fft::fft::Polynomial::Dense(Cow::Owned(
+                snarkvm_fft::fft::DensePolynomial::from_coefficients_vec(p),
             )),
-            Err(p) => snarkvm_algorithms::fft::Polynomial::Sparse(Cow::Owned(
-                snarkvm_algorithms::fft::SparsePolynomial::from_coefficients_slice(&p),
+            Err(p) => snarkvm_fft::fft::Polynomial::Sparse(Cow::Owned(
+                snarkvm_fft::fft::SparsePolynomial::from_coefficients_slice(&p),
             )),
         }
     }
-    fn d_poly_unshare(p: snarkvm_algorithms::fft::DensePolynomial<F>) -> DensePolynomial<Self> {
+    fn d_poly_unshare(p: snarkvm_fft::fft::DensePolynomial<F>) -> DensePolynomial<Self> {
         p.coeffs
             .into_iter()
             .map(|s| Self::from_add_shared(s))

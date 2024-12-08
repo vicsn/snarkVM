@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 use snarkvm_curves::PairingEngine;
+use snarkvm_utilities::TestRng;
 // use ark_ff::{Field, Uniform};
-use ark_relations::{
-    lc,
-    r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError, Variable},
-};
-use aleo_std::test_rng;
+// use ark_relations::{
+//     lc,
+//     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError, Variable},
+// };
 use aleo_std::{end_timer, start_timer};
 use blake2::Blake2s;
 use clap::arg_enum;
@@ -64,15 +64,15 @@ mod squarings {
 
     pub mod marlin {
         use super::*;
-        use ark_marlin::Marlin;
-        use ark_marlin::*;
-        use ark_poly_commit::marlin::marlin_pc::MarlinKZG10;
+        // use ark_marlin::Marlin;
+        // use ark_marlin::*;
+        // use ark_poly_commit::marlin::marlin_pc::MarlinKZG10;
         use snarkvm_algorithms::{SNARK, crypto_hash::PoseidonSponge, snark::varuna::{AHPForR1CS, VarunaHidingMode, VarunaSNARK}, AlgebraicSponge, fft::DensePolynomial};
         use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
         use snarkvm_circuit::{prelude::{Field, *}, Environment, network::AleoV0};
         use snarkvm_utilities::TestRng;
 
-        type KzgMarlin<Fr, E> = Marlin<Fr, MarlinKZG10<E, DensePolynomial<Fr>>, Blake2s>;
+        // type KzgMarlin<Fr, E> = Marlin<Fr, MarlinKZG10<E, DensePolynomial<Fr>>, Blake2s>;
 
         pub struct MarlinBench;
 
@@ -95,7 +95,7 @@ mod squarings {
 
         impl SnarkBench for MarlinBench {
             fn local<E: PairingEngine>(n: usize, timer_label: &str) {
-                let rng = &mut test_rng();
+                let rng = &mut TestRng::default();
                 let circ_no_data = RepeatedSquaringCircuit::without_data(n);
 
                 let srs = KzgMarlin::<E::Fr, E>::universal_setup(n, n + 2, 3 * n, rng).unwrap();
@@ -113,7 +113,7 @@ mod squarings {
             }
 
             fn mpc<E: PairingEngine, S: PairingShare<E>>(n: usize, timer_label: &str) { // Key entrypoint
-                let rng = &mut test_rng();
+                let rng = &mut TestRng::default();
                 let circ_no_data = RepeatedSquaringCircuit::without_data(n);
 
                 let snarkvm_rng = &mut TestRng::default();
@@ -133,9 +133,9 @@ mod squarings {
                 let one = <Circuit as Environment>::BaseField::one();
                 VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap();
 
-                let srs = KzgMarlin::<E::Fr, E>::universal_setup(n, n + 2, 3 * n, rng).unwrap();
+                // let srs = KzgMarlin::<E::Fr, E>::universal_setup(n, n + 2, 3 * n, rng).unwrap();
 
-                let (pk, vk) = KzgMarlin::<E::Fr, E>::index(&srs, circ_no_data).unwrap();
+                // let (pk, vk) = KzgMarlin::<E::Fr, E>::index(&srs, circ_no_data).unwrap();
                 let mpc_pk = IndexProverKey::from_public(pk);
 
                 // use ark_ff::One;
@@ -174,54 +174,54 @@ mod squarings {
         }
     }
 
-    fn mpc_squaring_circuit<Fr: Field, MFr: Field + Reveal<Base = Fr>>(
-        start: Fr,
-        squarings: usize,
-    ) -> RepeatedSquaringCircuit<MFr> {
-        let raw_chain: Vec<Fr> = std::iter::successors(Some(start), |a| Some(a.square()))
-            .take(squarings + 1)
-            .collect();
-        let rng = &mut test_rng();
-        for val in raw_chain.clone() {
-            println!("Circuit input: {}", val);
-        }
-        println!("Calling king_share_batch");
-        let chain_shares = MFr::king_share_batch(raw_chain, rng);
-        RepeatedSquaringCircuit {
-            chain: chain_shares.into_iter().map(Some).collect(),
-        }
-    }
+    // fn mpc_squaring_circuit<Fr: Field, MFr: Field + Reveal<Base = Fr>>(
+    //     start: Fr,
+    //     squarings: usize,
+    // ) -> RepeatedSquaringCircuit<MFr> {
+    //     let raw_chain: Vec<Fr> = std::iter::successors(Some(start), |a| Some(a.square()))
+    //         .take(squarings + 1)
+    //         .collect();
+    //     let rng = &mut TestRng::default();
+    //     for val in raw_chain.clone() {
+    //         println!("Circuit input: {}", val);
+    //     }
+    //     println!("Calling king_share_batch");
+    //     let chain_shares = MFr::king_share_batch(raw_chain, rng);
+    //     RepeatedSquaringCircuit {
+    //         chain: chain_shares.into_iter().map(Some).collect(),
+    //     }
+    // }
 
-    impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF>
-        for RepeatedSquaringCircuit<ConstraintF>
-    {
-        fn generate_constraints( // Meaningful entrypoint
-            self,
-            cs: ConstraintSystemRef<ConstraintF>,
-        ) -> Result<(), SynthesisError> {
-            // Note: at this point the values are shared.
-            let mut vars = vec![];
-            vars.push(cs.new_input_variable(|| {
-                self.chain
-                    .first()
-                    .unwrap()
-                    .ok_or(SynthesisError::AssignmentMissing)
-            })?);
-            let mut vars: Vec<Variable> = self
-                .chain
-                .iter()
-                .skip(1)
-                .take(self.squarings())
-                .map(|o| cs.new_witness_variable(|| o.ok_or(SynthesisError::AssignmentMissing)))
-                .collect::<Result<_, _>>()?;
+    // impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF>
+    //     for RepeatedSquaringCircuit<ConstraintF>
+    // {
+    //     fn generate_constraints( // Meaningful entrypoint
+    //         self,
+    //         cs: ConstraintSystemRef<ConstraintF>,
+    //     ) -> Result<(), SynthesisError> {
+    //         // Note: at this point the values are shared.
+    //         let mut vars = vec![];
+    //         vars.push(cs.new_input_variable(|| {
+    //             self.chain
+    //                 .first()
+    //                 .unwrap()
+    //                 .ok_or(SynthesisError::AssignmentMissing)
+    //         })?);
+    //         let mut vars: Vec<Variable> = self
+    //             .chain
+    //             .iter()
+    //             .skip(1)
+    //             .take(self.squarings())
+    //             .map(|o| cs.new_witness_variable(|| o.ok_or(SynthesisError::AssignmentMissing)))
+    //             .collect::<Result<_, _>>()?;
 
-            for i in 0..self.squarings() - 1 {
-                cs.enforce_constraint(lc!() + vars[i], lc!() + vars[i], lc!() + vars[i + 1])?;
-            }
+    //         for i in 0..self.squarings() - 1 {
+    //             cs.enforce_constraint(lc!() + vars[i], lc!() + vars[i], lc!() + vars[i + 1])?;
+    //         }
 
-            Ok(())
-        }
-    }
+    //         Ok(())
+    //     }
+    // }
 }
 
 #[derive(Debug, StructOpt)]

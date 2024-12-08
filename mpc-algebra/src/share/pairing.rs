@@ -1,35 +1,13 @@
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::Field;
 
+use std::marker::PhantomData;
+
 use std::fmt::Debug;
 
-use super::field::{ExtFieldShare, FieldShare};
-use super::group::{ProjectiveGroupShare, AffineGroupShare};
+use super::{ExtFieldShare, FieldShare};
+use super::{ProjectiveGroupShare, AffineGroupShare};
 
-pub trait AffProjShare<
-    Fr: Field,
-    A: AffineCurve<ScalarField = Fr>,
-    P: ProjectiveCurve<Affine = A>,
->
-{
-    type FrShare: FieldShare<Fr>;
-    type AffineShare: AffineGroupShare<A, FieldShare = Self::FrShare>;
-    type ProjectiveShare: ProjectiveGroupShare<P, FieldShare = Self::FrShare>;
-    fn sh_aff_to_proj(g: Self::AffineShare) -> Self::ProjectiveShare;
-    fn sh_proj_to_aff(g: Self::ProjectiveShare) -> Self::AffineShare;
-    fn add_sh_proj_sh_aff(
-        _a: Self::ProjectiveShare,
-        _o: &Self::AffineShare,
-    ) -> Self::ProjectiveShare {
-        unimplemented!()
-    }
-    fn add_sh_proj_pub_aff(_a: Self::ProjectiveShare, _o: &A) -> Self::ProjectiveShare {
-        unimplemented!()
-    }
-    fn add_pub_proj_sh_aff(_a: &P, _o: Self::AffineShare) -> Self::ProjectiveShare {
-        unimplemented!()
-    }
-}
 
 pub trait PairingShare<E: PairingEngine>:
     Clone + Copy + Debug + 'static + Send + Sync + PartialEq + Eq
@@ -60,4 +38,29 @@ pub trait PairingShare<E: PairingEngine>:
         AffineShare = Self::G2AffineShare,
         ProjectiveShare = Self::G2ProjectiveShare,
     >;
+}
+
+pub trait AffProjShare<
+    Fr: Field,
+    A: AffineCurve<ScalarField = Fr>,
+    P: ProjectiveCurve<Affine = A>,
+>
+{
+    type FrShare: FieldShare<Fr>;
+    type AffineShare: AffineGroupShare<A, FieldShare = Self::FrShare>;
+    type ProjectiveShare: ProjectiveGroupShare<P, FieldShare = Self::FrShare>;
+    fn sh_aff_to_proj(g: Self::AffineShare) -> Self::ProjectiveShare;
+    fn sh_proj_to_aff(g: Self::ProjectiveShare) -> Self::AffineShare;
+    fn add_sh_proj_sh_aff(
+        _a: Self::ProjectiveShare,
+        _o: &Self::AffineShare,
+    ) -> Self::ProjectiveShare {
+        unimplemented!()
+    }
+    fn add_sh_proj_pub_aff(_a: Self::ProjectiveShare, _o: &A) -> Self::ProjectiveShare {
+        unimplemented!()
+    }
+    fn add_pub_proj_sh_aff(_a: &P, _o: Self::AffineShare) -> Self::ProjectiveShare {
+        unimplemented!()
+    }
 }

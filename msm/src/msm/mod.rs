@@ -13,25 +13,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(associated_type_defaults)]
-#![allow(clippy::module_inception)]
-// #![cfg_attr(nightly, feature(doc_cfg, external_doc))]
-// #![cfg_attr(nightly, warn(missing_docs))]
-#![cfg_attr(test, allow(clippy::assertions_on_result_states))]
-#![doc = include_str!("../documentation/the_aleo_curves/00_overview.md")]
+pub mod fixed_base;
+pub use fixed_base::*;
 
-#[macro_use]
-extern crate thiserror;
+#[cfg(test)]
+pub mod tests;
 
-pub mod bls12_377;
+pub mod variable_base;
+pub use variable_base::*;
 
-pub mod edwards_bls12;
-
-pub mod errors;
-pub use errors::*;
-
-pub mod templates;
-
-#[cfg_attr(test, macro_use)]
-pub mod traits;
-pub use traits::*;
+/// The result of this function is only approximately `ln(a)`
+/// [`Explanation of usage`]
+///
+/// [`Explanation of usage`]: https://github.com/scipr-lab/zexe/issues/79#issue-556220473
+fn ln_without_floats(a: usize) -> usize {
+    // log2(a) * ln(2)
+    (snarkvm_fft::fft::domain::log2(a) * 69 / 100) as usize
+}

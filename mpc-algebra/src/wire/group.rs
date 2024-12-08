@@ -11,7 +11,7 @@ use snarkvm_utilities::{
     CanonicalSerializeWithFlags, Flags, SerializationError, FromBytes, ToBytes, Uniform, Compress, Validate, Valid,
 };
 use snarkvm_fields::{Zero, One};
-use mpc_trait::MpcWire;
+use snarkvm_curves::MpcWire;
 
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::{self, Read, Write};
@@ -19,11 +19,15 @@ use std::iter::Sum;
 use std::marker::PhantomData;
 use std::ops::*;
 
-use super::super::share::group::{ProjectiveGroupShare, AffineGroupShare};
-use super::super::share::BeaverSource;
-use super::field::MpcField;
+use crate::{
+    {ProjectiveGroupShare, AffineGroupShare},
+    BeaverSource,
+    Reveal,
+};
+
+use crate::MpcField;
+
 use mpc_net::{MpcNet, MpcMultiNet as Net};
-use crate::Reveal;
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq)]
 // #[derivative(

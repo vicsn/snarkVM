@@ -7,12 +7,12 @@ use snarkvm_utilities::{CanonicalSerialize, Compress, FromBits, SerializationErr
 // use ark_ff::prelude::*;
 use std::io;
 use snarkvm_fields::{FftField, PrimeField};
-use mpc_trait::MpcWire;
+use snarkvm_curves::MpcWire;
 
-use crate::{channel, Reveal};
+use crate::channel;
+use crate::MpcField;
+use crate::{Reveal, FieldShare};
 use mpc_net::two as net_two;
-use crate::wire::field::MpcField;
-use crate::share::field::FieldShare;
 
 /// Vector-Commitable Field
 pub trait ComField: FftField + MpcWire {
@@ -54,10 +54,10 @@ impl<Fr: PrimeField, S: FieldShare<Fr>> ToBits for MpcField<Fr, S> {
 }
 
 impl<Fr: PrimeField, S: FieldShare<Fr>> FromBits for MpcField<Fr, S> {
-    fn from_bits_be(bits: &[bool]) -> snarkvm_console::prelude::Result<Self> {
+    fn from_bits_be(bits: &[bool]) -> anyhow::Result<Self> {
         unimplemented!()
     }
-    fn from_bits_le(bits: &[bool]) -> snarkvm_console::prelude::Result<Self> {
+    fn from_bits_le(bits: &[bool]) -> anyhow::Result<Self> {
         unimplemented!()
     }
 }

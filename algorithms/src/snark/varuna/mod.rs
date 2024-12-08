@@ -20,6 +20,9 @@ pub use ahp::*;
 pub(crate) mod data_structures;
 pub use data_structures::*;
 
+pub mod reveal;
+pub use reveal::*;
+
 /// Implements the Varuna zkSNARK proof system.
 mod varuna;
 pub use varuna::*;

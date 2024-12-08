@@ -1,8 +1,9 @@
 use super::silly::MySillyCircuit;
-use ark_marlin::{ahp::prover::*, *};
-use snarkvm_algorithms::fft::DensePolynomial;
-use ark_poly_commit::marlin_pc::MarlinKZG10;
-use aleo_std::{end_timer, start_timer, test_rng};
+// use ark_marlin::{ahp::prover::*, *};
+use snarkvm_fft::fft::DensePolynomial;
+use snarkvm_utilities::TestRng;
+// use ark_poly_commit::marlin_pc::MarlinKZG10;
+use aleo_std::{end_timer, start_timer};
 use blake2::Blake2s;
 use mpc_algebra::honest_but_curious::*;
 use mpc_algebra::Reveal;
@@ -84,7 +85,7 @@ type LocalMarlin = Marlin<Fr, LocalMarlinKZG10, Blake2s>;
 type MpcMarlin = Marlin<MFr, MpcMarlinKZG10, Blake2s>;
 
 pub fn mpc_test_prove_and_verify(n_iters: usize) {
-    let rng = &mut test_rng();
+    let rng = &mut TestRng::default();
 
     let srs = LocalMarlin::universal_setup(100, 50, 100, rng).unwrap();
     let empty_circuit: MySillyCircuit<Fr> = MySillyCircuit { a: None, b: None };

@@ -39,16 +39,6 @@ merlin = "3"
 sha2 = "0.9"
 blake2 = "0.9"
 
-[dependencies.snarkvm-algorithms]
-path = "../algorithms"
-version = "=1.0.0"
-default-features = false
-
-[dependencies.snarkvm-console]
-path = "../console"
-version = "=1.0.0"
-default-features = false
-
 [dependencies.snarkvm-curves]
 path = "../curves"
 version = "=1.0.0"
@@ -56,6 +46,16 @@ default-features = false
 
 [dependencies.snarkvm-fields]
 path = "../fields"
+version = "=1.0.0"
+default-features = false
+
+[dependencies.snarkvm-fft]
+path = "../fft"
+version = "=1.0.0"
+default-features = false
+
+[dependencies.snarkvm-msm]
+path = "../msm"
 version = "=1.0.0"
 default-features = false
 

@@ -15,7 +15,7 @@ use std::iter::Sum;
 use std::marker::PhantomData;
 use zeroize::Zeroize;
 
-use mpc_trait::MpcWire;
+use snarkvm_curves::MpcWire;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MulFieldGroup<F: Field, S: PrimeField> {

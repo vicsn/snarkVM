@@ -15,7 +15,7 @@
 
 extern crate criterion;
 
-use snarkvm_algorithms::fft::{DensePolynomial, EvaluationDomain};
+use snarkvm_fft::fft::{DensePolynomial, EvaluationDomain};
 use snarkvm_curves::bls12_377::Fr as Bls12_377_Fr;
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::TestRng;

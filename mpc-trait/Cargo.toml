@@ -8,3 +8,19 @@ edition = "2021"
 
 [dependencies]
 aleo-std = { version = "0.1.24" }
+rand = { version = "0.8", default-features = false, features = ["std"] }
+
+[dependencies.snarkvm-curves]
+path = "../curves"
+version = "=1.0.0"
+default-features = false
+
+[dependencies.snarkvm-fields]
+path = "../fields"
+version = "=1.0.0"
+default-features = false
+
+[dependencies.snarkvm-utilities]
+path = "../utilities"
+version = "=1.0.0"
+default-features = false
