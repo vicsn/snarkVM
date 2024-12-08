@@ -2,11 +2,12 @@
 #![allow(unused_imports)]
 use snarkvm_curves::PairingEngine;
 use snarkvm_utilities::TestRng;
-// use ark_ff::{Field, Uniform};
-// use ark_relations::{
-//     lc,
-//     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError, Variable},
-// };
+use snarkvm_fields::Field;
+use snarkvm_algorithms::r1cs::ConstraintSynthesizer;
+use snarkvm_algorithms::prelude::SynthesisError;
+use snarkvm_algorithms::r1cs::Variable;
+use snarkvm_curves::bls12_377::Bls12_377;
+
 use aleo_std::{end_timer, start_timer};
 use blake2::Blake2s;
 use clap::arg_enum;
@@ -67,7 +68,7 @@ mod squarings {
         // use ark_marlin::Marlin;
         // use ark_marlin::*;
         // use ark_poly_commit::marlin::marlin_pc::MarlinKZG10;
-        use snarkvm_algorithms::{SNARK, crypto_hash::PoseidonSponge, snark::varuna::{AHPForR1CS, VarunaHidingMode, VarunaSNARK}, AlgebraicSponge, fft::DensePolynomial};
+        use snarkvm_algorithms::{crypto_hash::PoseidonSponge, fft::DensePolynomial, snark::varuna::{AHPForR1CS, CircuitProvingKey, VarunaHidingMode, VarunaSNARK}, AlgebraicSponge, SNARK};
         use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
         use snarkvm_circuit::{prelude::{Field, *}, Environment, network::AleoV0};
         use snarkvm_utilities::TestRng;
@@ -95,26 +96,25 @@ mod squarings {
 
         impl SnarkBench for MarlinBench {
             fn local<E: PairingEngine>(n: usize, timer_label: &str) {
-                let rng = &mut TestRng::default();
-                let circ_no_data = RepeatedSquaringCircuit::without_data(n);
+                unimplemented!("Local bench")
+                // let rng = &mut TestRng::default();
+                // let circ_no_data = RepeatedSquaringCircuit::without_data(n);
 
-                let srs = KzgMarlin::<E::Fr, E>::universal_setup(n, n + 2, 3 * n, rng).unwrap();
+                // let srs = KzgMarlin::<E::Fr, E>::universal_setup(n, n + 2, 3 * n, rng).unwrap();
 
-                let (pk, vk) = KzgMarlin::<E::Fr, E>::index(&srs, circ_no_data).unwrap();
+                // let (pk, vk) = KzgMarlin::<E::Fr, E>::index(&srs, circ_no_data).unwrap();
 
-                let a = E::Fr::rand(rng);
-                let circ_data = RepeatedSquaringCircuit::from_start(a, n);
-                let public_inputs = vec![circ_data.chain.last().unwrap().unwrap()];
-                let timer = start_timer!(|| timer_label);
-                let zk_rng = &mut test_rng();
-                let proof = KzgMarlin::<E::Fr, E>::prove(&pk, circ_data, zk_rng).unwrap();
-                end_timer!(timer);
-                assert!(KzgMarlin::<E::Fr, E>::verify(&vk, &public_inputs, &proof, rng).unwrap());
+                // let a = E::Fr::rand(rng);
+                // let circ_data = RepeatedSquaringCircuit::from_start(a, n);
+                // let public_inputs = vec![circ_data.chain.last().unwrap().unwrap()];
+                // let timer = start_timer!(|| timer_label);
+                // let zk_rng = &mut test_rng();
+                // let proof = KzgMarlin::<E::Fr, E>::prove(&pk, circ_data, zk_rng).unwrap();
+                // end_timer!(timer);
+                // assert!(KzgMarlin::<E::Fr, E>::verify(&vk, &public_inputs, &proof, rng).unwrap());
             }
 
             fn mpc<E: PairingEngine, S: PairingShare<E>>(n: usize, timer_label: &str) { // Key entrypoint
-                let rng = &mut TestRng::default();
-                let circ_no_data = RepeatedSquaringCircuit::without_data(n);
 
                 let snarkvm_rng = &mut TestRng::default();
                 type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
@@ -122,106 +122,111 @@ mod squarings {
                 let _candidate_output = create_example_circuit::<Circuit>();
                 let assignment = Circuit::eject_assignment_and_reset();
                 let max_degree = 300;
-                // TODO: look at how the srs needs to be parameterized.
                 let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
                 let universal_prover = &universal_srs.to_universal_prover().unwrap();
                 let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
                 let fs_pp = FS::sample_parameters();
-                // TODO: look at how assignment needs to be parameterized.
                 let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &assignment).unwrap();
+                
+                // let mpc_pk = CircuitProvingKey::from_public(index_pk);
+
+                // TODO: look at how all inputs needs to be parameterized.
+                // TODO: especially Assignment. We call generate_constraints still during proving. But perhaps, that is just a plain local linear transformation, so no worries.
                 let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, &assignment, snarkvm_rng).unwrap();
                 let one = <Circuit as Environment>::BaseField::one();
                 VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap();
 
+                // let rng = &mut TestRng::default();
+                // let circ_no_data = RepeatedSquaringCircuit::without_data(n);
                 // let srs = KzgMarlin::<E::Fr, E>::universal_setup(n, n + 2, 3 * n, rng).unwrap();
 
                 // let (pk, vk) = KzgMarlin::<E::Fr, E>::index(&srs, circ_no_data).unwrap();
-                let mpc_pk = IndexProverKey::from_public(pk);
+                // let mpc_pk = IndexProverKey::from_public(pk);
 
                 // use ark_ff::One;
-                let a = E::Fr::one() + E::Fr::one(); //rand(rng);
-                let computation_timer = start_timer!(|| "do the mpc (cheat)");
-                let circ_data = mpc_squaring_circuit::<
-                    E::Fr,
-                    <MpcPairingEngine<E, S> as PairingEngine>::Fr,
-                >(a, n);
-                let public_inputs = vec![circ_data.chain.first().unwrap().unwrap().reveal()];
-                end_timer!(computation_timer);
+                // let a = E::Fr::one() + E::Fr::one(); //rand(rng);
+                // let computation_timer = start_timer!(|| "do the mpc (cheat)");
+                // let circ_data = mpc_squaring_circuit::<
+                //     E::Fr,
+                //     <MpcPairingEngine<E, S> as PairingEngine>::Fr,
+                // >(a, n);
+                // let public_inputs = vec![circ_data.chain.first().unwrap().unwrap().reveal()];
+                // end_timer!(computation_timer);
 
-                MpcMultiNet::reset_stats();
-                let timer = start_timer!(|| timer_label);
-                let zk_rng = &mut test_rng();
-                let proof = channel::without_cheating(|| {
-                    KzgMarlin::<
-                        <MpcPairingEngine<E, S> as PairingEngine>::Fr,
-                        MpcPairingEngine<E, S>,
-                    >::prove(&mpc_pk, circ_data, zk_rng)
-                    .unwrap()
-                    .reveal()
-                });
-                end_timer!(timer);
-                assert!(KzgMarlin::<E::Fr, E>::verify(&vk, &public_inputs, &proof, rng).unwrap());
-                // Serialize the proof to disk.
-                use std::io::Write;
-                use snarkvm_utilities::CanonicalSerialize;
-                let size = Proof::serialized_size(&proof);
-                let mut serialized = vec![0; size];
-                proof.serialize(&mut serialized[..]).unwrap();
-                let file = std::fs::File::create("proof.bin").unwrap();
-                let mut writer = std::io::BufWriter::new(file);
-                writer.write(&serialized).unwrap();
+                // MpcMultiNet::reset_stats();
+                // let timer = start_timer!(|| timer_label);
+                // let zk_rng = &mut test_rng();
+                // let proof = channel::without_cheating(|| {
+                //     KzgMarlin::<
+                //         <MpcPairingEngine<E, S> as PairingEngine>::Fr,
+                //         MpcPairingEngine<E, S>,
+                //     >::prove(&mpc_pk, circ_data, zk_rng)
+                //     .unwrap()
+                //     .reveal()
+                // });
+                // end_timer!(timer);
+                // assert!(KzgMarlin::<E::Fr, E>::verify(&vk, &public_inputs, &proof, rng).unwrap());
+                // // Serialize the proof to disk.
+                // use std::io::Write;
+                // use snarkvm_utilities::CanonicalSerialize;
+                // let size = Proof::serialized_size(&proof);
+                // let mut serialized = vec![0; size];
+                // proof.serialize(&mut serialized[..]).unwrap();
+                // let file = std::fs::File::create("proof.bin").unwrap();
+                // let mut writer = std::io::BufWriter::new(file);
+                // writer.write(&serialized).unwrap();
             }
         }
     }
 
-    // fn mpc_squaring_circuit<Fr: Field, MFr: Field + Reveal<Base = Fr>>(
-    //     start: Fr,
-    //     squarings: usize,
-    // ) -> RepeatedSquaringCircuit<MFr> {
-    //     let raw_chain: Vec<Fr> = std::iter::successors(Some(start), |a| Some(a.square()))
-    //         .take(squarings + 1)
-    //         .collect();
-    //     let rng = &mut TestRng::default();
-    //     for val in raw_chain.clone() {
-    //         println!("Circuit input: {}", val);
-    //     }
-    //     println!("Calling king_share_batch");
-    //     let chain_shares = MFr::king_share_batch(raw_chain, rng);
-    //     RepeatedSquaringCircuit {
-    //         chain: chain_shares.into_iter().map(Some).collect(),
-    //     }
-    // }
+    fn mpc_squaring_circuit<Fr: Field, MFr: Field + Reveal<Base = Fr>>(
+        start: Fr,
+        squarings: usize,
+    ) -> RepeatedSquaringCircuit<MFr> {
+        let raw_chain: Vec<Fr> = std::iter::successors(Some(start), |a| Some(a.square()))
+            .take(squarings + 1)
+            .collect();
+        let rng = &mut TestRng::default();
+        for val in raw_chain.clone() {
+            println!("Circuit input: {}", val);
+        }
+        println!("Calling king_share_batch");
+        let chain_shares = MFr::king_share_batch(raw_chain, rng);
+        RepeatedSquaringCircuit {
+            chain: chain_shares.into_iter().map(Some).collect(),
+        }
+    }
 
-    // impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF>
-    //     for RepeatedSquaringCircuit<ConstraintF>
-    // {
-    //     fn generate_constraints( // Meaningful entrypoint
-    //         self,
-    //         cs: ConstraintSystemRef<ConstraintF>,
-    //     ) -> Result<(), SynthesisError> {
-    //         // Note: at this point the values are shared.
-    //         let mut vars = vec![];
-    //         vars.push(cs.new_input_variable(|| {
-    //             self.chain
-    //                 .first()
-    //                 .unwrap()
-    //                 .ok_or(SynthesisError::AssignmentMissing)
-    //         })?);
-    //         let mut vars: Vec<Variable> = self
-    //             .chain
-    //             .iter()
-    //             .skip(1)
-    //             .take(self.squarings())
-    //             .map(|o| cs.new_witness_variable(|| o.ok_or(SynthesisError::AssignmentMissing)))
-    //             .collect::<Result<_, _>>()?;
+    impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF>
+        for RepeatedSquaringCircuit<ConstraintF>
+    {
+        fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<ConstraintF>>( // Meaningful entrypoint
+            &self,
+            cs: &mut CS,
+        ) -> Result<(), SynthesisError> {
+            // Note: at this point the values are shared.
+            let mut vars = vec![];
+            vars.push(cs.alloc_input(|| "input", || {
+                self.chain
+                    .first()
+                    .unwrap()
+                    .ok_or(SynthesisError::AssignmentMissing)
+            })?);
+            let mut vars: Vec<Variable> = self
+                .chain
+                .iter()
+                .skip(1)
+                .take(self.squarings())
+                .map(|o| cs.alloc(|| "witness",|| o.ok_or(SynthesisError::AssignmentMissing)))
+                .collect::<Result<_, _>>()?;
 
-    //         for i in 0..self.squarings() - 1 {
-    //             cs.enforce_constraint(lc!() + vars[i], lc!() + vars[i], lc!() + vars[i + 1])?;
-    //         }
+            for i in 0..self.squarings() - 1 {
+                cs.enforce(|| "constraint squaring", |lc| lc + vars[i], |lc| lc + vars[i], |lc| lc + vars[i + 1]);
+            }
 
-    //         Ok(())
-    //     }
-    // }
+            Ok(())
+        }
+    }
 }
 
 #[derive(Debug, StructOpt)]
@@ -269,8 +274,6 @@ arg_enum! {
     #[derive(PartialEq, Debug, Clone, Copy)]
     pub enum MpcAlg {
         Spdz,
-        Hbc,
-        Gsz,
     }
 }
 
@@ -356,7 +359,7 @@ fn main() {
     let opt = Opt::from_args();
     env_logger::init();
     match opt.proof_system {
-        ProofSystem::Marlin => opt.field.run::<ark_bls12_377::Bls12_377, _>(
+        ProofSystem::Marlin => opt.field.run::<Bls12_377, _>(
             opt.computation,
             opt.computation_size,
             squarings::marlin::MarlinBench,

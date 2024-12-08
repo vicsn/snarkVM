@@ -1811,6 +1811,8 @@ dependencies = [
  "snarkvm-console",
  "snarkvm-console-network",
  "snarkvm-curves",
+ "snarkvm-fft",
+ "snarkvm-fields",
  "snarkvm-ledger",
  "snarkvm-ledger-block",
  "snarkvm-ledger-query",

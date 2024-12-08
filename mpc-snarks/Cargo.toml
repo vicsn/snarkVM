@@ -66,6 +66,12 @@ path = "../console/network"
 [dependencies.snarkvm-curves]
 path = "../curves"
 
+[dependencies.snarkvm-fields]
+path = "../fields"
+
+[dependencies.snarkvm-fft]
+path = "../fft"
+
 [dependencies.snarkvm-synthesizer]
 path = "../synthesizer"
 
@@ -85,10 +91,6 @@ features = ["rocks"]
 
 [dependencies.snarkvm-utilities]
 path = "../utilities"
-
-[[bin]]
-name = "client"
-path = "src/client.rs"
 
 [[bin]]
 name = "proof"

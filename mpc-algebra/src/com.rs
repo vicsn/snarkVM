@@ -3,9 +3,7 @@ use rand::Rng;
 use sha2;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use snarkvm_utilities::{CanonicalSerialize, Compress, FromBits, SerializationError, ToBits, Valid};
-// use ark_ff::prelude::*;
-use std::io;
+use snarkvm_utilities::{CanonicalSerialize, Compress, FromBits, ToBits};
 use snarkvm_fields::{FftField, PrimeField};
 use snarkvm_curves::MpcWire;
 
