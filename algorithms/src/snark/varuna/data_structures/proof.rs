@@ -224,7 +224,7 @@ impl<F: PrimeField> Valid for Evaluations<F> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Proof<E: PairingEngine> {
     /// The number of instances being proven in this proof.
-    batch_sizes: Vec<usize>,
+    pub batch_sizes: Vec<usize>,
 
     /// Commitments to prover polynomials.
     pub commitments: Commitments<E>,

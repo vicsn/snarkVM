@@ -240,6 +240,7 @@ pub trait AffineCurve:
 }
 
 pub trait PairingCurve: AffineCurve {
+    // type Parameters: Bls12Parameters;
     type Engine: PairingEngine<Fr = Self::ScalarField>;
     type Prepared: CanonicalSerialize
         + CanonicalDeserialize
@@ -252,6 +253,7 @@ pub trait PairingCurve: AffineCurve {
         + Send
         + Sync
         + Debug
+        + From<Self>
         + 'static;
     type PairWith: PairingCurve<PairWith = Self>;
     type PairingResult: Field;

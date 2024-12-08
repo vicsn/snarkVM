@@ -35,8 +35,10 @@ impl<P: Bls12Parameters> G1Prepared<P> {
     pub fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
+}
 
-    pub fn from_affine(p: G1Affine<P>) -> Self {
+impl<P: Bls12Parameters> From<G1Affine<P>> for G1Prepared<P> {
+    fn from(p: G1Affine<P>) -> Self {
         G1Prepared(p)
     }
 }

@@ -85,7 +85,7 @@ where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E:
     type Prepared = MpcG1Prep<E, PS>;
 
     fn prepare(&self) -> Self::Prepared {
-        Self::Prepared::from_affine(*self)
+        Self::Prepared::from(*self)
     }
 
     fn pairing_with(&self, other: &Self::PairWith) -> Self::PairingResult {
@@ -136,16 +136,12 @@ pub struct MpcG1Prep<E: PairingEngine, PS: PairingShare<E>> {
     pub _phants: PhantomData<(E, PS)>,
 }
 
-// use snarkvm_curves::templates::bls12::G1Prepared;
-// use snarkvm_curves::bls12_377::Bls12_377Parameters;
-
-impl<E: PairingEngine, PS: PairingShare<E>> MpcG1Prep<E, PS> {
-    fn from_affine(affine: MpcG1Affine<E, PS>) -> Self {
+impl<E: PairingEngine, PS: PairingShare<E>> From<MpcG1Affine<E, PS>> for MpcG1Prep<E, PS> {
+    fn from(affine: MpcG1Affine<E, PS>) -> Self {
         match affine.val {
             MpcAffineGroup::Public(val) => {
                 MpcG1Prep{
-                    val: <E::G1Affine as PairingCurve>::Prepared::from_affine(val),
-                    // G1Prepared::<Bls12_377Parameters>(val),
+                    val: <E::G1Affine as PairingCurve>::Prepared::from(val),
                     _phants: PhantomData,
                 }
             }
@@ -218,7 +214,7 @@ where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E:
     type Prepared = MpcG2Prep<E, PS>;
 
     fn prepare(&self) -> Self::Prepared {
-        Self::Prepared::from_affine(*self)
+        Self::Prepared::from(*self)
     }
 
     fn pairing_with(&self, other: &Self::PairWith) -> Self::PairingResult {
@@ -269,12 +265,12 @@ pub struct MpcG2Prep<E: PairingEngine, PS: PairingShare<E>> {
     pub _phants: PhantomData<(E, PS)>,
 }
 
-impl<E: PairingEngine, PS: PairingShare<E>> MpcG2Prep<E, PS> {
-    fn from_affine(affine: MpcG2Affine<E, PS>) -> Self {
+impl<E: PairingEngine, PS: PairingShare<E>> From<MpcG2Affine<E, PS>> for MpcG2Prep<E, PS> {
+    fn from(affine: MpcG2Affine<E, PS>) -> Self {
         match affine.val {
             MpcAffineGroup::Public(val) => {
                 MpcG2Prep{
-                    val: <E::G2Affine as PairingCurve>::Prepared::from_affine(val),
+                    val: <E::G2Affine as PairingCurve>::Prepared::from(val),
                     _phants: PhantomData,
                 }
             }

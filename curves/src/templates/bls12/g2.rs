@@ -47,7 +47,7 @@ struct G2HomProjective<P: Bls12Parameters> {
 
 impl<P: Bls12Parameters> Default for G2Prepared<P> {
     fn default() -> Self {
-        Self::from_affine(G2Affine::<P>::prime_subgroup_generator())
+        Self::from(G2Affine::<P>::prime_subgroup_generator())
     }
 }
 
@@ -84,8 +84,10 @@ impl<P: Bls12Parameters> G2Prepared<P> {
     pub fn is_zero(&self) -> bool {
         self.infinity
     }
+}
 
-    pub fn from_affine(q: G2Affine<P>) -> Self {
+impl<P: Bls12Parameters> From<G2Affine<P>> for G2Prepared<P> {
+    fn from(q: G2Affine<P>) -> Self {
         if q.is_zero() {
             return Self { ell_coeffs: vec![], infinity: true };
         }

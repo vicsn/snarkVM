@@ -388,7 +388,7 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
 
 /// Evaluation proof at a query set.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, CanonicalSerialize, CanonicalDeserialize)]
-pub struct BatchProof<E: PairingEngine>(pub(crate) Vec<kzg10::KZGProof<E>>);
+pub struct BatchProof<E: PairingEngine>(pub Vec<kzg10::KZGProof<E>>);
 
 impl<E: PairingEngine> BatchProof<E> {
     pub fn is_hiding(&self) -> bool {

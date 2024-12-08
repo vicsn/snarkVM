@@ -444,7 +444,7 @@ impl<F: FftField> EvaluationDomain<F> {
     }
 
     #[allow(unused)]
-    pub(crate) fn in_order_fft_in_place_with_pc<T: DomainCoeff<F>>(
+    pub fn in_order_fft_in_place_with_pc<T: DomainCoeff<F>>(
         &self,
         x_s: &mut [T],
         pre_comp: &FFTPrecomputation<F>,

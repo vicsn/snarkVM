@@ -66,7 +66,7 @@ impl PairingCurve for G1Affine {
     type Prepared = G1Prepared<Bls12_377Parameters>;
 
     fn prepare(&self) -> Self::Prepared {
-        Self::Prepared::from_affine(*self)
+        Self::Prepared::from(*self)
     }
 
     fn pairing_with(&self, other: &Self::PairWith) -> Self::PairingResult {
@@ -84,7 +84,7 @@ impl PairingCurve for G2Affine {
     type Prepared = G2Prepared<Bls12_377Parameters>;
 
     fn prepare(&self) -> Self::Prepared {
-        Self::Prepared::from_affine(*self)
+        Self::Prepared::from(*self)
     }
 
     fn pairing_with(&self, other: &Self::PairWith) -> Self::PairingResult {

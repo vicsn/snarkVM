@@ -24,7 +24,44 @@ use crate::snark::varuna::matrices::MatrixEvals;
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::PrimeField;
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for BatchProof<MpcPairingEngine<E, S>> {
+use std::sync::Arc;
+
+impl Reveal for VarunaHidingMode {
+    type Base = VarunaHidingMode;
+
+    fn reveal(self) -> Self::Base {
+        self
+    }
+
+    fn from_add_shared(b: Self::Base) -> Self {
+        b
+    }
+
+    fn from_public(b: Self::Base) -> Self {
+        b
+    }
+}
+
+impl Reveal for CircuitId {
+    type Base = CircuitId;
+
+    fn reveal(self) -> Self::Base {
+        CircuitId(self.0)
+    }
+
+    fn from_add_shared(b: Self::Base) -> Self {
+        Self(b.0)
+    }
+
+    fn from_public(b: Self::Base) -> Self {
+        Self(b.0)
+    }
+}
+
+impl<E: PairingEngine, PS: PairingShare<E>> Reveal for BatchProof<MpcPairingEngine<E, PS>> 
+where 
+    <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
+{
     type Base = BatchProof<E>;
 
     fn reveal(self) -> Self::Base {
@@ -32,15 +69,17 @@ impl<E: PairingEngine, S: PairingShare<E>> Reveal for BatchProof<MpcPairingEngin
     }
 
     fn from_add_shared(b: Self::Base) -> Self {
-        BatchProof::<E>(Reveal::from_add_shared(b.0))
+        Self(Reveal::from_add_shared(b.0))
     }
 
     fn from_public(b: Self::Base) -> Self {
-        BatchProof::<E>(Reveal::from_public(b.0))
+        Self(Reveal::from_public(b.0))
     }
 }
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for kzg10::KZGCommitment<MpcPairingEngine<E, S>> {
+impl<E: PairingEngine, PS: PairingShare<E>> Reveal for kzg10::KZGCommitment<MpcPairingEngine<E, PS>> 
+where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>
+{
     type Base = kzg10::KZGCommitment<E>;
 
     fn reveal(self) -> Self::Base {
@@ -48,62 +87,72 @@ impl<E: PairingEngine, S: PairingShare<E>> Reveal for kzg10::KZGCommitment<MpcPa
     }
 
     fn from_add_shared(b: Self::Base) -> Self {
-        kzg10::KZGCommitment(<MpcPairingEngine<E, S> as PairingEngine>::G1Affine::from_add_shared(b.0))
+        kzg10::KZGCommitment(<MpcPairingEngine<E, PS> as PairingEngine>::G1Affine::from_add_shared(b.0))
     }
 
     fn from_public(b: Self::Base) -> Self {
-        kzg10::KZGCommitment(<MpcPairingEngine<E, S> as PairingEngine>::G1Affine::from_public(b.0))
+        kzg10::KZGCommitment(<MpcPairingEngine<E, PS> as PairingEngine>::G1Affine::from_public(b.0))
     }
 }
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for kzg10::KZGProof<MpcPairingEngine<E, S>> {
+impl<E: PairingEngine, PS: PairingShare<E>> Reveal for kzg10::KZGProof<MpcPairingEngine<E, PS>> 
+where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>
+{
     type Base = kzg10::KZGProof<E>;
     struct_reveal_simp_impl!(kzg10::KZGProof; w, random_v);
 }
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for WitnessCommitments<MpcPairingEngine<E, S>>
+impl<E: PairingEngine, PS: PairingShare<E>> Reveal for WitnessCommitments<MpcPairingEngine<E, PS>>
+where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>
 {
     type Base = WitnessCommitments<E>;
     struct_reveal_simp_impl!(WitnessCommitments; w);
 }
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for Commitments<MpcPairingEngine<E, S>>
+impl<E: PairingEngine, PS: PairingShare<E>> Reveal for Commitments<MpcPairingEngine<E, PS>>
+where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>
 {
     type Base = Commitments<E>;
     struct_reveal_simp_impl!(Commitments; witness_commitments, mask_poly, h_0, g_1, h_1, g_a_commitments, g_b_commitments, g_c_commitments, h_2);
 }
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for Evaluations<<MpcPairingEngine<E, S> as PairingEngine>::Fr>
+impl<F: PrimeField, S: FieldShare<F>> Reveal for Evaluations<MpcField<F, S>>
+where <MpcField<F, S> as PrimeField>::BigInteger: From<MpcField<F, S>>
 {
-    type Base = Evaluations<E::Fr>;
+    type Base = Evaluations<F>;
     struct_reveal_simp_impl!(Evaluations; g_1_eval, g_a_evals, g_b_evals, g_c_evals);
 }
 
 impl<F: PrimeField, S: FieldShare<F>> Reveal for MatrixSums<MpcField<F, S>>
+where <MpcField<F, S> as PrimeField>::BigInteger: From<MpcField<F, S>>
 {
     type Base = MatrixSums<F>;
     struct_reveal_simp_impl!(MatrixSums; sum_a, sum_b, sum_c);
 }
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for ThirdMessage<<MpcPairingEngine<E, S> as PairingEngine>::Fr>
+impl<F: PrimeField, S: FieldShare<F>> Reveal for ThirdMessage<MpcField<F, S>>
+where <MpcField<F, S> as PrimeField>::BigInteger: From<MpcField<F, S>>
 {
-    type Base = ThirdMessage<E::Fr>;
+    type Base = ThirdMessage<F>;
     struct_reveal_simp_impl!(ThirdMessage; sums);
 }
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for FourthMessage<<MpcPairingEngine<E, S> as PairingEngine>::Fr>
+impl<F: PrimeField, S: FieldShare<F>> Reveal for FourthMessage<MpcField<F, S>>
+where <MpcField<F, S> as PrimeField>::BigInteger: From<MpcField<F, S>>
 {
-    type Base = FourthMessage<E::Fr>;
+    type Base = FourthMessage<F>;
     struct_reveal_simp_impl!(FourthMessage; sums);
 }
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for BatchLCProof<MpcPairingEngine<E, S>>
+impl<E: PairingEngine, PS: PairingShare<E>> Reveal for BatchLCProof<MpcPairingEngine<E, PS>>
+where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>
 {
     type Base = BatchLCProof<E>;
     struct_reveal_simp_impl!(BatchLCProof; proof);
 }
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for Proof<MpcPairingEngine<E, S>>
+impl<E: PairingEngine, PS: PairingShare<E>> Reveal for Proof<MpcPairingEngine<E, PS>>
+where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>
 {
     type Base = Proof<E>;
     struct_reveal_simp_impl!(Proof; batch_sizes, commitments, evaluations, third_msg, fourth_msg, pc_proof);
@@ -121,36 +170,82 @@ impl Reveal for CircuitInfo {
     );
 }
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for CircuitVerifyingKey<MpcPairingEngine<E, S>>
+impl<E: PairingEngine, PS: PairingShare<E>> Reveal for CircuitVerifyingKey<MpcPairingEngine<E, PS>>
+where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>
 {
     type Base = CircuitVerifyingKey<E>;
     struct_reveal_simp_impl!(CircuitVerifyingKey; circuit_info, circuit_commitments, id);
 }
 
-impl<F: PrimeField, S: FieldShare<F>> Reveal for Circuit<MpcField<F, S>, VarunaHidingMode> {
+impl<F: PrimeField, S: FieldShare<F>> Reveal for Circuit<MpcField<F, S>, VarunaHidingMode> 
+where <MpcField<F, S> as PrimeField>::BigInteger: From<MpcField<F, S>>
+{
     type Base = Circuit<F, VarunaHidingMode>;
     struct_reveal_simp_impl!(Circuit; index_info, a, b, c, a_arith, b_arith, c_arith, fft_precomputation, ifft_precomputation, _mode, id);
 }
 
-impl<E: PrimeField, S: FieldShare<E>> Reveal for MatrixEvals<MpcField<E, S>>
+impl<F: PrimeField, S: FieldShare<F>> Reveal for MatrixEvals<MpcField<F, S>>
+where <MpcField<F, S> as PrimeField>::BigInteger: From<MpcField<F, S>>
 {
-    type Base = MatrixEvals<E>;
+    type Base = MatrixEvals<F>;
     struct_reveal_simp_impl!(MatrixEvals; row, col, row_col, row_col_val);
 }
-// impl<E: PrimeField, S: FieldShare<E>> Reveal for Matrix<MpcField<E, S>>
-// {
-//     type Base = Matrix<E>;
-//     struct_reveal_simp_impl!(Matrix; row, col, val, row_col, evals_on_K, evals_on_B, row_col_evals_on_B);
-// }
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for CommitterKey<MpcPairingEngine<E, S>>
+impl<E: PairingEngine, PS: PairingShare<E>> Reveal for CommitterKey<MpcPairingEngine<E, PS>>
+where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>
 {
     type Base = CommitterKey<E>;
     struct_reveal_simp_impl!(CommitterKey; powers_of_beta_g, lagrange_bases_at_beta_g, powers_of_beta_times_gamma_g, shifted_powers_of_beta_g, shifted_powers_of_beta_times_gamma_g, enforced_degree_bounds);
 }
 
-impl<E: PairingEngine, S: PairingShare<E>> Reveal for CircuitProvingKey<MpcPairingEngine<E, S>, VarunaHidingMode>
+impl<E: PairingEngine, PS: PairingShare<E>> Reveal for CircuitProvingKey<MpcPairingEngine<E, PS>, VarunaHidingMode> 
+where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>
 {
     type Base = CircuitProvingKey<E, VarunaHidingMode>;
-    struct_reveal_simp_impl!(CircuitProvingKey; circuit_verifying_key, circuit, committer_key);
+
+    fn reveal(self) -> Self::Base {
+        let CircuitProvingKey {
+            circuit_verifying_key,
+            circuit,
+            committer_key,
+        } = self;
+        CircuitProvingKey::<E, VarunaHidingMode> {
+            circuit_verifying_key: circuit_verifying_key.reveal(),
+            circuit: Arc::new(Arc::into_inner(circuit).unwrap().reveal()),
+            committer_key: Arc::new(Arc::into_inner(committer_key).unwrap().reveal()),
+        }
+    }
+
+    fn from_add_shared(b: Self::Base) -> Self {
+        let CircuitProvingKey {
+            circuit_verifying_key,
+            circuit,
+            committer_key,
+        } = b;
+        Self {
+            circuit_verifying_key: Reveal::from_add_shared(circuit_verifying_key),
+            circuit: Arc::new(Reveal::from_add_shared(Arc::into_inner(circuit).unwrap())),
+            committer_key: Arc::new(Reveal::from_add_shared(Arc::into_inner(committer_key).unwrap())),
+        }
+    }
+
+    fn from_public(b: Self::Base) -> Self {
+        let CircuitProvingKey {
+            circuit_verifying_key,
+            circuit,
+            committer_key,
+        } = b;
+        Self {
+            circuit_verifying_key: Reveal::from_public(circuit_verifying_key),
+            circuit: Arc::new(Reveal::from_public(Arc::into_inner(circuit).unwrap())),
+            committer_key: Arc::new(Reveal::from_public(Arc::into_inner(committer_key).unwrap())),
+        }
+    }
 }
+
+// impl<E: PairingEngine, PS: PairingShare<E>> Reveal for CircuitProvingKey<MpcPairingEngine<E, PS>, VarunaHidingMode>
+// where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>
+// {
+//     type Base = CircuitProvingKey<E, VarunaHidingMode>;
+//     struct_reveal_simp_impl!(CircuitProvingKey; circuit_verifying_key, circuit, committer_key);
+// }

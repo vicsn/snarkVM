@@ -89,30 +89,6 @@ primitive_reveal_impl!(usize);
 primitive_reveal_impl!(u64);
 primitive_reveal_impl!(u32);
 
-// impl Reveal for usize {
-//     type Base = usize;
-
-//     fn reveal(self) -> Self::Base {
-//         self
-//     }
-
-//     fn from_add_shared(b: Self::Base) -> Self {
-//         b
-//     }
-
-//     fn from_public(b: Self::Base) -> Self {
-//         b
-//     }
-
-//     fn unwrap_as_public(self) -> Self::Base {
-//         self
-//     }
-
-//     fn king_share<R: Rng>(b: Self::Base, _rng: &mut R) -> Self {
-//         b
-//     }
-// }
-
 impl<T: Reveal> Reveal for PhantomData<T> {
     type Base = PhantomData<T::Base>;
 
