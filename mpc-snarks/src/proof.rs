@@ -2,7 +2,8 @@
 #![allow(unused_imports)]
 use snarkvm_curves::PairingEngine;
 use snarkvm_utilities::TestRng;
-use snarkvm_fields::Field;
+use snarkvm_fields::{Field, PrimeField};
+use mpc_algebra::MpcField;
 use snarkvm_algorithms::r1cs::ConstraintSynthesizer;
 use snarkvm_algorithms::prelude::SynthesisError;
 use snarkvm_algorithms::r1cs::Variable;
@@ -28,7 +29,11 @@ trait SnarkBench {
     fn ark_local<E: PairingEngine>(_n: usize, _timer_label: &str) {
         unimplemented!("ark benchmark for {}", std::any::type_name::<Self>())
     }
-    fn mpc<E: PairingEngine, S: PairingShare<E>>(n: usize, timer_label: &str);
+    fn mpc<
+        E: PairingEngine,
+        S: PairingShare<E>
+    >(n: usize, timer_label: &str)
+    where <MpcField<E::Fr, S::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, S::FrShare>>;
 }
 
 mod squarings {
@@ -69,9 +74,11 @@ mod squarings {
         // use ark_marlin::*;
         // use ark_poly_commit::marlin::marlin_pc::MarlinKZG10;
         use snarkvm_algorithms::{crypto_hash::PoseidonSponge, fft::DensePolynomial, snark::varuna::{AHPForR1CS, CircuitProvingKey, VarunaHidingMode, test_circuit::TestCircuit, VarunaSNARK}, AlgebraicSponge, SNARK};
+        use snarkvm_algorithms::srs::UniversalProver;
         use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
         use snarkvm_circuit::{prelude::{Field, *}, Environment, network::AleoV0};
         use snarkvm_utilities::TestRng;
+        use mpc_algebra::MpcField;
 
         // type KzgMarlin<Fr, E> = Marlin<Fr, MarlinKZG10<E, DensePolynomial<Fr>>, Blake2s>;
 
@@ -114,12 +121,13 @@ mod squarings {
                 // assert!(KzgMarlin::<E::Fr, E>::verify(&vk, &public_inputs, &proof, rng).unwrap());
             }
 
-            fn mpc<E: PairingEngine, S: PairingShare<E>>(n: usize, timer_label: &str) { // Key entrypoint
+            fn mpc<E: PairingEngine, S: PairingShare<E>>(n: usize, timer_label: &str) 
+            where <MpcField<E::Fr, S::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, S::FrShare>>,
+            // where <<E as PairingEngine>::Fr as PrimeField>::BigInteger: From<MpcField<<E as PairingEngine>::Fr, <S as PairingShare<E>>::FrShare>>
+            { // Key entrypoint
 
                 type VarunaInst<E> = VarunaSNARK::<E, PoseidonSponge<<E as PairingEngine>::Fq, 2, 1>, VarunaHidingMode>;
-
-                // type MPC_FS = PoseidonSponge<E::Fq, 2, 1>; // TODO: may need to wrap Fq in MpcField
-                // type MPC_VarunaInst<E, S> = VarunaSNARK<MpcPairingEngine<E, S>, MPC_FS, VarunaHidingMode>;
+                type MPC_VarunaInst<E, S> = VarunaSNARK::<MpcPairingEngine<E, S>, PoseidonSponge<<MpcPairingEngine<E, S> as PairingEngine>::Fq, 2, 1>, VarunaHidingMode>;
 
                 let snarkvm_rng = &mut TestRng::default();
        
@@ -145,20 +153,24 @@ mod squarings {
                 let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap();
                 assert!(result);
 
-                // let mpc_fs_pp = MPC_FS::sample_parameters();
-                // let mpc_pk = CircuitProvingKey::from_public(index_pk);
-                // let mpc_universal_prover = UniversalProver::from_public(universal_prover);
-                // let mpc_assignment = Assignment::from_public(assignment); // TODO: we'll have to split among users.
-                // MpcMultiNet::reset_stats();
-                // let timer = start_timer!(|| timer_label);
-                // let snarkvm_rng = &mut TestRng::default();
-                // let proof = channel::without_cheating(|| {
-                //     MPC_VarunaInst::prove(mpc_universal_prover, &mpc_fs_pp, &mpc_pk, &mpc_assignment, snarkvm_rng)
-                //     .unwrap()
-                //     .reveal()
-                // });
-                // let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap();
-                // assert!(result);
+                // MPC time
+                let mpc_circuit = TestCircuit::<MpcField<<E as PairingEngine>::Fr, S::FrShare>>::from_public(circuit); // TODO: we'll have to split among users.
+                // let mpc_assignment = Assignment::from_public(circuit); // TODO: we'll have to split among users.
+                // TODO: not sure if the sponge needs to be MPC'd...
+                let mpc_fs_pp = PoseidonSponge::<<MpcPairingEngine::<E, S> as PairingEngine>::Fq, 2, 1>::sample_parameters();
+                // let mpc_fs_pp = PoseidonSponge::<<MpcPairingEngine::<E, S> as PairingEngine>::Fq, 2, 1>::from_public(fs_pp); // TODO: requires lots of new Reveal boiletplate
+                let mpc_pk = CircuitProvingKey::from_public(index_pk);
+                let mpc_universal_prover = UniversalProver::<MpcPairingEngine<E, S>>::from_public(universal_prover.clone());
+                MpcMultiNet::reset_stats();
+                let timer = start_timer!(|| timer_label);
+                let snarkvm_rng = &mut TestRng::default();
+                let proof = channel::without_cheating(|| {
+                    MPC_VarunaInst::prove(&mpc_universal_prover, &mpc_fs_pp, &mpc_pk, &mpc_circuit, snarkvm_rng)
+                    .unwrap()
+                    .reveal()
+                });
+                let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap();
+                assert!(result);
 
 
                 // let rng = &mut TestRng::default();
