@@ -20,6 +20,7 @@ pub struct MpcFrParameters<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> MpcFpParameters<F, S, T> for MpcFrParameters<F, S, T> {}
 
 // Copy of bls12_377::FrParameters
+// TODO: consider BigInteger = &'static T  
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger + 'static> FftParameters for MpcFrParameters<F, S, T> {
     type BigInteger = &'static MpcBigInteger<F, S, T>;
 

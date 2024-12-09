@@ -17,7 +17,7 @@ use crate::FieldShare;
 /// We can overcome the barrier by creating a local transparant wrapper around BigInteger.
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct MpcBigInteger<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static>{
-    pub val: &'static T, // TODO: maybe this can be <F as PrimeField>::BigInteger, and then we only have to parametrize on F and S
+    pub val: T, // TODO: maybe this can be <F as PrimeField>::BigInteger, and then we only have to parametrize on F and S
     pub _marker: PhantomData<(F, S)>,
 }
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> BigInteger for &'static MpcBigInteger<F, S, T> {
@@ -96,7 +96,7 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> F
     #[inline]
     fn from(val: u64) -> Self {
         &'static MpcBigInteger::<F, S, T> {
-            val: &'static T::from(val),
+            val: T::from(val),
             _marker: PhantomData,
         }
     }
@@ -144,7 +144,7 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> F
     /// Initializes a new compute key from a list of **big-endian** bits.
     fn from_bits_be(bits: &[bool]) -> anyhow::Result<Self> {
         Ok(&'static MpcBigInteger::<F, S, T>{
-            val: &'static FromBits::from_bits_be(bits)?,
+            val: FromBits::from_bits_be(bits)?,
             _marker: PhantomData,
         })
     }
@@ -170,7 +170,7 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> F
     fn from(value: MpcField<F, S>) -> Self {
         match value {
             MpcField::Public(f) => &'static MpcBigInteger::<F, S, T>{
-                val: &'static f.to_bigint(),
+                val: f.to_bigint(),
                 _marker: PhantomData,
             },
             MpcField::Shared(f) => {

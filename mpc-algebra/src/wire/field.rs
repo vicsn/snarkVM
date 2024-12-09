@@ -557,7 +557,7 @@ impl<F: PrimeField, S: FieldShare<F>> PrimeField for MpcField<F, S> {
         // TODO: from where is this called?
         // TODO: is it semantically correct to always return a public integer here?
         &'static MpcBigInteger::<F, S, F::BigInteger> {
-            val: &'static self.reveal().to_bigint(),
+            val: self.reveal().to_bigint(),
             _marker: PhantomData,
         }
     }
