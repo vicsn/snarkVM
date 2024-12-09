@@ -16,11 +16,11 @@ use crate::FieldShare;
 /// However, that is not an easy thing as BigInteger is not local. Not sure how this was possible with the PrimeField type.
 /// We can overcome the barrier by creating a local transparant wrapper around BigInteger.
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
-pub struct MpcBigInteger<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger>{
-    pub val: T, // TODO: maybe this can be <F as PrimeField>::BigInteger, and then we only have to parametrize on F and S
+pub struct MpcBigInteger<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static>{
+    pub val: &'static T, // TODO: maybe this can be <F as PrimeField>::BigInteger, and then we only have to parametrize on F and S
     pub _marker: PhantomData<(F, S)>,
 }
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> BigInteger for MpcBigInteger<F, S, T> {
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> BigInteger for &'static MpcBigInteger<F, S, T> {
     const NUM_LIMBS: usize = T::NUM_LIMBS;
 
     /// Add another representation to this one, returning the carry bit.
@@ -92,64 +92,64 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> BigInteger 
     }
 }
 
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> From<u64> for MpcBigInteger<F, S, T> {
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> From<u64> for &'static MpcBigInteger<F, S, T> {
     #[inline]
     fn from(val: u64) -> Self {
-        MpcBigInteger::<F, S, T> {
-            val: T::from(val),
+        &'static MpcBigInteger::<F, S, T> {
+            val: &'static T::from(val),
             _marker: PhantomData,
         }
     }
 }
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> std::fmt::Display for MpcBigInteger<F, S, T> {
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> std::fmt::Display for &'static MpcBigInteger<F, S, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         unimplemented!("MpcBigInteger::BigInteger::Display");
     }
 }
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> Default for MpcBigInteger<F, S, T> {
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> Default for &'static MpcBigInteger<F, S, T> {
     fn default() -> Self {
         unimplemented!("MpcBigInteger::BigInteger::Default");
     }
 }
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> AsRef<[u64]> for MpcBigInteger<F, S, T> {
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> AsRef<[u64]> for &'static MpcBigInteger<F, S, T> {
     #[inline]
     fn as_ref(&self) -> &[u64] {
         unimplemented!("MpcBigInteger::BigInteger::AsRef");
     }
 }
 
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> AsMut<[u64]> for MpcBigInteger<F, S, T> {
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> AsMut<[u64]> for &'static MpcBigInteger<F, S, T> {
     #[inline]
     fn as_mut(&mut self) -> &mut [u64] {
         unimplemented!("MpcBigInteger::BigInteger::AsMut");
     }
 }
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> FromBytes for MpcBigInteger<F, S, T> {
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> FromBytes for &'static MpcBigInteger<F, S, T> {
     #[inline]
     fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
         unimplemented!("MpcBigInteger::BigInteger::FromBytes");
     }
 }
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> ToBytes for MpcBigInteger<F, S, T> {
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> ToBytes for &'static MpcBigInteger<F, S, T> {
     #[inline]
     fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
         unimplemented!("MpcBigInteger::BigInteger::ToBytes");
     }
 }
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> FromBits for MpcBigInteger<F, S, T> {
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> FromBits for &'static MpcBigInteger<F, S, T> {
     /// Initializes a new compute key from a list of **little-endian** bits.
     fn from_bits_le(_bits: &[bool]) -> anyhow::Result<Self> {
         unimplemented!("MpcBigInteger::BigInteger::FromBits::from_bits_le");
     }
     /// Initializes a new compute key from a list of **big-endian** bits.
     fn from_bits_be(bits: &[bool]) -> anyhow::Result<Self> {
-        Ok(MpcBigInteger::<F, S, T>{
-            val: FromBits::from_bits_be(bits)?,
+        Ok(&'static MpcBigInteger::<F, S, T>{
+            val: &'static FromBits::from_bits_be(bits)?,
             _marker: PhantomData,
         })
     }
 }
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> ToBits for MpcBigInteger<F, S, T> {
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> ToBits for &'static MpcBigInteger<F, S, T> {
     /// Writes `self` into the given vector as a boolean array in little-endian order.
     fn write_bits_le(&self, vec: &mut Vec<bool>) {
         self.val.write_bits_le(vec);
@@ -160,17 +160,17 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> ToBits for 
         self.val.write_bits_be(vec);
     }
 }
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> Distribution<MpcBigInteger<F, S, T>> for Standard {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> MpcBigInteger<F, S, T> {
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> Distribution<&'static MpcBigInteger<F, S, T>> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> &'static MpcBigInteger<F, S, T> {
         unimplemented!("MpcBigInteger::BigInteger::Distribution::sample");
     }
 }
 
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> From<MpcField<F, S>> for MpcBigInteger<F, S, T> {
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> From<MpcField<F, S>> for &'static MpcBigInteger<F, S, T> {
     fn from(value: MpcField<F, S>) -> Self {
         match value {
-            MpcField::Public(f) => Self{
-                val: f.to_bigint(),
+            MpcField::Public(f) => &'static MpcBigInteger::<F, S, T>{
+                val: &'static f.to_bigint(),
                 _marker: PhantomData,
             },
             MpcField::Shared(f) => {
@@ -180,7 +180,7 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> From<MpcFie
     }
 }
 
-// impl<E: PairingEngine, PS: PairingShare<E>, T: BigInteger> Deref for BigIntegerWrapper<E, PS, T> {
+// impl<E: PairingEngine, PS: PairingShare<E>, T: BigInteger + 'static> Deref for BigIntegerWrapper<E, PS, T> {
 //     type Target = T;
 
 //     fn deref(&self) -> &Self::Target {
@@ -218,7 +218,7 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> From<MpcFie
 //     }
 // }
 
-// impl<E: PairingEngine, PS: PairingShare<E>, T: BigInteger> Into<T> for MpcField<E::Fr, PS::FrShare> {
+// impl<E: PairingEngine, PS: PairingShare<E>, T: BigInteger + 'static> Into<T> for MpcField<E::Fr, PS::FrShare> {
 //     fn into(self) -> T {
 //         match self {
 //             MpcField::Public(f) => f.to_bigint(),
