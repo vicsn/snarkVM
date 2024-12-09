@@ -33,7 +33,6 @@ trait SnarkBench {
         E: PairingEngine,
         S: PairingShare<E>
     >(_n: usize, timer_label: &str);
-    // where <MpcField<E::Fr, S::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, S::FrShare>>;
 }
 
 mod squarings {

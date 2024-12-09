@@ -30,7 +30,6 @@ rayon = { version = "1", optional = true }
 serde = { version = "1" }
 zeroize = { version = "1", default-features = false, features = ["zeroize_derive"] }
 mpc-net = { path = "../mpc-net" }
-mpc-trait = { path = "../mpc-trait" }
 
 env_logger = "0.8"
 structopt = "0.3"
@@ -65,4 +64,4 @@ default-features = false
 [dependencies.snarkvm-utilities]
 path = "../utilities"
 version = "=1.0.0"
-default-features = false
+default-features = true

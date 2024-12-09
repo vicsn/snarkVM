@@ -1755,7 +1755,6 @@ dependencies = [
  "log",
  "merlin",
  "mpc-net",
- "mpc-trait",
  "num-bigint",
  "once_cell",
  "rand",
@@ -1801,7 +1800,6 @@ dependencies = [
  "merlin",
  "mpc-algebra",
  "mpc-net",
- "mpc-trait",
  "rand",
  "rand_chacha",
  "rayon",
@@ -1822,17 +1820,6 @@ dependencies = [
  "snarkvm-utilities",
  "structopt",
  "zeroize",
-]
-
-[[package]]
-name = "mpc-trait"
-version = "1.0.0"
-dependencies = [
- "aleo-std",
- "rand",
- "snarkvm-curves",
- "snarkvm-fields",
- "snarkvm-utilities",
 ]
 
 [[package]]
@@ -2886,7 +2873,6 @@ dependencies = [
  "itertools 0.11.0",
  "lazy_static",
  "mpc-algebra",
- "mpc-trait",
  "num-traits",
  "parking_lot",
  "rand",

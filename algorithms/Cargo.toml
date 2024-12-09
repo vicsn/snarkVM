@@ -50,11 +50,6 @@ path = "../mpc-algebra"
 version = "=1.0.0"
 default-features = false
 
-[dependencies.mpc-trait]
-path = "../mpc-trait"
-version = "=1.0.0"
-default-features = false
-
 [dependencies.snarkvm-curves]
 path = "../curves"
 version = "=1.0.0"

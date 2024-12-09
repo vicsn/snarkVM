@@ -10,27 +10,22 @@ use std::marker::PhantomData;
 use crate::FieldShare;
 use crate::MpcBigInteger;
 
-pub trait MpcFp256Parameters<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger>: FieldParameters<BigInteger = MpcBigInteger<F, S, T>> {}
+pub trait MpcFpParameters<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger>: FieldParameters<BigInteger = MpcBigInteger<F, S, T>> {}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct MpcFrParameters<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> {
     pub _marker: PhantomData<(F, S, T)>
 }
 
-impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> MpcFp256Parameters<F, S, T> for MpcFrParameters<F, S, T> {}
+impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> MpcFpParameters<F, S, T> for MpcFrParameters<F, S, T> {}
 
 // Copy of bls12_377::FrParameters
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> FftParameters for MpcFrParameters<F, S, T> {
     type BigInteger = MpcBigInteger<F, S, T>;
-    // type Base = T; // NOTE: not congruent with FftParameters impl
 
     #[rustfmt::skip]
-    const POWERS_OF_ROOTS_OF_UNITY: &'static [Self::BigInteger] = &[];
-        // This is not allowed because I can't use T?
-        // T([2022196864061697551, 17419102863309525423, 8564289679875062096, 17152078065055548215, 17966377291017729567, 68610905582439508]),
-        // This is not allowed, and the compiler recommends me to use T?
-        // <F as PrimeField>::BigInteger([2022196864061697551, 17419102863309525423, 8564289679875062096, 17152078065055548215, 17966377291017729567, 68610905582439508]),
-    //     Self::BigInteger{val: <<F as PrimeField>::Parameters as FftParameters>::POWERS_OF_ROOTS_OF_UNITY[0], _marker: PhantomData},
+    const POWERS_OF_ROOTS_OF_UNITY: &'static [Self::BigInteger] = &[ //];
+        Self::BigInteger{val: <<F as PrimeField>::Parameters as FftParameters>::POWERS_OF_ROOTS_OF_UNITY[0], _marker: PhantomData},
     //     Self::BigInteger{val: <<F as PrimeField>::Parameters as FftParameters>::POWERS_OF_ROOTS_OF_UNITY[1], _marker: PhantomData},
     //     Self::BigInteger{val: <<F as PrimeField>::Parameters as FftParameters>::POWERS_OF_ROOTS_OF_UNITY[2], _marker: PhantomData},
     //     Self::BigInteger{val: <<F as PrimeField>::Parameters as FftParameters>::POWERS_OF_ROOTS_OF_UNITY[3], _marker: PhantomData},
@@ -65,7 +60,7 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> FftParamet
     //     Self::BigInteger{val: <<F as PrimeField>::Parameters as FftParameters>::POWERS_OF_ROOTS_OF_UNITY[42], _marker: PhantomData},
     //     Self::BigInteger{val: <<F as PrimeField>::Parameters as FftParameters>::POWERS_OF_ROOTS_OF_UNITY[43], _marker: PhantomData},
     //     Self::BigInteger{val: <<F as PrimeField>::Parameters as FftParameters>::POWERS_OF_ROOTS_OF_UNITY[44], _marker: PhantomData},
-    // ];
+    ];
     #[rustfmt::skip]
     const TWO_ADICITY: u32 = 47;
     /// TWO_ADIC_ROOT_OF_UNITY = 8065159656716812877374967518403273466521432693661810619979959746626482506078
@@ -165,37 +160,43 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> Default fo
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use snarkvm_fields::{FftField, Field, PrimeField};
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_curves::bls12_377::Fq;
+    // use snarkvm_curves::bls12_377::FqParameters;
+    // mpc_algebra::share::spdz::SpdzPairingShare<E>::FqShare : FieldShare<Fq>
+    // type MpcFrParametersInst = MpcFrParameters<Fq, FieldShare<Fq>, _BigInteger>;
+    use snarkvm_fields::{FftField, Field, PrimeField};
 
-//     #[test]
-//     fn test_powers_of_root_of_unity() {
-//         let two = Fq::from(2u8);
+    #[test]
+    fn test_powers_of_root_of_unity() {
+        let two = Fq::from(2u8);
 
-//         // Compute the expected powers of root of unity.
-//         let root_of_unity = Fq::two_adic_root_of_unity();
-//         let powers = (0..FqParameters::TWO_ADICITY - 1)
-//             .map(|i| root_of_unity.pow(two.pow(Fq::from(i as u64).to_bigint()).to_bigint()))
-//             .collect::<Vec<_>>();
-//         assert_eq!(powers[0], Fq::two_adic_root_of_unity());
+        // Compute the expected powers of root of unity.
+        let root_of_unity = Fq::two_adic_root_of_unity();
+        // TODO: does the choice of *FieldShare matter? Should we try all of them?
+        let powers = (0..MpcFrParameters::<Fq, crate::SpdzFieldShare<Fq>, _>::TWO_ADICITY - 1)
+            .map(|i| root_of_unity.pow(two.pow(Fq::from(i as u64).to_bigint()).to_bigint()))
+            .collect::<Vec<_>>();
+        assert_eq!(powers[0], Fq::two_adic_root_of_unity());
 
-//         // Ensure the correct number of powers of root of unity are present.
-//         assert_eq!(FqParameters::POWERS_OF_ROOTS_OF_UNITY.len() as u64, (FqParameters::TWO_ADICITY - 1) as u64);
-//         assert_eq!(FqParameters::POWERS_OF_ROOTS_OF_UNITY.len(), powers.len());
+        // Ensure the correct number of powers of root of unity are present.
+        assert_eq!(MpcFrParameters::<Fq, crate::SpdzFieldShare<Fq>, _>::POWERS_OF_ROOTS_OF_UNITY.len() as u64, (MpcFrParameters::<Fq, crate::SpdzFieldShare<Fq>, _>::TWO_ADICITY - 1) as u64);
+        assert_eq!(MpcFrParameters::<Fq, crate::SpdzFieldShare<Fq>, _>::POWERS_OF_ROOTS_OF_UNITY.len(), powers.len());
 
-//         // Ensure the expected and candidate powers match.
-//         for (expected, candidate) in powers.iter().zip(FqParameters::POWERS_OF_ROOTS_OF_UNITY) {
-//             // println!("BigInteger({:?}),", expected.0.0);
-//             println!("{:?} =?= {:?}", expected.0, candidate);
-//             assert_eq!(&expected.0, candidate);
-//         }
-//     }
+        // Ensure the expected and candidate powers match.
+        for (expected, candidate) in powers.iter().zip(MpcFrParameters::<Fq, crate::SpdzFieldShare<Fq>, _>::POWERS_OF_ROOTS_OF_UNITY) {
+            // println!("BigInteger({:?}),", expected.0.0);
+            println!("{:?} =?= {:?}", expected.0, candidate);
+            assert_eq!(expected.0, candidate.val);
+        }
+    }
 
-//     #[test]
-//     fn test_two_adic_root_of_unity() {
-//         let expected = Fq::multiplicative_generator().pow(FqParameters::T);
-//         assert_eq!(expected, Fq::two_adic_root_of_unity());
-//     }
-// }
+    #[test]
+    fn test_two_adic_root_of_unity() {
+        // TODO: is this the right BigInteger type?
+        let expected = Fq::multiplicative_generator().pow::<snarkvm_utilities::BigInteger384>(MpcFrParameters::<Fq, crate::SpdzFieldShare<Fq>, _>::T.val);
+        assert_eq!(expected, Fq::two_adic_root_of_unity());
+    }
+}
