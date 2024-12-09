@@ -1756,6 +1756,7 @@ dependencies = [
  "merlin",
  "mpc-net",
  "mpc-trait",
+ "num-bigint",
  "once_cell",
  "rand",
  "rand_chacha",

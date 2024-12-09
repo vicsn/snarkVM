@@ -26,8 +26,8 @@ use std::{
 
 #[derive(Copy, Clone, Debug)]
 pub struct State<F: PrimeField, const RATE: usize, const CAPACITY: usize> {
-    capacity_state: [F; CAPACITY],
-    rate_state: [F; RATE],
+    pub capacity_state: [F; CAPACITY],
+    pub rate_state: [F; RATE],
 }
 
 impl<F: PrimeField, const RATE: usize, const CAPACITY: usize> Default for State<F, RATE, CAPACITY> {
@@ -108,13 +108,13 @@ impl<F: PrimeField, const RATE: usize> Poseidon<F, RATE> {
 #[derive(Clone, Debug)]
 pub struct PoseidonSponge<F: PrimeField, const RATE: usize, const CAPACITY: usize> {
     /// Sponge Parameters
-    parameters: Arc<PoseidonParameters<F, RATE, CAPACITY>>,
+    pub parameters: Arc<PoseidonParameters<F, RATE, CAPACITY>>,
     /// Current sponge's state (current elements in the permutation block)
-    state: State<F, RATE, CAPACITY>,
+    pub state: State<F, RATE, CAPACITY>,
     /// Current mode (whether its absorbing or squeezing)
     pub mode: DuplexSpongeMode,
     /// A persistent lookup table used when compressing elements.
-    adjustment_factor_lookup_table: Arc<[F]>,
+    pub adjustment_factor_lookup_table: Arc<[F]>,
 }
 
 impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSponge<F, RATE, 1> {

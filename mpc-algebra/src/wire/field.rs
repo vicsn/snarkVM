@@ -12,6 +12,8 @@ use snarkvm_utilities::{
 };
 use snarkvm_curves::MpcWire;
 use crate::{FieldShare, BeaverSource, Reveal};
+use crate::MpcBigInteger;
+use crate::MpcFrParameters;
 
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::{self, Read, Write};
@@ -511,7 +513,7 @@ impl<F: PrimeField, S: FieldShare<F>> Field for MpcField<F, S> {
 }
 
 impl<F: PrimeField, S: FieldShare<F>> FftField for MpcField<F, S> {
-    type FftParameters = F::FftParameters;
+    type FftParameters = MpcFrParameters<F, S, F::BigInteger>; //F::FftParameters;
     #[inline]
     fn two_adic_root_of_unity() -> Self {
         Self::from_public(F::two_adic_root_of_unity())
@@ -527,8 +529,9 @@ impl<F: PrimeField, S: FieldShare<F>> FftField for MpcField<F, S> {
 }
 
 impl<F: PrimeField, S: FieldShare<F>> PrimeField for MpcField<F, S> {
-    type Parameters = F::Parameters;
-    type BigInteger = F::BigInteger;
+    type BigInteger = MpcBigInteger<F, S, F::BigInteger>;
+    type Parameters = MpcFrParameters<F, S, F::BigInteger>;
+
     #[inline]
     fn from_bigint(_r: <Self as PrimeField>::BigInteger) -> Option<Self> {
         unimplemented!("No BigInt reprs for shared fields! (from_repr)")

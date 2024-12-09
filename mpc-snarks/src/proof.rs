@@ -32,8 +32,8 @@ trait SnarkBench {
     fn mpc<
         E: PairingEngine,
         S: PairingShare<E>
-    >(n: usize, timer_label: &str)
-    where <MpcField<E::Fr, S::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, S::FrShare>>;
+    >(n: usize, timer_label: &str);
+    // where <MpcField<E::Fr, S::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, S::FrShare>>;
 }
 
 mod squarings {
@@ -122,14 +122,14 @@ mod squarings {
             }
 
             fn mpc<E: PairingEngine, S: PairingShare<E>>(n: usize, timer_label: &str) 
-            where <MpcField<E::Fr, S::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, S::FrShare>>,
-            // where <<E as PairingEngine>::Fr as PrimeField>::BigInteger: From<MpcField<<E as PairingEngine>::Fr, <S as PairingShare<E>>::FrShare>>
             { // Key entrypoint
 
                 type VarunaInst<E> = VarunaSNARK::<E, PoseidonSponge<<E as PairingEngine>::Fq, 2, 1>, VarunaHidingMode>;
                 type MPC_VarunaInst<E, S> = VarunaSNARK::<MpcPairingEngine<E, S>, PoseidonSponge<<MpcPairingEngine<E, S> as PairingEngine>::Fq, 2, 1>, VarunaHidingMode>;
 
                 let snarkvm_rng = &mut TestRng::default();
+
+                println!("START TEST");
        
                 // NOTE: it might be theoretically possible to use a higher level Circuit crate representation...
                 // let _candidate_output = create_example_circuit::<Circuit>();
@@ -138,7 +138,7 @@ mod squarings {
                 let mul_depth = 2;
                 let num_constraints = 8;
                 let num_variables = 8;
-                let (circuit, _) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, snarkvm_rng);
+                let (circuit, public_inputs) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, snarkvm_rng);
 
                 let max_degree = 300;
                 let universal_srs = VarunaInst::<E>::universal_setup(max_degree).unwrap();
@@ -150,7 +150,7 @@ mod squarings {
                 let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, &circuit, snarkvm_rng).unwrap();
                 // let one = <Circuit as Environment>::BaseField::one();
                 let one = <E as PairingEngine>::Fr::one();
-                let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap();
+                let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, public_inputs, &proof).unwrap();
                 assert!(result);
 
                 // MPC time
@@ -171,6 +171,8 @@ mod squarings {
                 });
                 let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap();
                 assert!(result);
+
+                println!("END TEST");
 
 
                 // let rng = &mut TestRng::default();

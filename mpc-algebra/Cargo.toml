@@ -39,6 +39,9 @@ merlin = "3"
 sha2 = "0.9"
 blake2 = "0.9"
 
+[dependencies.num-bigint]
+version = "0.4"
+
 [dependencies.snarkvm-curves]
 path = "../curves"
 version = "=1.0.0"

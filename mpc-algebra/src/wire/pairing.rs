@@ -24,6 +24,7 @@ use zeroize::Zeroize;
 use snarkvm_curves::MpcWire;
 use crate::{MpcProjectiveGroup, MpcAffineGroup};
 use crate::MpcField;
+use crate::FieldShare;
 
 use crate::{
     ExtFieldShare,
@@ -77,7 +78,7 @@ pub struct MpcG1Affine<E: PairingEngine, PS: PairingShare<E>> {
 }
 
 impl<E: PairingEngine, PS: PairingShare<E>> PairingCurve for MpcG1Affine<E, PS> 
-where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
+// where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
 {
     type Engine = MpcPairingEngine<E, PS>;
     type PairWith = MpcG2Affine<E, PS>;
@@ -206,7 +207,7 @@ pub struct MpcG2Affine<E: PairingEngine, PS: PairingShare<E>> {
 }
 
 impl<E: PairingEngine, PS: PairingShare<E>> PairingCurve for MpcG2Affine<E, PS> 
-where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
+// where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
 {
     type Engine = MpcPairingEngine<E, PS>;
     type PairWith = MpcG1Affine<E, PS>;
@@ -352,76 +353,10 @@ pub struct MpcPairingEngine<E: PairingEngine, PS: PairingShare<E>> {
     _phants: PhantomData<(E, PS)>,
 }
 
-// pub struct BigIntegerWrapper<E: PairingEngine, PS: PairingShare<E>, T: BigInteger>{
-//     pub val: T,
-//     _marker: PhantomData<(E, PS)>,
-// }
-// impl<E: PairingEngine, PS: PairingShare<E>, T: BigInteger> From<MpcField<E::Fr, PS::FrShare>> for BigIntegerWrapper<E, PS, T> {
-//     fn from(value: MpcField<E::Fr, PS::FrShare>) -> Self {
-//         match value {
-//             MpcField::Public(f) => BigIntegerWrapper{
-//                 val: f.to_bigint(),
-//                 _marker: PhantomData,
-//             },
-//             MpcField::Shared(f) => {
-//                 unimplemented!("Shared field into BigInteger")
-//             },
-//         }
-//     }
-// }
-
-// impl<E: PairingEngine, PS: PairingShare<E>, T: BigInteger> Deref for BigIntegerWrapper<E, PS, T> {
-//     type Target = T;
-
-//     fn deref(&self) -> &Self::Target {
-//         &self.0
-//     }
-// }
-// impl<E: PairingEngine, PS: PairingShare<E>> From<MpcField<E::Fr, PS::FrShare>> 
-//     for BigIntegerWrapper<E, PS, <<E as PairingEngine>::Fr as PrimeField>::BigInteger> 
-// {
-//     fn from(value: MpcField<E::Fr, PS::FrShare>) -> Self {
-//         match value {
-//             MpcField::Public(f) => BigIntegerWrapper{
-//                 val: f.to_bigint(),
-//                 _marker: PhantomData,
-//             },
-//             MpcField::Shared(_) => {
-//                 unimplemented!("Shared field into BigInteger")
-//             }
-//         }
-//     }
-// }
-
-// NOTE: conflicting implementations issue.
-// impl<E: PairingEngine, PS: PairingShare<E>> From<MpcField<E::Fr, PS::FrShare>> for <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger {
-//     fn from(value: MpcField<E::Fr, PS::FrShare>) -> Self {
-//         match value {
-//             MpcField::Public(f) => BigIntegerWrapper{
-//                 val: f.to_bigint(),
-//                 _marker: PhantomData,
-//             },
-//             MpcField::Shared(f) => {
-//                 unimplemented!("Shared field into BigInteger")
-//             },
-//         }
-//     }
-// }
-
-// impl<E: PairingEngine, PS: PairingShare<E>, T: BigInteger> Into<T> for MpcField<E::Fr, PS::FrShare> {
-//     fn into(self) -> T {
-//         match self {
-//             MpcField::Public(f) => f.to_bigint(),
-//             MpcField::Shared(f) => {
-//                 unimplemented!("Shared field into BigInteger")
-//             },
-//         }
-//     }
-// }
 
 impl<E: PairingEngine, PS: PairingShare<E>> PairingEngine for MpcPairingEngine<E, PS> 
 where 
-    <E::Fr as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
+    // <E::Fr as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
     MpcG1Affine<E, PS>: PairingCurve<
             BaseField = MpcField<E::Fq, PS::FqShare>,
             ScalarField = MpcField<E::Fr, PS::FrShare>,
@@ -1321,7 +1256,7 @@ macro_rules! impl_aff_proj {
         // }
 
         impl<E: PairingEngine, PS: PairingShare<E>> AffineCurve for $w_aff<E, PS> 
-        where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
+        // where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
         {
             type ScalarField = MpcField<E::Fr, PS::FrShare>;
             type Coordinates = <<E as PairingEngine>::$aff as AffineCurve>::Coordinates;
@@ -1391,7 +1326,7 @@ macro_rules! impl_aff_proj {
             }
         }
         impl<E: PairingEngine, PS: PairingShare<E>> ProjectiveCurve for $w_pro<E, PS> 
-        where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
+        // where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
         {
             type ScalarField = MpcField<E::Fr, PS::FrShare>;
             type BaseField = $w_base<E::$base, PS::$base_share>;

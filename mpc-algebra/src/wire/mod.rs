@@ -1,6 +1,10 @@
+pub mod bigint;
+pub use bigint::*;
 pub mod macros;
 pub mod field;
 pub use field::*;
+pub mod field_parameters;
+pub use field_parameters::*;
 pub mod group;
 pub use group::*;
 pub mod pairing;
