@@ -1,8 +1,6 @@
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::Field;
 
-use std::marker::PhantomData;
-
 use std::fmt::Debug;
 
 use super::{ExtFieldShare, FieldShare};

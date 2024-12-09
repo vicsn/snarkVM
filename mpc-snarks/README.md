@@ -17,3 +17,9 @@ A good place to start is:
 3. `./scripts/bench.zsh marlin spdz 10 2`.
 
 [paper]: https://www.usenix.org/conference/usenixsecurity22/presentation/ozdemir
+
+## Development notes
+In order to make collaborative zkSNARKs work in snarkVM, refactoring is needed, because Arkworks has a generic Group trait, which snarkVM does not. Moreover, snarkVM's Affine curve does not support direct arithmetic anymore, but requires conversion to Projective representation. Some options were:
+- Re-introduce a slimmed down generic Group trait
+- Re-introduce arithmetic in AffineCurve
+- Create Affine and Projective wrappers wherever a single Group wrapper was used. This approach was chosen because it doesn't meddle with snarkVM's suggested interfaces.

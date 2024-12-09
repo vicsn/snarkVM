@@ -10,7 +10,7 @@ size=$3
 n_parties=$4
 if [[ -z $BIN ]]
 then
-    BIN=../target/release/proof
+    BIN=../target/debug/proof
 fi
 if [[ -z $NETWORK_CONFIG ]]
 then

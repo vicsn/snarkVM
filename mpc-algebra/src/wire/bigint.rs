@@ -1,34 +1,20 @@
-use serde::{Deserialize, Serialize, Deserializer, Serializer};
-use snarkvm_curves::bls12_377::{G1Affine, G2Affine};
-use snarkvm_curves::PairingCurve;
-use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
-// use ark_ff::bytes::{FromBytes, ToBytes};
-// use ark_ff::prelude::*;
-use snarkvm_fields::{Field, FftField, PrimeField, Zero, One, SquareRootField, FftParameters, ToConstraintField, ConstraintFieldError};
-use snarkvm_fields::FieldParameters;
-use snarkvm_utilities::{
-    BigInteger, CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Compress, Flags, FromBits, FromBytes, SerializationError, ToBits, ToBytes, Uniform, Valid, Validate,
-};
+use snarkvm_fields::PrimeField;
+use snarkvm_utilities::{BigInteger, FromBits, ToBits, FromBytes, ToBytes};
 use num_bigint::BigUint;
 use std::io::{self, Read, Write};
-use aleo_std::{end_timer, start_timer};
-use core::ops::*;
-use derivative::Derivative;
 use rand::{Rng, distributions::{Distribution, Standard}};
 use std::cmp::Ord;
 use std::default::Default;
-use std::fmt::{self, Debug, Formatter}; // Display
-use std::hash::Hash;
-use std::iter::{Product, Sum};
+use std::fmt::{self, Debug};
 use std::marker::PhantomData;
 use zeroize::Zeroize;
 
-use snarkvm_curves::MpcWire;
-use crate::{MpcProjectiveGroup, MpcAffineGroup};
 use crate::MpcField;
 use crate::FieldShare;
-use crate::PairingShare;
 
+/// In order to create MpcField, we need to impl From<MpcField> for BigInteger.
+/// However, that is not an easy thing as BigInteger is not local. Not sure how this was possible with the PrimeField type.
+/// We can overcome the barrier by creating a local transparant wrapper around BigInteger.
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct MpcBigInteger<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger>{
     pub val: T, // TODO: maybe this can be <F as PrimeField>::BigInteger, and then we only have to parametrize on F and S
@@ -39,77 +25,80 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> BigInteger 
 
     /// Add another representation to this one, returning the carry bit.
     fn add_nocarry(&mut self, other: &Self) -> bool {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.add_nocarry(&other.val)
     }
 
     /// Subtract another representation from this one, returning the borrow bit.
     fn sub_noborrow(&mut self, other: &Self) -> bool {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.sub_noborrow(&other.val)
     }
 
     /// Performs a leftwise bitshift of this number, effectively multiplying
     /// it by 2. Overflow is ignored.
     fn mul2(&mut self) {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.mul2();
     }
 
     /// Performs a leftwise bitshift of this number by some amount.
     fn muln(&mut self, amt: u32) {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.muln(amt);
     }
 
     /// Performs a rightwise bitshift of this number, effectively dividing
     /// it by 2.
     fn div2(&mut self) {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.div2();
     }
 
     /// Performs a rightwise bitshift of this number by some amount.
     fn divn(&mut self, amt: u32) {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.divn(amt);
     }
 
     /// Returns true iff this number is odd.
     fn is_odd(&self) -> bool {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.is_odd()
     }
 
     /// Returns true if this number is even.
     fn is_even(&self) -> bool {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.is_even()
     }
 
     /// Returns true if this number is zero.
     fn is_zero(&self) -> bool {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.is_zero()
     }
 
     /// Compute the number of bits needed to encode this number. Always a
     /// multiple of 64.
     fn num_bits(&self) -> u32 {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.num_bits()
     }
 
     /// Compute the `i`-th bit of `self`.
     fn get_bit(&self, i: usize) -> bool {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.get_bit(i)
     }
 
     /// Returns the BigUint representation.
     fn to_biguint(&self) -> BigUint {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.to_biguint()
     }
 
     /// Returns a vector for wnaf.
     fn find_wnaf(&self) -> Vec<i64> {
-        unimplemented!("MpcBigInteger::BigInteger");
+        self.val.find_wnaf()
     }
 }
 
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> From<u64> for MpcBigInteger<F, S, T> {
     #[inline]
     fn from(val: u64) -> Self {
-        unimplemented!("MpcBigInteger::BigInteger::From");
+        MpcBigInteger::<F, S, T> {
+            val: T::from(val),
+            _marker: PhantomData,
+        }
     }
 }
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> std::fmt::Display for MpcBigInteger<F, S, T> {
@@ -149,34 +138,27 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> ToBytes for
 }
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> FromBits for MpcBigInteger<F, S, T> {
     /// Initializes a new compute key from a list of **little-endian** bits.
-    fn from_bits_le(bits: &[bool]) -> anyhow::Result<Self> {
+    fn from_bits_le(_bits: &[bool]) -> anyhow::Result<Self> {
         unimplemented!("MpcBigInteger::BigInteger::FromBits::from_bits_le");
     }
     /// Initializes a new compute key from a list of **big-endian** bits.
     fn from_bits_be(bits: &[bool]) -> anyhow::Result<Self> {
-        unimplemented!("MpcBigInteger::BigInteger::FromBits::from_bits_be");
+        Ok(MpcBigInteger::<F, S, T>{
+            val: FromBits::from_bits_be(bits)?,
+            _marker: PhantomData,
+        })
     }
 }
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> ToBits for MpcBigInteger<F, S, T> {
     /// Writes `self` into the given vector as a boolean array in little-endian order.
     fn write_bits_le(&self, vec: &mut Vec<bool>) {
-        unimplemented!("MpcBigInteger::BigInteger::FromBits::to_bits_le");
+        self.val.write_bits_le(vec);
     }
 
     /// Writes `self` into the given vector as a boolean array in big-endian order.
     fn write_bits_be(&self, vec: &mut Vec<bool>) {
-        unimplemented!("MpcBigInteger::BigInteger::FromBits::to_bits_le");
+        self.val.write_bits_be(vec);
     }
-
-    // /// Returns this ciphertext as a list of **little-endian** bits.
-    // fn to_bits_le(&self) -> Vec<bool> {
-    //     unimplemented!("MpcBigInteger::BigInteger::FromBits::to_bits_le");
-    // }
-
-    // /// Returns this ciphertext as a list of **big-endian** bits.
-    // fn to_bits_be(&self) -> Vec<bool> {
-    //     unimplemented!("MpcBigInteger::BigInteger::FromBits::to_bits_be");
-    // }
 }
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger> Distribution<MpcBigInteger<F, S, T>> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> MpcBigInteger<F, S, T> {

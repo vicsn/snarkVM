@@ -4,14 +4,11 @@ use rand::Rng;
 
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{Field, PrimeField};
-// use ark_ff::bytes::{FromBytes, ToBytes};
-// use ark_ff::prelude::*;
 use snarkvm_utilities::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
     CanonicalSerializeWithFlags, Flags, SerializationError, Compress, Uniform, FromBytes, ToBytes, Validate, Valid,
 };
 
-use snarkvm_curves::bls12_377::{G1Projective, G2Projective, G1Affine, G2Affine};
 
 use std::cmp::Ord;
 use std::fmt::{self, Debug, Display, Formatter};

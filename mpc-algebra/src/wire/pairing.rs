@@ -1,18 +1,14 @@
 use serde::{Deserialize, Serialize, Deserializer, Serializer};
-use snarkvm_curves::bls12_377::{G1Affine, G2Affine};
 use snarkvm_curves::PairingCurve;
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
-// use ark_ff::bytes::{FromBytes, ToBytes};
-// use ark_ff::prelude::*;
-use snarkvm_fields::{Field, FftField, PrimeField, Zero, One, SquareRootField, FftParameters, ToConstraintField, ConstraintFieldError};
+use snarkvm_fields::{Field, FftField, PrimeField, Zero, One, SquareRootField, ToConstraintField, ConstraintFieldError};
 use snarkvm_utilities::{
     BigInteger, CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Compress, Flags, FromBits, FromBytes, SerializationError, ToBits, ToBytes, Uniform, Valid, Validate
 };
 use std::io::{self, Read, Write};
-use aleo_std::{end_timer, start_timer};
 use core::ops::*;
 use derivative::Derivative;
-use rand::{Rng, distributions::{Distribution, Standard}};
+use rand::{Rng, distributions::Distribution};
 use std::cmp::Ord;
 use std::default::Default;
 use std::fmt::{self, Debug, Display, Formatter};
@@ -593,33 +589,33 @@ macro_rules! impl_ext_field_wrapper {
     ($wrapped:ident, $wrap:ident) => {
         impl<'a, E: Field, PS: ExtFieldShare<E>> Deserialize<'a> for $wrap<E, PS> {
             #[inline]
-            fn deserialize<D: Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
+            fn deserialize<D: Deserializer<'a>>(_deserializer: D) -> Result<Self, D::Error> {
                 unimplemented!("deserialize");
             }
         }
         impl<E: Field, PS: ExtFieldShare<E>> Serialize for $wrap<E, PS> {
             #[inline]
-            fn serialize<SS: Serializer>(&self, serializer: SS) -> Result<SS::Ok, SS::Error> {
+            fn serialize<SS: Serializer>(&self, _serializer: SS) -> Result<SS::Ok, SS::Error> {
                 unimplemented!("serialize");
             }
         }
         impl<E: Field, PS: ExtFieldShare<E>> ToBits for $wrap<E, PS> {
             #[inline]
-            fn write_bits_le(&self, vec: &mut Vec<bool>) {
+            fn write_bits_le(&self, _vec: &mut Vec<bool>) {
                 unimplemented!("write_bits_le")
             }
             #[inline]
-            fn write_bits_be(&self, vec: &mut Vec<bool>) {
+            fn write_bits_be(&self, _vec: &mut Vec<bool>) {
                 unimplemented!("write_bits_be")
             }
         }
         impl<E: Field, PS: ExtFieldShare<E>> FromBits for $wrap<E, PS> {
             #[inline]
-            fn from_bits_le(bits: &[bool]) -> anyhow::Result<Self> {
+            fn from_bits_le(_bits: &[bool]) -> anyhow::Result<Self> {
                 unimplemented!("from_bits_le")
             }
             #[inline]
-            fn from_bits_be(bits: &[bool]) -> anyhow::Result<Self> {
+            fn from_bits_be(_bits: &[bool]) -> anyhow::Result<Self> {
                 unimplemented!("from_bits_be")
             }
         }
@@ -832,21 +828,20 @@ macro_rules! impl_pairing_curve_wrapper_aff {
             }
         }
         impl<E: $bound1, PS: $bound2<E>> ToConstraintField<MpcField<E::Fq, PS::FqShare>> for $wrap<E, PS> 
-            // where <E as PairingEngine>::G1Projective: PrimeField,
         {
             #[inline]
             fn to_field_elements(&self) -> Result<Vec<MpcField<E::Fq, PS::FqShare>>, ConstraintFieldError> {
-                unimplemented!("aff wrapper to_field_elements")
-                // match &self.val {
-                //     MpcAffineGroup::Public(a) => a.to_field_elements().map(|v| {
-                //         v.into_iter()
-                //             .map(|e| MpcField::from_public(e))
-                //             .collect()
-                //     }),
-                //     MpcAffineGroup::Shared(a) => {
-                //         unimplemented!("Shared affine group to field elements")
-                //     },
-                // }
+                println!("Calling $wrap_aff::to_field_elements, backtrace: {:?}", std::backtrace::Backtrace::force_capture());
+                match &self.val {
+                    MpcAffineGroup::Public(a) => a.to_field_elements().map(|v| {
+                        v.into_iter()
+                            .map(|e| MpcField::from_public(e))
+                            .collect()
+                    }),
+                    MpcAffineGroup::Shared(a) => {
+                        unimplemented!("Shared affine group to field elements")
+                    },
+                }
             }
         }
         impl<E: $bound1, PS: $bound2<E>> Reveal for $wrap<E, PS> {
@@ -1065,7 +1060,7 @@ macro_rules! impl_pairing_curve_wrapper_proj {
         impl<E: $bound1, PS: $bound2<E>> ToConstraintField<MpcField<E::Fq, PS::FqShare>> for $wrap<E, PS> {
             #[inline]
             fn to_field_elements(&self) -> Result<Vec<MpcField<E::Fq, PS::FqShare>>, ConstraintFieldError> {
-                unimplemented!("aff wrapper to_field_elements")
+                unimplemented!("proj wrapper to_field_elements")
                 // match &self.val {
                 //     MpcProjectiveGroup::Public(a) => a.to_field_elements().map(|v| {
                 //         v.into_iter()

@@ -52,10 +52,10 @@ impl<Fr: PrimeField, S: FieldShare<Fr>> ToBits for MpcField<Fr, S> {
 }
 
 impl<Fr: PrimeField, S: FieldShare<Fr>> FromBits for MpcField<Fr, S> {
-    fn from_bits_be(bits: &[bool]) -> anyhow::Result<Self> {
+    fn from_bits_be(_bits: &[bool]) -> anyhow::Result<Self> {
         unimplemented!()
     }
-    fn from_bits_le(bits: &[bool]) -> anyhow::Result<Self> {
+    fn from_bits_le(_bits: &[bool]) -> anyhow::Result<Self> {
         unimplemented!()
     }
 }

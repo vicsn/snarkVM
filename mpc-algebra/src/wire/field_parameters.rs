@@ -1,33 +1,12 @@
-use serde::{Deserialize, Serialize, Deserializer, Serializer};
-use snarkvm_curves::bls12_377::{G1Affine, G2Affine};
-use snarkvm_curves::PairingCurve;
-use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
-// use ark_ff::bytes::{FromBytes, ToBytes};
-// use ark_ff::prelude::*;
-use snarkvm_fields::{Field, FftField, PrimeField, Zero, One, SquareRootField, FftParameters, ToConstraintField, ConstraintFieldError};
+use snarkvm_fields::{PrimeField, FftParameters};
 use snarkvm_fields::FieldParameters;
 use snarkvm_fields::{PoseidonDefaultParameters, PoseidonDefaultParametersEntry};
-use snarkvm_utilities::{
-    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Compress, Flags, FromBits, FromBytes, SerializationError, ToBits, ToBytes, Uniform, Valid, Validate,
-    biginteger::{BigInteger as _BigInteger}, //, BigInteger256 as BigInteger},
-};
-use num_bigint::BigUint;
-use std::io::{self, Read, Write};
-use aleo_std::{end_timer, start_timer};
-use core::ops::*;
-use derivative::Derivative;
-use rand::{Rng, distributions::{Distribution, Standard}};
-use std::cmp::Ord;
+use snarkvm_utilities::biginteger::{BigInteger as _BigInteger};
 use std::default::Default;
-use std::fmt::{self, Debug, Formatter}; // Display
+use std::fmt::Debug;
 use std::hash::Hash;
-use std::iter::{Product, Sum};
 use std::marker::PhantomData;
-use zeroize::Zeroize;
 
-use snarkvm_curves::MpcWire;
-use crate::{MpcProjectiveGroup, MpcAffineGroup};
-use crate::MpcField;
 use crate::FieldShare;
 use crate::MpcBigInteger;
 
@@ -35,7 +14,7 @@ pub trait MpcFp256Parameters<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T:
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct MpcFrParameters<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> {
-    pub _phantomdata: PhantomData<(F, S, T)>
+    pub _marker: PhantomData<(F, S, T)>
 }
 
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> MpcFp256Parameters<F, S, T> for MpcFrParameters<F, S, T> {}
@@ -185,3 +164,38 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> Default fo
         unimplemented!("MpcFrParameters::default");
     }
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use snarkvm_fields::{FftField, Field, PrimeField};
+
+//     #[test]
+//     fn test_powers_of_root_of_unity() {
+//         let two = Fq::from(2u8);
+
+//         // Compute the expected powers of root of unity.
+//         let root_of_unity = Fq::two_adic_root_of_unity();
+//         let powers = (0..FqParameters::TWO_ADICITY - 1)
+//             .map(|i| root_of_unity.pow(two.pow(Fq::from(i as u64).to_bigint()).to_bigint()))
+//             .collect::<Vec<_>>();
+//         assert_eq!(powers[0], Fq::two_adic_root_of_unity());
+
+//         // Ensure the correct number of powers of root of unity are present.
+//         assert_eq!(FqParameters::POWERS_OF_ROOTS_OF_UNITY.len() as u64, (FqParameters::TWO_ADICITY - 1) as u64);
+//         assert_eq!(FqParameters::POWERS_OF_ROOTS_OF_UNITY.len(), powers.len());
+
+//         // Ensure the expected and candidate powers match.
+//         for (expected, candidate) in powers.iter().zip(FqParameters::POWERS_OF_ROOTS_OF_UNITY) {
+//             // println!("BigInteger({:?}),", expected.0.0);
+//             println!("{:?} =?= {:?}", expected.0, candidate);
+//             assert_eq!(&expected.0, candidate);
+//         }
+//     }
+
+//     #[test]
+//     fn test_two_adic_root_of_unity() {
+//         let expected = Fq::multiplicative_generator().pow(FqParameters::T);
+//         assert_eq!(expected, Fq::two_adic_root_of_unity());
+//     }
+// }

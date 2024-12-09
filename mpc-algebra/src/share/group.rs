@@ -2,7 +2,7 @@ use snarkvm_curves::{AffineCurve, ProjectiveCurve};
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
 use snarkvm_utilities::{
-    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, FromBytes, ToBytes, Uniform, Valid, Validate,
+    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, FromBytes, ToBytes, Uniform,
 };
 
 use aleo_std::{end_timer, start_timer};

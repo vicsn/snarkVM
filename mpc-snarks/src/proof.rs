@@ -25,14 +25,14 @@ mod silly;
 const TIMED_SECTION_LABEL: &str = "timed section";
 
 trait SnarkBench {
-    fn local<E: PairingEngine>(n: usize, timer_label: &str);
+    fn local<E: PairingEngine>(_n: usize, _timer_label: &str);
     fn ark_local<E: PairingEngine>(_n: usize, _timer_label: &str) {
         unimplemented!("ark benchmark for {}", std::any::type_name::<Self>())
     }
     fn mpc<
         E: PairingEngine,
         S: PairingShare<E>
-    >(n: usize, timer_label: &str);
+    >(_n: usize, timer_label: &str);
     // where <MpcField<E::Fr, S::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, S::FrShare>>;
 }
 
@@ -102,7 +102,7 @@ mod squarings {
         }
 
         impl SnarkBench for MarlinBench {
-            fn local<E: PairingEngine>(n: usize, timer_label: &str) {
+            fn local<E: PairingEngine>(_n: usize, _timer_label: &str) {
                 unimplemented!("Local bench")
                 // let rng = &mut TestRng::default();
                 // let circ_no_data = RepeatedSquaringCircuit::without_data(n);
@@ -121,15 +121,15 @@ mod squarings {
                 // assert!(KzgMarlin::<E::Fr, E>::verify(&vk, &public_inputs, &proof, rng).unwrap());
             }
 
-            fn mpc<E: PairingEngine, S: PairingShare<E>>(n: usize, timer_label: &str) 
+            fn mpc<E: PairingEngine, S: PairingShare<E>>(_n: usize, _timer_label: &str) 
             { // Key entrypoint
 
                 type VarunaInst<E> = VarunaSNARK::<E, PoseidonSponge<<E as PairingEngine>::Fq, 2, 1>, VarunaHidingMode>;
-                type MPC_VarunaInst<E, S> = VarunaSNARK::<MpcPairingEngine<E, S>, PoseidonSponge<<MpcPairingEngine<E, S> as PairingEngine>::Fq, 2, 1>, VarunaHidingMode>;
+                type MpcVarunaInst<E, S> = VarunaSNARK::<MpcPairingEngine<E, S>, PoseidonSponge<<MpcPairingEngine<E, S> as PairingEngine>::Fq, 2, 1>, VarunaHidingMode>;
 
                 let snarkvm_rng = &mut TestRng::default();
 
-                println!("START TEST");
+                println!("START LOCAL TEST");
        
                 // NOTE: it might be theoretically possible to use a higher level Circuit crate representation...
                 // let _candidate_output = create_example_circuit::<Circuit>();
@@ -153,24 +153,32 @@ mod squarings {
                 let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, public_inputs, &proof).unwrap();
                 assert!(result);
 
+                println!("START MPC TEST");
+
+                let timer = start_timer!(|| _timer_label);
+
                 // MPC time
                 let mpc_circuit = TestCircuit::<MpcField<<E as PairingEngine>::Fr, S::FrShare>>::from_public(circuit); // TODO: we'll have to split among users.
-                // let mpc_assignment = Assignment::from_public(circuit); // TODO: we'll have to split among users.
+                println!("CREATED MPC CIRCUIT");
                 // TODO: not sure if the sponge needs to be MPC'd...
+                // TODO: requires lots of new Reveal boiletplate
+                // let mpc_fs_pp = PoseidonSponge::<<MpcPairingEngine::<E, S> as PairingEngine>::Fq, 2, 1>::from_public(fs_pp); 
                 let mpc_fs_pp = PoseidonSponge::<<MpcPairingEngine::<E, S> as PairingEngine>::Fq, 2, 1>::sample_parameters();
-                // let mpc_fs_pp = PoseidonSponge::<<MpcPairingEngine::<E, S> as PairingEngine>::Fq, 2, 1>::from_public(fs_pp); // TODO: requires lots of new Reveal boiletplate
+                println!("CREATED MPC SPONGE");
                 let mpc_pk = CircuitProvingKey::from_public(index_pk);
+                println!("CREATED MPC PK");
                 let mpc_universal_prover = UniversalProver::<MpcPairingEngine<E, S>>::from_public(universal_prover.clone());
                 MpcMultiNet::reset_stats();
-                let timer = start_timer!(|| timer_label);
                 let snarkvm_rng = &mut TestRng::default();
                 let proof = channel::without_cheating(|| {
-                    MPC_VarunaInst::prove(&mpc_universal_prover, &mpc_fs_pp, &mpc_pk, &mpc_circuit, snarkvm_rng)
-                    .unwrap()
-                    .reveal()
+                    let proof = MpcVarunaInst::prove(&mpc_universal_prover, &mpc_fs_pp, &mpc_pk, &mpc_circuit, snarkvm_rng).unwrap();
+                    println!("CREATED MPC Proof");
+                    proof.reveal()
                 });
                 let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap();
                 assert!(result);
+
+                end_timer!(timer);
 
                 println!("END TEST");
 
@@ -184,13 +192,11 @@ mod squarings {
 
                 // use ark_ff::One;
                 // let a = E::Fr::one() + E::Fr::one(); //rand(rng);
-                // let computation_timer = start_timer!(|| "do the mpc (cheat)");
                 // let circ_data = mpc_squaring_circuit::<
                 //     E::Fr,
                 //     <MpcPairingEngine<E, S> as PairingEngine>::Fr,
                 // >(a, n);
                 // let public_inputs = vec![circ_data.chain.first().unwrap().unwrap().reveal()];
-                // end_timer!(computation_timer);
 
                 // MpcMultiNet::reset_stats();
                 // let timer = start_timer!(|| timer_label);
@@ -251,7 +257,7 @@ mod squarings {
                     .unwrap()
                     .ok_or(SynthesisError::AssignmentMissing)
             })?);
-            let mut vars: Vec<Variable> = self
+            let vars: Vec<Variable> = self
                 .chain
                 .iter()
                 .skip(1)

@@ -3,12 +3,9 @@ use log::debug;
 use rand::Rng;
 use zeroize::Zeroize;
 
-// use ark_ff::bytes::{FromBytes, ToBytes};
-// use ark_ff::prelude::*;
-// use ark_ff::{poly_stub, FftField};
 use snarkvm_fields::{FftField, Field, One, PoseidonDefaultField, PoseidonParameters, PrimeField, SquareRootField, Zero};
 use snarkvm_utilities::{
-    BigInteger, BigInteger256, BigInteger384, CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Compress, Flags, FromBytes, SerializationError, ToBytes, Uniform, Valid, Validate
+    BigInteger, CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Compress, Flags, FromBytes, SerializationError, ToBytes, Uniform, Valid, Validate
 };
 use snarkvm_curves::MpcWire;
 use crate::{FieldShare, BeaverSource, Reveal};
@@ -310,7 +307,21 @@ impl<F: PrimeField, S: FieldShare<F>> PoseidonDefaultField for MpcField<F, S> {
     where
         Self: PrimeField,
     {
-        unimplemented!("poseidon_params")
+        let PoseidonParameters::<F, RATE, 1> {
+            full_rounds,
+            partial_rounds,
+            alpha,
+            ark,
+            mds,
+        } = F::default_poseidon_parameters::<RATE>().unwrap();
+
+        Ok(PoseidonParameters::<Self, RATE, 1> {
+            full_rounds,
+            partial_rounds,
+            alpha,
+            ark: Reveal::from_public(ark), //ark.into_iter().map(|a| MpcField::<F, S>::from_public(a)).collect(),
+            mds: Reveal::from_public(mds), //.into_iter().map(|m| m.into_iter().map(|m| MpcField::<F, S>::from_public(m)).collect()).collect(),
+        })
     }
 }
 
@@ -533,15 +544,22 @@ impl<F: PrimeField, S: FieldShare<F>> PrimeField for MpcField<F, S> {
     type Parameters = MpcFrParameters<F, S, F::BigInteger>;
 
     #[inline]
-    fn from_bigint(_r: <Self as PrimeField>::BigInteger) -> Option<Self> {
-        unimplemented!("No BigInt reprs for shared fields! (from_repr)")
-        //F::from_repr(r).map(|v| Self::from_public(v))
+    fn from_bigint(r: <Self as PrimeField>::BigInteger) -> Option<Self> {
+        // TODO: from where is this called?
+        // TODO: is it semantically correct to always return a public field here?
+        Some(MpcField::<F, S>::Public(
+            F::from_bigint(r.val).unwrap()
+        ))
     }
     // We're assuming that into_repr is linear
     #[inline]
     fn to_bigint(&self) -> <Self as PrimeField>::BigInteger {
-        unimplemented!("No BigInt reprs for shared fields! (into_repr)")
-        //self.unwrap_as_public().into_repr()
+        // TODO: from where is this called?
+        // TODO: is it semantically correct to always return a public integer here?
+        MpcBigInteger::<F, S, F::BigInteger> {
+            val: self.reveal().to_bigint(),
+            _marker: PhantomData,
+        }
     }
     #[inline]
     fn decompose(

@@ -2,7 +2,7 @@ use snarkvm_fields::Field;
 // use ark_ff::bytes::{FromBytes, ToBytes};
 // use ark_ff::prelude::*;
 use snarkvm_utilities::{
-    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, FromBytes, ToBytes, Uniform, Valid, Validate,
+    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, FromBytes, ToBytes, Uniform,
 };
 //use snarkvm_fft::fft::{DensePolynomial,Polynomial};
 use core::ops::*;

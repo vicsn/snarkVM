@@ -1,7 +1,6 @@
 #![macro_use]
 
-use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, ToBytes, FromBytes, Compress, Validate, Valid};
-use snarkvm_fields::{Zero, One};
+use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize};
 
 use crate::channel::{self, MpcSerNet};
 use mpc_net::MpcNet;
@@ -19,7 +18,7 @@ pub fn check_eq<T: CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Disp
                 debug!("Consistency check passed");
                 true
             } else {
-                println!("\nConsistency check failed\n{}\nvs\n{}", t, other);
+                println!("\nConsistency check failed\n{}\nvs\n{} \n\nbacktrace: {}", t, other, std::backtrace::Backtrace::force_capture());
                 false
             }
         } else {
@@ -28,7 +27,7 @@ pub fn check_eq<T: CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Disp
             let mut result = true;
             for (i, other_t) in others.iter().enumerate() {
                 if &t != other_t {
-                    println!("\nConsistency check failed\nI (party {}) have {}\nvs\n  (party {}) has  {}", mpc_net::MpcMultiNet::party_id(), t, i, other_t);
+                    println!("\nConsistency check failed\nI (party {}) have {}\nvs\n  (party {}) has {} \n\n backtrace: {}", mpc_net::MpcMultiNet::party_id(), t, i, other_t, std::backtrace::Backtrace::force_capture());
                     result = false;
                     break;
                 }

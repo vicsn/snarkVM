@@ -2,7 +2,6 @@
 use derivative::Derivative;
 use rand::Rng;
 
-use snarkvm_fft::fft::Polynomial as Polynomial;
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::Field;
 use snarkvm_utilities::bytes::{FromBytes, ToBytes};
@@ -297,7 +296,7 @@ impl<G: AffineCurve, M> Reveal for AdditiveAffineShare<G, M> {
     fn king_share<R: Rng>(f: Self::Base, rng: &mut R) -> Self {
         let mut r: Vec<<G as AffineCurve>::Projective> = (0..(Net::n_parties()-1)).map(|_| <G as AffineCurve>::Projective::rand(rng)).collect();
         let sum_r: <G as AffineCurve>::Projective = r.iter().cloned().sum();
-        r.push((Into::<<G as AffineCurve>::Projective>::into(f) - sum_r));
+        r.push(Into::<<G as AffineCurve>::Projective>::into(f) - sum_r);
         // Convert shares back to Self::Base
         let r: Vec<Self::Base> = r.into_iter().map(|r| r.into()).collect();
         Self::from_add_shared(Net::recv_from_king( if Net::am_king() { Some(r.into()) } else { None }))
