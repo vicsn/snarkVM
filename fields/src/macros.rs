@@ -125,7 +125,7 @@ macro_rules! sqrt_impl {
                     }
                     i
                 };
-
+                let powers = $P::POWERS_OF_ROOTS_OF_UNITY();
                 let eval = |mut delta: $Self| -> u64 {
                     let mut s = 0u64;
                     while delta != $Self::one() {
@@ -133,7 +133,7 @@ macro_rules! sqrt_impl {
                         let n_minus_one_minus_i = n - 1 - i;
                         s += 2u64.pow(n_minus_one_minus_i as u32);
                         if i > 0 {
-                            delta *= $Self(*$P::POWERS_OF_ROOTS_OF_UNITY[n_minus_one_minus_i as usize], PhantomData);
+                            delta *= $Self(powers[n_minus_one_minus_i as usize], PhantomData);
                         } else {
                             delta = -delta;
                         }
@@ -153,7 +153,7 @@ macro_rules! sqrt_impl {
                             (0..l as usize).for_each(|k| {
                                 let bit = value & 1 == 1;
                                 if bit {
-                                    gamma *= $Self(*$P::POWERS_OF_ROOTS_OF_UNITY[(kappa as usize) + k], PhantomData);
+                                    gamma *= $Self(powers[(kappa as usize) + k], PhantomData);
                                 }
                                 value = value.wrapping_shr(1u32);
                             });

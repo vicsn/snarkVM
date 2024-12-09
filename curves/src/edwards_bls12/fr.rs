@@ -33,7 +33,9 @@ impl Fp256Parameters for FrParameters {}
 impl FftParameters for FrParameters {
     type BigInteger = BigInteger;
 
-    const POWERS_OF_ROOTS_OF_UNITY: &'static [&'static BigInteger] = unimplemented!();
+    fn POWERS_OF_ROOTS_OF_UNITY() -> Vec<Self::BigInteger> {
+        unimplemented!();
+    }
     const TWO_ADICITY: u32 = 1;
     #[rustfmt::skip]
     const TWO_ADIC_ROOT_OF_UNITY: BigInteger = BigInteger([

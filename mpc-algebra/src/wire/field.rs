@@ -540,7 +540,7 @@ impl<F: PrimeField, S: FieldShare<F>> FftField for MpcField<F, S> {
 }
 
 impl<F: PrimeField, S: FieldShare<F>> PrimeField for MpcField<F, S> {
-    type BigInteger = &'static MpcBigInteger<F, S, F::BigInteger>;
+    type BigInteger = MpcBigInteger<F, S, F::BigInteger>;
     type Parameters = MpcFrParameters<F, S, F::BigInteger>;
 
     #[inline]
@@ -556,7 +556,7 @@ impl<F: PrimeField, S: FieldShare<F>> PrimeField for MpcField<F, S> {
     fn to_bigint(&self) -> <Self as PrimeField>::BigInteger {
         // TODO: from where is this called?
         // TODO: is it semantically correct to always return a public integer here?
-        &'static MpcBigInteger::<F, S, F::BigInteger> {
+        MpcBigInteger::<F, S, F::BigInteger> {
             val: self.reveal().to_bigint(),
             _marker: PhantomData,
         }
