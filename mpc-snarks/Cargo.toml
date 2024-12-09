@@ -48,7 +48,7 @@ features = [ "serde" ]
 
 [dependencies.snarkvm-algorithms]
 path = "../algorithms"
-features = ["snark"]
+features = ["snark", "profiler"]
 
 [dependencies.snarkvm-circuit]
 path = "../circuit"
