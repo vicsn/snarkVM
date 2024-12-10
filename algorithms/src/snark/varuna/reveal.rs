@@ -114,14 +114,12 @@ where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E:
 }
 
 impl<F: PrimeField, S: FieldShare<F>> Reveal for Evaluations<MpcField<F, S>>
-// where <MpcField<F, S> as PrimeField>::BigInteger: From<MpcField<F, S>>
 {
     type Base = Evaluations<F>;
     struct_reveal_simp_impl!(Evaluations; g_1_eval, g_a_evals, g_b_evals, g_c_evals);
 }
 
 impl<F: PrimeField, S: FieldShare<F>> Reveal for MatrixSums<MpcField<F, S>>
-// where <MpcField<F, S> as PrimeField>::BigInteger: From<MpcField<F, S>>
 {
     type Base = MatrixSums<F>;
     struct_reveal_simp_impl!(MatrixSums; sum_a, sum_b, sum_c);
@@ -175,21 +173,18 @@ where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E:
 }
 
 impl<F: PrimeField, S: FieldShare<F>> Reveal for Circuit<MpcField<F, S>, VarunaHidingMode> 
-// where <MpcField<F, S> as PrimeField>::BigInteger: From<MpcField<F, S>>
 {
     type Base = Circuit<F, VarunaHidingMode>;
     struct_reveal_simp_impl!(Circuit; index_info, a, b, c, a_arith, b_arith, c_arith, fft_precomputation, ifft_precomputation, _mode, id);
 }
 
 impl<F: PrimeField, S: FieldShare<F>> Reveal for MatrixEvals<MpcField<F, S>>
-// where <MpcField<F, S> as PrimeField>::BigInteger: From<MpcField<F, S>>
 {
     type Base = MatrixEvals<F>;
     struct_reveal_simp_impl!(MatrixEvals; row, col, row_col, row_col_val);
 }
 
 impl<F: PrimeField, S: FieldShare<F>> Reveal for TestCircuit<MpcField<F, S>>
-// where <MpcField<F, S> as PrimeField>::BigInteger: From<MpcField<F, S>>
 {
     type Base = TestCircuit<F>;
     struct_reveal_simp_impl!(TestCircuit; a, b, num_constraints, num_variables, mul_depth);

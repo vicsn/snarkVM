@@ -104,7 +104,7 @@ fn batch_prove(c: &mut Criterion) {
 
         c.bench_function(&format!("KaryMerkleTree batch prove {num_assignments} assignments"), |b| {
             b.iter(|| {
-                let _proof = ProvingKey::prove_batch("ProveKaryMerkleTree", &assignments, &mut rng).unwrap();
+                let _proof = ProvingKey::prove_batch("ProveKaryMerkleTree", &assignments, &mut rng).unwrap().0;
             })
         });
     }

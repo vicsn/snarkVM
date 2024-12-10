@@ -193,7 +193,7 @@ fn snark_batch_verify(c: &mut Criterion) {
             keys_to_inputs.insert(&vks[i], all_inputs[i].as_slice());
         }
 
-        let proof = VarunaInst::prove_batch(universal_prover, &fs_parameters, &keys_to_constraints, rng).unwrap();
+        let proof = VarunaInst::prove_batch(universal_prover, &fs_parameters, &keys_to_constraints, rng).unwrap().0;
         b.iter(|| {
             let verification =
                 VarunaInst::verify_batch(universal_verifier, &fs_parameters, &keys_to_inputs, &proof).unwrap();

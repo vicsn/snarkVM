@@ -144,6 +144,8 @@ mod squarings {
                 //         assert_eq!(dividend, &(&divisor * &quotient) + &remainder)
                 //     }
                 // }
+                println!("START IMPL TEST");
+
                 println!("START LOCAL TEST");
                
                 let mul_depth = 2;
@@ -162,7 +164,7 @@ mod squarings {
                 let fs_pp = PoseidonSponge::<E::Fq, 2, 1>::sample_parameters();
                 let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
                 
-                let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, &circuit, snarkvm_rng).unwrap();
+                let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, &circuit, snarkvm_rng).unwrap().0;
                 let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, public_inputs.clone(), &proof).unwrap();
                 assert!(result);
 
@@ -172,6 +174,9 @@ mod squarings {
 
                 // MPC time
                 let mpc_circuit = TestCircuit::<MpcField<<E as PairingEngine>::Fr, S::FrShare>>::from_public(circuit); // TODO: we'll have to split among users.
+                let mpc_inputs = public_inputs.clone().into_iter().map(|x| MpcField::<<E as PairingEngine>::Fr, S::FrShare>::from_public(x)).collect::<Vec<_>>();
+                mpc_inputs.clone().reveal();
+                println!("mpc public_inputs: {:?}", mpc_inputs);
                 println!("CREATED MPC CIRCUIT");
                 // TODO: not sure if the sponge needs to be MPC'd...
                 // TODO: requires lots of new Reveal boiletplate
@@ -184,9 +189,13 @@ mod squarings {
                 MpcMultiNet::reset_stats();
                 let snarkvm_rng = &mut TestRng::default();
                 let proof = channel::without_cheating(|| {
-                    let proof = MpcVarunaInst::prove(&mpc_universal_prover, &mpc_fs_pp, &mpc_pk, &mpc_circuit, snarkvm_rng).unwrap();
+                    let (proof, comm_test, oracle_test) = MpcVarunaInst::prove(&mpc_universal_prover, &mpc_fs_pp, &mpc_pk, &mpc_circuit, snarkvm_rng).unwrap();
                     println!("CREATED MPC Proof");
-                    proof.reveal()
+                    let _test = oracle_test.polynomial.as_dense().unwrap().clone().reveal(); // TODO: revealing this fails.
+                    println!("REVEALED oracle");
+                    let _test = comm_test.reveal(); // TODO: revealing this fails.
+                    println!("REVEALED commitment");
+                    proof.reveal() // TODO: revealing this fails.
                 });
                 let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, public_inputs, &proof).unwrap();
                 assert!(result);

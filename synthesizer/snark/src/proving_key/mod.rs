@@ -48,7 +48,7 @@ impl<N: Network> ProvingKey<N> {
         let fiat_shamir = N::varuna_fs_parameters();
 
         // Compute the proof.
-        let proof = Proof::new(Varuna::<N>::prove(universal_prover, fiat_shamir, self, assignment, rng)?);
+        let proof = Proof::new(Varuna::<N>::prove(universal_prover, fiat_shamir, self, assignment, rng)?.0);
 
         #[cfg(feature = "aleo-cli")]
         println!("{}", format!(" • Executed '{function_name}' (in {} ms)", timer.elapsed().as_millis()).dimmed());
@@ -78,7 +78,7 @@ impl<N: Network> ProvingKey<N> {
         let fiat_shamir = N::varuna_fs_parameters();
 
         // Compute the proof.
-        let batch_proof = Proof::new(Varuna::<N>::prove_batch(universal_prover, fiat_shamir, &instances, rng)?);
+        let batch_proof = Proof::new(Varuna::<N>::prove_batch(universal_prover, fiat_shamir, &instances, rng)?.0);
 
         #[cfg(feature = "aleo-cli")]
         println!("{}", format!(" • Executed '{locator}' (in {} ms)", timer.elapsed().as_millis()).dimmed());

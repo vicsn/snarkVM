@@ -120,7 +120,7 @@ mod varuna {
                             println!("verified vks");
 
                             let proof =
-                                $snark_inst::prove_batch(universal_prover, &fs_parameters, &pks_to_constraints, rng).unwrap();
+                                $snark_inst::prove_batch(universal_prover, &fs_parameters, &pks_to_constraints, rng).unwrap().0;
                             println!("Called prover");
 
                             assert!(

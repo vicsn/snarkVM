@@ -214,6 +214,8 @@ where
     type VerifierInput = [E::Fr];
     type VerifyingKey = CircuitVerifyingKey<E>;
 
+    type KZGCommitment = crate::polycommit::kzg10::KZGCommitment<E>;
+
     fn universal_setup(max_degree: usize) -> Result<Self::UniversalSRS> {
         let setup_time = start_timer!(|| { format!("Varuna::UniversalSetup with max_degree {max_degree}",) });
         let srs = SonicKZG10::<E, FS>::load_srs(max_degree).map_err(Into::into);
@@ -338,7 +340,7 @@ where
         fs_parameters: &Self::FSParameters,
         keys_to_constraints: &BTreeMap<&CircuitProvingKey<E, SM>, &[C]>,
         zk_rng: &mut R,
-    ) -> Result<Self::Proof> {
+    ) -> Result<(Self::Proof, Self::KZGCommitment, crate::polycommit::sonic_pc::LabeledPolynomial<Self::ScalarField>)> {
         let prover_time = start_timer!(|| "Varuna::Prover");
         if keys_to_constraints.is_empty() {
             bail!(SNARKError::EmptyBatch);
@@ -386,6 +388,8 @@ where
 
         let prover_state = AHPForR1CS::<_, SM>::prover_first_round(prover_state, zk_rng)?;
 
+        let oracle_return_test = prover_state.first_round_oracles.as_ref().unwrap().batches.iter().next().unwrap().clone().1[0].0.clone();
+
         let first_round_comm_time = start_timer!(|| "Committing to first round polys");
         let (first_commitments, first_commitment_randomnesses) = {
             let first_round_oracles = prover_state.first_round_oracles.as_ref().unwrap();
@@ -397,6 +401,8 @@ where
             )?
         };
         end_timer!(first_round_comm_time);
+        
+        let commitment_return_test = first_commitments[0].commitment().clone();
 
         Self::absorb_labeled(&first_commitments, &mut sponge);
 
@@ -616,7 +622,7 @@ where
         ensure!(proof.pc_proof.is_hiding() == SM::ZK);
 
         end_timer!(prover_time);
-        Ok(proof)
+        Ok((proof, commitment_return_test, oracle_return_test))
     }
 
     /// This is the main entrypoint for verifying proofs.
