@@ -554,11 +554,14 @@ impl<F: PrimeField, S: FieldShare<F>> PrimeField for MpcField<F, S> {
     // We're assuming that into_repr is linear
     #[inline]
     fn to_bigint(&self) -> <Self as PrimeField>::BigInteger {
-        // TODO: from where is this called?
-        // TODO: is it semantically correct to always return a public integer here?
-        MpcBigInteger::<F, S, F::BigInteger> {
-            val: self.reveal().to_bigint(),
-            _marker: PhantomData,
+        match self {
+            MpcField::Public(f) => MpcBigInteger::<F, S, F::BigInteger>{
+                val: f.to_bigint(),
+                _marker: PhantomData,
+            },
+            MpcField::Shared(f) => {
+                unimplemented!("Shared field into BigInteger")
+            },
         }
     }
     #[inline]

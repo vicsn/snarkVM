@@ -126,18 +126,34 @@ mod squarings {
                 type VarunaInst<E> = VarunaSNARK::<E, PoseidonSponge<<E as PairingEngine>::Fq, 2, 1>, VarunaHidingMode>;
                 type MpcVarunaInst<E, S> = VarunaSNARK::<MpcPairingEngine<E, S>, PoseidonSponge<<MpcPairingEngine<E, S> as PairingEngine>::Fq, 2, 1>, VarunaHidingMode>;
 
-                let snarkvm_rng = &mut TestRng::default();
+                let snarkvm_rng = &mut TestRng::fixed(1); // TODO: this should be changed to a real rng
 
-                println!("START LOCAL TEST");
+                println!("START TESTS");
        
-                // NOTE: it might be theoretically possible to use a higher level Circuit crate representation...
-                // let _candidate_output = create_example_circuit::<Circuit>();
-                // let assignment = Circuit::eject_assignment_and_reset();
+                println!("START POLY TEST");
+                // NOTE: for now, its easier to test here because 1. it is not currently possible to test MPC features locally 2. it even compiles faster.
+                // for a_degree in 0..5 {
+                //     for b_degree in 0..5 {
+                //         // NOTE: we creating shared field elements in Uniform::sample for MpcField. If we sample Public instead, then we still have issues.
+                //         // NOTE: for some sampling methods, values are combined using from_add_shared
+                //         // NOTE: if we change sampling methods to sample Public values, then polynomial division doesn't halt anymore. Consider looking at the co-snarks `divide_with_q_and_r` impl
+                //         let dividend = snarkvm_fft::DensePolynomial::<mpc_algebra::MpcField<Fr, mpc_algebra::SpdzFieldShare<Fr>>>::rand(a_degree, snarkvm_rng);
+                //         let divisor = snarkvm_fft::DensePolynomial::<mpc_algebra::MpcField<Fr, mpc_algebra::SpdzFieldShare<Fr>>>::rand(b_degree, snarkvm_rng);
+                //         let (quotient, remainder) =
+                //             snarkvm_fft::Polynomial::divide_with_q_and_r(&(&dividend).into(), &(&divisor).into()).unwrap();
+                //         assert_eq!(dividend, &(&divisor * &quotient) + &remainder)
+                //     }
+                // }
+                println!("START LOCAL TEST");
                
                 let mul_depth = 2;
                 let num_constraints = 8;
                 let num_variables = 8;
                 let (circuit, public_inputs) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, snarkvm_rng);
+                println!("public inputs: {:?}", public_inputs);
+                // NOTE: it might be theoretically possible to use a higher level Circuit crate representation...
+                // let _candidate_output = create_example_circuit::<Circuit>();
+                // let assignment = Circuit::eject_assignment_and_reset();
 
                 let max_degree = 300;
                 let universal_srs = VarunaInst::<E>::universal_setup(max_degree).unwrap();
@@ -147,9 +163,7 @@ mod squarings {
                 let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
                 
                 let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, &circuit, snarkvm_rng).unwrap();
-                // let one = <Circuit as Environment>::BaseField::one();
-                let one = <E as PairingEngine>::Fr::one();
-                let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, public_inputs, &proof).unwrap();
+                let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, public_inputs.clone(), &proof).unwrap();
                 assert!(result);
 
                 println!("START MPC TEST");
@@ -174,7 +188,7 @@ mod squarings {
                     println!("CREATED MPC Proof");
                     proof.reveal()
                 });
-                let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap();
+                let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, public_inputs, &proof).unwrap();
                 assert!(result);
 
                 end_timer!(timer);

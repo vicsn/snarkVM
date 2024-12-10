@@ -114,7 +114,7 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> D
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> AsRef<[u64]> for MpcBigInteger<F, S, T> {
     #[inline]
     fn as_ref(&self) -> &[u64] {
-        unimplemented!("MpcBigInteger::BigInteger::AsRef");
+        self.val.as_ref()
     }
 }
 
@@ -179,52 +179,3 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: BigInteger + 'static> F
         }
     }
 }
-
-// impl<E: PairingEngine, PS: PairingShare<E>, T: BigInteger + 'static> Deref for BigIntegerWrapper<E, PS, T> {
-//     type Target = T;
-
-//     fn deref(&self) -> &Self::Target {
-//         &self.0
-//     }
-// }
-// impl<E: PairingEngine, PS: PairingShare<E>> From<MpcField<E::Fr, PS::FrShare>> 
-//     for BigIntegerWrapper<E, PS, <<E as PairingEngine>::Fr as PrimeField>::BigInteger> 
-// {
-//     fn from(value: MpcField<E::Fr, PS::FrShare>) -> Self {
-//         match value {
-//             MpcField::Public(f) => BigIntegerWrapper{
-//                 val: f.to_bigint(),
-//                 _marker: PhantomData,
-//             },
-//             MpcField::Shared(_) => {
-//                 unimplemented!("Shared field into BigInteger")
-//             }
-//         }
-//     }
-// }
-
-// NOTE: conflicting implementations issue.
-// impl<E: PairingEngine, PS: PairingShare<E>> From<MpcField<E::Fr, PS::FrShare>> for <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger {
-//     fn from(value: MpcField<E::Fr, PS::FrShare>) -> Self {
-//         match value {
-//             MpcField::Public(f) => BigIntegerWrapper{
-//                 val: f.to_bigint(),
-//                 _marker: PhantomData,
-//             },
-//             MpcField::Shared(f) => {
-//                 unimplemented!("Shared field into BigInteger")
-//             },
-//         }
-//     }
-// }
-
-// impl<E: PairingEngine, PS: PairingShare<E>, T: BigInteger + 'static> Into<T> for MpcField<E::Fr, PS::FrShare> {
-//     fn into(self) -> T {
-//         match self {
-//             MpcField::Public(f) => f.to_bigint(),
-//             MpcField::Shared(f) => {
-//                 unimplemented!("Shared field into BigInteger")
-//             },
-//         }
-//     }
-// }

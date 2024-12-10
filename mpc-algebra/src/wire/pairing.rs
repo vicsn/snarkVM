@@ -74,7 +74,6 @@ pub struct MpcG1Affine<E: PairingEngine, PS: PairingShare<E>> {
 }
 
 impl<E: PairingEngine, PS: PairingShare<E>> PairingCurve for MpcG1Affine<E, PS> 
-// where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
 {
     type Engine = MpcPairingEngine<E, PS>;
     type PairWith = MpcG2Affine<E, PS>;
@@ -203,7 +202,6 @@ pub struct MpcG2Affine<E: PairingEngine, PS: PairingShare<E>> {
 }
 
 impl<E: PairingEngine, PS: PairingShare<E>> PairingCurve for MpcG2Affine<E, PS> 
-// where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
 {
     type Engine = MpcPairingEngine<E, PS>;
     type PairWith = MpcG1Affine<E, PS>;
@@ -352,7 +350,6 @@ pub struct MpcPairingEngine<E: PairingEngine, PS: PairingShare<E>> {
 
 impl<E: PairingEngine, PS: PairingShare<E>> PairingEngine for MpcPairingEngine<E, PS> 
 where 
-    // <E::Fr as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
     MpcG1Affine<E, PS>: PairingCurve<
             BaseField = MpcField<E::Fq, PS::FqShare>,
             ScalarField = MpcField<E::Fr, PS::FrShare>,
@@ -503,19 +500,6 @@ macro_rules! impl_pairing_mpc_wrapper {
                 }
             }
         }
-        // impl<E: $bound1, PS: $bound2<E>> Distribution<$wrap<E, PS>> for Standard {
-        //     #[inline]
-        //     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> $wrap<E, PS> {
-        //         $wrap::rand(rng)
-        //     }
-        // }
-        // impl<E: $bound1, PS: $bound2<E>> PubUniform for $wrap<E, PS> {
-        //     fn pub_rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-        //         Self {
-        //             val: $wrapped::pub_rand(rng),
-        //         }
-        //     }
-        // }
         impl<'a, E: $bound1, PS: $bound2<E>> AddAssign<&'a $wrap<E, PS>> for $wrap<E, PS> {
             #[inline]
             fn add_assign(&mut self, other: &Self) {
@@ -831,7 +815,6 @@ macro_rules! impl_pairing_curve_wrapper_aff {
         {
             #[inline]
             fn to_field_elements(&self) -> Result<Vec<MpcField<E::Fq, PS::FqShare>>, ConstraintFieldError> {
-                println!("Calling $wrap_aff::to_field_elements, backtrace: {:?}", std::backtrace::Backtrace::force_capture());
                 match &self.val {
                     MpcAffineGroup::Public(a) => a.to_field_elements().map(|v| {
                         v.into_iter()
@@ -949,19 +932,6 @@ macro_rules! impl_pairing_curve_wrapper_aff {
                 }
             }
         }
-        // impl<E: $bound1, PS: $bound2<E>> Distribution<$wrap<E, PS>> for Standard {
-        //     #[inline]
-        //     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> $wrap<E, PS> {
-        //         $wrap::rand(rng)
-        //     }
-        // }
-        // impl<E: $bound1, PS: $bound2<E>> PubUniform for $wrap<E, PS> {
-        //     fn pub_rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-        //         Self {
-        //             val: $wrapped::pub_rand(rng),
-        //         }
-        //     }
-        // }
         impl<E: $bound1, PS: $bound2<E>> Neg for $wrap<E, PS> {
             type Output = Self;
             #[inline]
@@ -1219,39 +1189,7 @@ macro_rules! impl_aff_proj {
             }
         }
 
-        // impl<E: PairingEngine, PS: PairingShare<E>> From<$w_aff<E, PS>> for $w_prep<E, PS> {
-        //     fn from(_o: $w_aff<E, PS>) -> Self {
-        //         unimplemented!("Prepared curves")
-        //     }
-        // }
-
-        // impl<E: PairingEngine, PS: PairingShare<E>> ToBytes for $w_prep<E, PS> {
-        //     fn write_le<W: Write>(&self, _writer: W) -> io::Result<()> {
-        //         unimplemented!("Prepared curves")
-        //     }
-        // }
-
-        // impl<E: PairingEngine, PS: PairingShare<E>> Reveal for $w_prep<E, PS> {
-        //     type Base = $aff::Prepared;
-        //     #[inline]
-        //     fn reveal(self) -> $aff::Prepared {
-        //         self.val
-        //     }
-        //     #[inline]
-        //     fn from_public(g: $aff::Prepared) -> Self {
-        //         Self {
-        //             val: g,
-        //             _phants: PhantomData::default(),
-        //         }
-        //     }
-        //     #[inline]
-        //     fn from_add_shared(_g: $aff::Prepared) -> Self {
-        //         panic!("Cannot add share a prepared curve")
-        //     }
-        // }
-
         impl<E: PairingEngine, PS: PairingShare<E>> AffineCurve for $w_aff<E, PS> 
-        // where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
         {
             type ScalarField = MpcField<E::Fr, PS::FrShare>;
             type Coordinates = <<E as PairingEngine>::$aff as AffineCurve>::Coordinates;
@@ -1264,13 +1202,6 @@ macro_rules! impl_aff_proj {
             fn from_random_bytes(_: &[u8]) -> Option<Self> {
                 todo!("AffineCurve::from_random_bytes")
             }
-            // #[inline]
-            // fn mul<S: Into<<Self::ScalarField as PrimeField>::BigInt>>(
-            //     &self,
-            //     _s: S,
-            // ) -> <Self as AffineCurve>::Projective {
-            //     unimplemented!("mul by bigint")
-            // }
             fn mul_by_cofactor_to_projective(&self) -> <Self as AffineCurve>::Projective {
                 todo!("AffineCurve::mul_by_cofactor_to_projective")
             }
@@ -1299,7 +1230,14 @@ macro_rules! impl_aff_proj {
                 todo!("AffineCurve::to_projective")
             }
             fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Self::Projective {
-                todo!("AffineCurve::mul_bits")
+                let mut output = Self::Projective::zero();
+                for bit in bits {
+                    output.double_in_place();
+                    if bit {
+                        output.add_assign_mixed(self);
+                    }
+                }
+                output
             }
             fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool {
                 todo!("AffineCurve::is_in_correct_subgroup_assuming_on_curve")
@@ -1321,7 +1259,6 @@ macro_rules! impl_aff_proj {
             }
         }
         impl<E: PairingEngine, PS: PairingShare<E>> ProjectiveCurve for $w_pro<E, PS> 
-        // where <MpcField<E::Fr, PS::FrShare> as PrimeField>::BigInteger: From<MpcField<E::Fr, PS::FrShare>>,
         {
             type ScalarField = MpcField<E::Fr, PS::FrShare>;
             type BaseField = $w_base<E::$base, PS::$base_share>;
@@ -1331,19 +1268,25 @@ macro_rules! impl_aff_proj {
                 Self::from_public(E::$pro::prime_subgroup_generator())
             }
             fn batch_normalization(_elems: &mut [Self]) {
-                //TODO: wrong?
+                todo!("ProjectiveCurve::batch_normalization")
             }
             fn is_normalized(&self) -> bool {
                 todo!("ProjectiveCurve::is_normalized")
             }
             fn double_in_place(&mut self) {
-                todo!("ProjectiveCurve::double_in_place")
+                match self.val {
+                    MpcProjectiveGroup::Shared(ref mut a) => {
+                        todo!("ProjectiveCurve::double_in_place")
+                    },
+                    MpcProjectiveGroup::Public(ref mut a) => a.double_in_place(),
+                }
+
             }
             fn double(&self) -> Self {
                 todo!("ProjectiveCurve::double")
             }
             fn to_affine(&self) -> Self::Affine {
-                todo!("ProjectiveCurve::to_affine")
+                self.clone().into()
             }
             fn add_assign_mixed(&mut self, o: &<Self as ProjectiveCurve>::Affine) {
                 let new_self = match (&self.val, &o.val) {
@@ -1364,15 +1307,11 @@ macro_rules! impl_aff_proj {
                 };
                 self.val = new_self;
             }
-            // fn mul<S: AsRef<[u64]>>(self, _scalar_words: S) -> Self {
-            //     unimplemented!("mul by words")
-            // }
         }
     };
 }
 
 impl_aff_proj!(
-    // MpcG1Prep,
     MpcG1Affine,
     MpcG1Projective,
     G1Affine,
@@ -1385,7 +1324,6 @@ impl_aff_proj!(
     G1ProjectiveShare
 );
 impl_aff_proj!(
-    // MpcG2Prep,
     MpcG2Affine,
     MpcG2Projective,
     G2Affine,

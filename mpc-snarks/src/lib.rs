@@ -244,4 +244,22 @@ mod tests {
         // let proof = Proof::deserialize(&mut reader).unwrap();
         // assert!(VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap());
     }
+
+    // #[test]
+    // #[allow(clippy::needless_borrow)]
+    // fn divide_polynomials_random() {
+    //     let rng = &mut TestRng::default();
+
+    //     for a_degree in 0..70 {
+    //         for b_degree in 0..70 {
+
+    //             let dividend = snarkvm_fft::DensePolynomial::<mpc_algebra::MpcField<Fr, mpc_algebra::SpdzFieldShare<Fr>>>::rand(a_degree, rng);
+    //             let divisor = snarkvm_fft::DensePolynomial::<mpc_algebra::MpcField<Fr, mpc_algebra::SpdzFieldShare<Fr>>>::rand(b_degree, rng);
+    //             let (quotient, remainder) =
+    //                 snarkvm_fft::Polynomial::divide_with_q_and_r(&(&dividend).into(), &(&divisor).into()).unwrap();
+    //             assert_eq!(dividend, &(&divisor * &quotient) + &remainder)
+    //         }
+    //     }
+    // }
 }
+

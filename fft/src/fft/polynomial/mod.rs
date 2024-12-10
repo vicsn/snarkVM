@@ -222,6 +222,8 @@ impl<'a, F: Field> Polynomial<'a, F> {
     pub fn divide_with_q_and_r(&self, divisor: &Self) -> Result<(DensePolynomial<F>, DensePolynomial<F>)> {
         ensure!(!divisor.is_zero(), "Dividing by zero polynomial is undefined");
 
+        // TODO: collaborative-snarks library has different contents.
+
         if self.is_zero() {
             Ok((DensePolynomial::zero(), DensePolynomial::zero()))
         } else if self.degree() < divisor.degree() {
@@ -247,6 +249,7 @@ impl<'a, F: Field> Polynomial<'a, F> {
                     }
                 }
 
+                assert!(remainder.coeffs.last().is_some());
                 while let Some(true) = remainder.coeffs.last().map(|c| c.is_zero()) {
                     remainder.coeffs.pop();
                 }

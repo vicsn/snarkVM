@@ -10,6 +10,7 @@ use std::fmt::Display;
 #[track_caller]
 /// Checks that both sides of the channel have the same value.
 pub fn check_eq<T: CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Display>(t: T) {
+    println!("check_eq for type {}", std::any::type_name::<T>());
     debug_assert!({
         use log::debug;
         if mpc_net::two::is_init() {
@@ -18,7 +19,7 @@ pub fn check_eq<T: CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Disp
                 debug!("Consistency check passed");
                 true
             } else {
-                println!("\nConsistency check failed\n{}\nvs\n{} \n\nbacktrace: {}", t, other, std::backtrace::Backtrace::force_capture());
+                println!("\nConsistency check failed\n{}\nvs\n{} \n\n", t, other); //, std::backtrace::Backtrace::force_capture());
                 false
             }
         } else {
@@ -27,7 +28,7 @@ pub fn check_eq<T: CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Disp
             let mut result = true;
             for (i, other_t) in others.iter().enumerate() {
                 if &t != other_t {
-                    println!("\nConsistency check failed\nI (party {}) have {}\nvs\n  (party {}) has {} \n\n backtrace: {}", mpc_net::MpcMultiNet::party_id(), t, i, other_t, std::backtrace::Backtrace::force_capture());
+                    println!("\nConsistency check failed\nI (party {}) have {}\nvs\n  (party {}) has {} \n\n", mpc_net::MpcMultiNet::party_id(), t, i, other_t);//, std::backtrace::Backtrace::force_capture());
                     result = false;
                     break;
                 }
@@ -142,23 +143,6 @@ macro_rules! impl_basics_group {
                 Self::Shared(<S as Uniform>::rand(rng))
             }
         }
-        // impl<T: $bound, S: $share<T>> PubUniform for $wrap<T, S> {
-        //     fn pub_rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-        //         Self::Public(<T as PubUniform>::pub_rand(rng))
-        //     }
-        // }
-        //impl<T: $bound, S: $share<T>> Add for $wrap<T, S> {
-        //    type Output = Self;
-        //    #[inline]
-        //    fn add(self, other: Self) -> Self::Output {
-        //        match (self, other) {
-        //            ($wrap::Public(x), $wrap::Public(y)) => $wrap::Public(x + y),
-        //            ($wrap::Shared(x), $wrap::Public(y)) => $wrap::Shared(x.shift(&y)),
-        //            ($wrap::Public(x), $wrap::Shared(y)) => $wrap::Shared(y.shift(&x)),
-        //            ($wrap::Shared(x), $wrap::Shared(y)) => $wrap::Shared(x.add(&y)),
-        //        }
-        //    }
-        //}
         impl<T: $bound, S: $share<T>> Neg for $wrap<T, S> {
             type Output = Self;
             #[inline]
@@ -272,7 +256,6 @@ macro_rules! impl_basics_field {
                 }
             }
         }
-        // NB: CanonicalSerializeWithFlags is unimplemented for Group.
         impl<T: $bound, S: $share<T>> CanonicalSerializeWithFlags for $wrap<T, S> {
             fn serialize_with_flags<W: Write, F: Flags>(
                 &self,
@@ -304,26 +287,9 @@ macro_rules! impl_basics_field {
         }
         impl<T: $bound, S: $share<T>> Uniform for $wrap<T, S> {
             fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-                Self::Shared(<S as Uniform>::rand(rng))
+                Self::Public(<T as Uniform>::rand(rng))
             }
         }
-        // impl<T: $bound, S: $share<T>> PubUniform for $wrap<T, S> {
-        //     fn pub_rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-        //         Self::Public(<T as PubUniform>::pub_rand(rng))
-        //     }
-        // }
-        //impl<T: $bound, S: $share<T>> Add for $wrap<T, S> {
-        //    type Output = Self;
-        //    #[inline]
-        //    fn add(self, other: Self) -> Self::Output {
-        //        match (self, other) {
-        //            ($wrap::Public(x), $wrap::Public(y)) => $wrap::Public(x + y),
-        //            ($wrap::Shared(x), $wrap::Public(y)) => $wrap::Shared(x.shift(&y)),
-        //            ($wrap::Public(x), $wrap::Shared(y)) => $wrap::Shared(y.shift(&x)),
-        //            ($wrap::Shared(x), $wrap::Shared(y)) => $wrap::Shared(x.add(&y)),
-        //        }
-        //    }
-        //}
         impl<'a, T: $bound, S: $share<T>> AddAssign<&'a $wrap<T, S>> for $wrap<T, S> {
             #[inline]
             fn add_assign(&mut self, other: &Self) {

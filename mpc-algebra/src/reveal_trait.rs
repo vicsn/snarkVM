@@ -21,7 +21,7 @@ use rand::Rng;
 ///
 /// It is typically implemented for shared (or possibly shared) data.
 ///
-/// For example, and additive secret share can be viewed as the MPC abstraction of the underlying
+/// For example, an additive secret share can be viewed as the MPC abstraction of the underlying
 /// type.
 ///
 /// Typically a [Reveal] implementation assumes that there are a collection of other machines which

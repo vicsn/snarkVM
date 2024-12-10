@@ -95,8 +95,6 @@ impl<T: Field, S: PrimeField> Uniform for MulFieldGroup<T, S> {
         Self::new(<T as Uniform>::rand(rng))
     }
 }
-// impl<T: Field, S: PrimeField> PubUniform for MulFieldGroup<T, S> {
-// }
 
 impl<T: Field, S: PrimeField> Add for MulFieldGroup<T, S> {
     type Output = Self;

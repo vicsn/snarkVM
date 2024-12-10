@@ -30,44 +30,16 @@ use crate::MpcField;
 use mpc_net::{MpcNet, MpcMultiNet as Net};
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq)]
-// #[derivative(
-//     PartialEq(bound = "G: PartialEq<G::Affine>"),
-// )]
 pub enum MpcProjectiveGroup<G: ProjectiveCurve, S: ProjectiveGroupShare<G>> {
     Public(G),
     Shared(S),
 }
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq)]
-// #[derivative(
-//     PartialEq(bound = "G: PartialEq<G::Projective>"),
-// )]
 pub enum MpcAffineGroup<G: AffineCurve, S: AffineGroupShare<G>> {
     Public(G),
     Shared(S),
 }
-
-// impl<
-//     P: ProjectiveCurve,
-//     SP: ProjectiveGroupShare<P>,
-//     A: AffineCurve,
-//     SA: AffineGroupShare<A>,
-// > PartialEq<MpcAffineGroup<A, SA>> for MpcProjectiveGroup<P, SP> {
-//     fn eq(&self, other: &MpcAffineGroup<A, SA>) -> bool {
-//         unimplemented!("eq")
-//     }
-// }
-
-// impl<
-//     P: ProjectiveCurve,
-//     SP: ProjectiveGroupShare<P>,
-//     A: AffineCurve,
-//     SA: AffineGroupShare<A>,
-// > PartialEq<MpcProjectiveGroup<P, SP>> for MpcAffineGroup<A, SA> {
-//     fn eq(&self, other: &MpcProjectiveGroup<P, SP>) -> bool {
-//         unimplemented!("eq")
-//     }
-// }
 
 impl_basics_group!(ProjectiveGroupShare, ProjectiveCurve, MpcProjectiveGroup, MpcAffineGroup, AffineGroupShare, AffineCurve);
 impl_basics_group!(AffineGroupShare, AffineCurve, MpcAffineGroup, MpcProjectiveGroup, ProjectiveGroupShare, ProjectiveCurve);
@@ -312,15 +284,6 @@ impl<T: ProjectiveCurve, S: ProjectiveGroupShare<T>> Mul<MpcField<T::ScalarField
         self
     }
 }
-
-// impl<A: AffineCurve, P: ProjectiveCurve, SA: AffineGroupShare<T>, SP: ProjectiveGroupShare> Mul<MpcField<A::ScalarField, SA::FieldShare>> for MpcAffineGroup<A, SA> {
-//     type Output = MpcProjectiveGroup<P, SP>;
-//     #[inline]
-//     fn mul(mut self, other: MpcField<A::ScalarField, SA::FieldShare>) -> Self::Output {
-//         self *= &other;
-//         self
-//     }
-// }
 
 impl<'a, T: ProjectiveCurve, S: ProjectiveGroupShare<T>> Mul<&'a MpcField<T::ScalarField, S::FieldShare>>
     for MpcProjectiveGroup<T, S>
