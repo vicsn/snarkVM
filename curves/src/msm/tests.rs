@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::msm::*;
-use snarkvm_curves::{
+use crate::{
     bls12_377::{Fr, G1Projective},
     traits::{AffineCurve, ProjectiveCurve},
 };

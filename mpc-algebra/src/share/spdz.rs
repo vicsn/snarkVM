@@ -603,16 +603,27 @@ macro_rules! impl_spdz_basics_2_param {
             }
         }
         impl<T: $bound, M> Uniform for $share<T, M> {
-            fn rand<R: Rng + ?Sized>(_rng: &mut R) -> Self {
-                todo!()
-                //Self::from_add_shared(<T as Uniform>::rand(rng))
+            fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
+                Self::from_add_shared(<T as Uniform>::rand(rng))
             }
         }
     };
 }
 
+// impl<T: AffineCurve, M> Uniform for SpdzProjectiveShare<T, M> {
+//     fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
+//         Self::from_add_shared(<T as Uniform>::rand(rng))
+//     }
+// }
+// impl<T: ProjectiveCurve, M> Uniform for SpdzAffineShare<T, M> {
+//     fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
+//         Self::from_add_shared(<T as Uniform>::rand(rng))
+//     }
+// }
+
 impl_spdz_basics_2_param!(SpdzProjectiveShare, ProjectiveCurve);
 impl_spdz_basics_2_param!(SpdzAffineShare, AffineCurve);
+
 #[derive(Derivative)]
 #[derivative(
     Clone(bound = "T: Clone"),
@@ -628,7 +639,79 @@ pub struct SpdzMulFieldShare<T, S> {
     mac: MulFieldShare<T>,
     _phants: PhantomData<S>,
 }
-impl_spdz_basics_2_param!(SpdzMulFieldShare, Field);
+macro_rules! impl_spdz_basics_2_param_field {
+    ($share:ident, $bound:ident) => {
+        impl<T: $bound, M> Display for $share<T, M> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self.sh.val)
+            }
+        }
+        impl<T: $bound, M> Debug for $share<T, M> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                write!(f, "{:?}", self.sh.val)
+            }
+        }
+        impl<T: $bound, M> ToBytes for $share<T, M> {
+            fn write_le<W: Write>(&self, _writer: W) -> io::Result<()> {
+                unimplemented!("write")
+            }
+        }
+        impl<T: $bound, M> FromBytes for $share<T, M> {
+            fn read_le<R: Read>(_reader: R) -> io::Result<Self> {
+                unimplemented!("read")
+            }
+        }
+        impl<T: $bound, M> Valid for $share<T, M> {
+            fn check(&self) -> Result<(), SerializationError> {
+                unimplemented!("check")
+            }
+        }
+        impl<T: $bound, M> CanonicalSerialize for $share<T, M> {
+            fn serialize_with_mode<W: Write>(&self, _writer: W, _compress: Compress) -> Result<(), SerializationError> {
+                unimplemented!("serialize_with_mode")
+            }
+            fn serialized_size(&self, _compress: Compress) -> usize {
+                unimplemented!("serialized_size")
+            }
+        }
+        impl<T: $bound, M> CanonicalSerializeWithFlags for $share<T, M> {
+            fn serialize_with_flags<W: Write, F: Flags>(
+                &self,
+                _writer: W,
+                _flags: F,
+            ) -> Result<(), SerializationError> {
+                unimplemented!("serialize_with_flags")
+            }
+
+            fn serialized_size_with_flags<F: Flags>(&self) -> usize {
+                unimplemented!("serialized_size_with_flags")
+            }
+        }
+        impl<T: $bound, M> CanonicalDeserialize for $share<T, M> {
+            fn deserialize_with_mode<R: Read>(
+                _reader: R,
+                _compress: Compress,
+                _validate: Validate,
+            ) -> Result<Self, SerializationError> {
+                unimplemented!("deserialize_with_mode")
+            }
+        }
+        impl<T: $bound, M> CanonicalDeserializeWithFlags for $share<T, M> {
+            fn deserialize_with_flags<R: Read, F: Flags>(
+                _reader: R,
+            ) -> Result<(Self, F), SerializationError> {
+                unimplemented!("deserialize_with_flags")
+            }
+        }
+        impl<T: $bound, M> Uniform for $share<T, M> {
+            fn rand<R: Rng + ?Sized>(_rng: &mut R) -> Self {
+                todo!()
+                //Self::from_add_shared(<T as Uniform>::rand(rng))
+            }
+        }
+    };
+}
+impl_spdz_basics_2_param_field!(SpdzMulFieldShare, Field);
 
 impl<F: Field, S: PrimeField> Reveal for SpdzMulFieldShare<F, S> {
     type Base = F;

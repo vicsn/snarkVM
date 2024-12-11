@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![warn(unsafe_code)]
+#![allow(clippy::type_complexity)]
 #![feature(associated_type_defaults)]
 #![allow(clippy::module_inception)]
 // #![cfg_attr(nightly, feature(doc_cfg, external_doc))]
@@ -29,6 +31,9 @@ pub mod edwards_bls12;
 
 pub mod errors;
 pub use errors::*;
+
+pub mod msm;
+pub use msm::*;
 
 pub mod templates;
 

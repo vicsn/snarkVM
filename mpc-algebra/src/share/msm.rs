@@ -1,4 +1,4 @@
-use snarkvm_msm::batched::msm;
+use snarkvm_curves::msm::batched::msm;
 use derivative::Derivative;
 use snarkvm_curves::{AffineCurve, ProjectiveCurve};
 use std::marker::PhantomData;

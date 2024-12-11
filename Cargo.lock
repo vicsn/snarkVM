@@ -1765,7 +1765,6 @@ dependencies = [
  "snarkvm-curves",
  "snarkvm-fft",
  "snarkvm-fields",
- "snarkvm-msm",
  "snarkvm-utilities",
  "structopt",
  "zeroize",
@@ -2889,7 +2888,6 @@ dependencies = [
  "snarkvm-curves",
  "snarkvm-fft",
  "snarkvm-fields",
- "snarkvm-msm",
  "snarkvm-parameters",
  "snarkvm-utilities",
  "thiserror",
@@ -3671,45 +3669,6 @@ version = "1.0.0"
 dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
-]
-
-[[package]]
-name = "snarkvm-msm"
-version = "1.0.0"
-dependencies = [
- "aleo-std",
- "anyhow",
- "bincode",
- "blake2 0.10.6",
- "cfg-if",
- "criterion",
- "crossbeam-channel",
- "expect-test",
- "fxhash",
- "hashbrown 0.14.3",
- "hex",
- "indexmap 2.2.6",
- "itertools 0.11.0",
- "lazy_static",
- "num-traits",
- "parking_lot",
- "rand",
- "rand_chacha",
- "rand_core",
- "rayon",
- "rust-gpu-tools",
- "serde",
- "serde_json",
- "serial_test",
- "sha2 0.10.8",
- "smallvec",
- "snarkvm-curves",
- "snarkvm-fft",
- "snarkvm-fields",
- "snarkvm-parameters",
- "snarkvm-utilities",
- "thiserror",
- "wasm-bindgen-futures",
 ]
 
 [[package]]

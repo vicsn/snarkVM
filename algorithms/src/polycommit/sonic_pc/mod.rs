@@ -16,13 +16,12 @@
 use crate::{
     AlgebraicSponge,
     fft::DensePolynomial,
-    msm::variable_base::VariableBase,
     polycommit::{PCError, kzg10, optional_rng::OptionalRng},
     srs::{UniversalProver, UniversalVerifier},
 };
 use hashbrown::HashMap;
 use itertools::Itertools;
-use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
+use snarkvm_curves::{traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve}, msm::variable_base::VariableBase};
 use snarkvm_fields::{One, Zero};
 
 use anyhow::{Result, bail, ensure};

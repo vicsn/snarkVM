@@ -25,6 +25,8 @@ use core::{
 };
 use serde::{Serialize, de::DeserializeOwned};
 
+use snarkvm_utilities::cfg_into_iter;
+
 /// Projective representation of an elliptic curve point guaranteed to be in the prime order subgroup.
 pub trait ProjectiveCurve:
     CanonicalSerialize
@@ -237,6 +239,18 @@ pub trait AffineCurve:
 
     /// Performs the second half of batch addition in-place.
     fn batch_add_loop_2(a: &mut Self, b: Self, inversion_tmp: &mut Self::BaseField);
+
+    /// Perform a multi-scalar multiplication.
+    /// That is, compute P = sum_i s_i * P_i
+    fn multi_scalar_mul(bases: &[Self], scalars: &[Self::ScalarField]) -> Self::Projective
+    {
+        println!("AffineCurve::multi_scalar_mul");
+        let bigint_scalars = cfg_into_iter!(scalars)
+            .map(|s| s.to_bigint())
+            .collect::<Vec<_>>();
+        let product = crate::VariableBase::msm(&bases, &bigint_scalars);
+        product
+    }
 }
 
 pub trait PairingCurve: AffineCurve {

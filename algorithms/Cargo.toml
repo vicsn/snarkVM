@@ -65,11 +65,6 @@ path = "../fft"
 version = "=1.0.0"
 default-features = false
 
-[dependencies.snarkvm-msm]
-path = "../msm"
-version = "=1.0.0"
-default-features = false
-
 [dependencies.snarkvm-parameters]
 path = "../parameters"
 version = "=1.0.0"

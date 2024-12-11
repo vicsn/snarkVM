@@ -1257,6 +1257,63 @@ macro_rules! impl_aff_proj {
             fn batch_add_loop_2(a: &mut Self, b: Self, inversion_tmp: &mut Self::BaseField) {
                 todo!("AffineCurve::batch_add_loop_2")
             }
+            fn multi_scalar_mul(bases: &[Self], scalars: &[Self::ScalarField]) -> Self::Projective {
+                println!("multi_scalar_mul4");
+                let b = {
+                    assert!(bases.iter().all(|b| !b.is_shared()));
+                    let scalars_shared = scalars.first().map(|s| s.is_shared()).unwrap_or(true);
+                    assert!(scalars.iter().all(|b| scalars_shared == b.is_shared()));
+                    let bases =
+                        MpcAffineGroup::all_public_or_shared(bases.into_iter().map(|i| i.val.clone()))
+                            .unwrap();
+                    match MpcField::all_public_or_shared(scalars.into_iter().cloned()) {
+                        Ok(pub_scalars) => {
+                            let r = $w_pro {
+                                // wat?
+                                val: if true {
+                                    let r = <E::$aff as AffineCurve>::multi_scalar_mul(
+                                        &bases,
+                                        &pub_scalars,
+                                    );
+                                    let r = MpcProjectiveGroup::Shared(
+                                        <PS::$share_proj as Reveal>::from_public(r),
+                                    );
+                                    r
+                                } else {
+                                    MpcProjectiveGroup::Public(<E::$aff as AffineCurve>::multi_scalar_mul(
+                                        &bases,
+                                        &pub_scalars,
+                                    ))
+                                },
+                            };
+                            r
+                        }
+                        Err(priv_scalars) => {
+                            let r = $w_pro {
+                                val: MpcProjectiveGroup::Shared(PS::$g_name::sh_aff_to_proj(
+                                    <PS::$share_aff as crate::AffineGroupShare<E::$aff>>::multi_scale_pub_group(
+                                        &bases,
+                                        &priv_scalars,
+                                    ),
+                                )),
+                            };
+                            r
+                        }
+                    }
+                };
+                // {
+                //     let mut pa = a;
+                //     let mut pb = b;
+                //     pa.publicize();
+                //     pb.publicize();
+                //     println!("{}\n->\n{}", a, pa);
+                //     println!("{}\n->\n{}", b, pb);
+                //     println!("Check eq!");
+                //     //assert_eq!(a, b);
+                //     assert_eq!(pa, pb);
+                // }
+                b
+            }
         }
         impl<E: PairingEngine, PS: PairingShare<E>> ProjectiveCurve for $w_pro<E, PS> 
         {

@@ -22,10 +22,9 @@
 
 use crate::{
     fft::{DensePolynomial, Polynomial},
-    msm::VariableBase,
     polycommit::PCError,
 };
-use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
+use snarkvm_curves::{traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve}, msm::VariableBase};
 use snarkvm_fields::{One, PrimeField, Zero};
 use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, rand::Uniform};
 
@@ -111,12 +110,24 @@ impl<E: PairingEngine> KZG10<E> {
 
         let mut commitment = match polynomial {
             Polynomial::Dense(polynomial) => {
-                let (num_leading_zeros, plain_coeffs) = skip_leading_zeros_and_convert_to_bigints(polynomial);
+                let (num_leading_zeros, bigint_coeffs) = skip_leading_zeros_and_convert_to_bigints(polynomial);
+                // for coeff in plain_coeffs.iter() {
+                //     println!("coeff.is_shared: {:?}", coeff.is_shared());
+                // }
+                let plain_coeffs = polynomial.coeffs().iter().cloned().skip(num_leading_zeros).collect::<Vec<_>>();
 
                 let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + plain_coeffs.len())];
 
                 let msm_time = start_timer!(|| "MSM to compute commitment to plaintext poly");
-                let commitment = VariableBase::msm(bases, &plain_coeffs);
+                // <E::G1Affine as MpcAffineGroup>::msm
+                // msm(<E::G1Affine as MpcAffineGroup>,
+
+                // let mut commitment = <E::G1Affine as AffineCurve>::msm(
+                //     &bases,
+                //     &plain_coeffs,
+                // );
+                let commitment = VariableBase::msm(bases, &bigint_coeffs);
+                // assert_eq!(commitment_test, commitment);
                 end_timer!(msm_time);
 
                 commitment
@@ -145,8 +156,13 @@ impl<E: PairingEngine> KZG10<E> {
 
         let random_ints = convert_to_bigints(&randomness.blinding_polynomial.coeffs);
         let msm_time = start_timer!(|| "MSM to compute commitment to random poly");
+        // let random_commitment = <E::G1Affine as AffineCurve>::msm(
+        //     &powers.powers_of_beta_times_gamma_g,
+        //     randomness.blinding_polynomial.coeffs(),
+        // );
         let random_commitment =
             VariableBase::msm(&powers.powers_of_beta_times_gamma_g, random_ints.as_slice()).to_affine();
+        // assert_eq!(random_commitment_test, random_commitment);
         end_timer!(msm_time);
 
         commitment.add_assign_mixed(&random_commitment);

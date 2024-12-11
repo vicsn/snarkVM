@@ -160,7 +160,7 @@ impl<F: Field> TryInto<SparsePolynomial<F>> for Polynomial<'_, F> {
 
 impl<'a, F: Field> Polynomial<'a, F> {
     /// Checks if the polynomial is (consistently) shared.
-    fn is_shared(&self) -> bool {
+    pub fn is_shared(&self) -> bool {
         match self {
             Dense(x) => x.is_shared(),
             Sparse(x) => x.is_shared(),

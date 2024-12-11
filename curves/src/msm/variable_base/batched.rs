@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_curves::{AffineCurve, ProjectiveCurve};
+use crate::{AffineCurve, ProjectiveCurve};
 use snarkvm_fields::{Field, One, PrimeField, Zero};
 use snarkvm_utilities::{BigInteger, BitIteratorBE, cfg_into_iter};
 
@@ -364,6 +364,7 @@ fn batched_window<G: AffineCurve>(
 }
 
 pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
+    println!("msm::variable_base::batched::msm() called");
     if bases.len() < 15 {
         let num_bits = G::ScalarField::size_in_bits();
         let bigint_size = <G::ScalarField as PrimeField>::BigInteger::NUM_LIMBS * 64;

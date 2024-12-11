@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_curves::{AffineCurve, ProjectiveCurve};
+use crate::{AffineCurve, ProjectiveCurve};
 use snarkvm_fields::{One, PrimeField, Zero};
 use snarkvm_utilities::{BigInteger, cfg_into_iter};
 
@@ -77,6 +77,7 @@ fn standard_window<G: AffineCurve>(
 }
 
 pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
+    println!("msm::variable_base::standard::msm() called");
     // Determine the bucket size `c` (chosen empirically).
     let c = match scalars.len() < 32 {
         true => 1,

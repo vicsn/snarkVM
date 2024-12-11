@@ -76,6 +76,7 @@ mod squarings {
         use snarkvm_utilities::TestRng;
         use mpc_algebra::MpcField;
         use snarkvm_utilities::Uniform;
+        use snarkvm_fields::MpcWire;
 
         pub struct MarlinBench;
 
@@ -183,11 +184,11 @@ mod squarings {
                 mpc_field.inverse_in_place();
                 mpc_field.reveal();
                 println!("INVERSE SUCCEEDED");
-                let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng);
-                let mut mpc_bigint = mpc_field.to_bigint();
-                let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::from_bigint(mpc_bigint).unwrap();
-                mpc_field.reveal();
-                println!("BIGINT SUCCEEDED");
+                // let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng);
+                // let mut mpc_bigint = mpc_field.to_bigint();
+                // let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::from_bigint(mpc_bigint).unwrap();
+                // mpc_field.reveal();
+                // println!("BIGINT SUCCEEDED");
                 let mut evals = (0..128).map(|_| <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng)).collect::<Vec<_>>();
                 let evaluation_domain = snarkvm_fft::EvaluationDomain::new(evals.len()).unwrap();
                 let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals.clone(), evaluation_domain).interpolate();
@@ -228,7 +229,6 @@ mod squarings {
                     for b_degree in 1..5 {
                         // NOTE: we creating shared field elements in Uniform::sample for MpcField.
                         // NOTE: for some sampling methods, values are combined using from_add_shared
-                        // NOTE: if we change sampling methods to sample Public values, then polynomial division doesn't halt anymore. Consider looking at the co-snarks `divide_with_q_and_r` impl
                         type Fr<E, S> = <MpcPairingEngine::<E, S> as PairingEngine>::Fr;
                         let dividend = snarkvm_fft::DensePolynomial::<Fr::<E, S>>::rand(a_degree, snarkvm_rng);
                         let divisor_coeffs = (0..b_degree).map(|_| Fr::<E, S>::rand_public(snarkvm_rng)).collect::<Vec<_>>();
@@ -236,11 +236,10 @@ mod squarings {
 
                         let (quotient, remainder) =
                             snarkvm_fft::Polynomial::divide_with_q_and_r(&(&dividend).into(), &(&divisor).into()).unwrap();
-                        // assert_eq!(dividend, &(&divisor * &quotient) + &remainder);
+                        // assert_eq!(dividend, &(&divisor * &quotient) + &remainder); // This doesn't work, because due to snarkVM primitives, we end up adding Public(0)
                         println!("POLY divide_with_q_and_r {a_degree}/{b_degree} SUCCEEDED");
                     }
                 }
-                // return;
 
                 println!("START LOCAL TEST");
                
@@ -294,6 +293,7 @@ mod squarings {
                     println!("REVEALED z_a");
                     let _test = oracle_test.polynomial.as_dense().unwrap().clone().reveal();
                     println!("REVEALED oracle");
+                    println!("comm_test.is_shared(): {:?}", comm_test.0.is_shared());
                     let _test = comm_test.reveal();
                     println!("REVEALED commitment");
                     proof.reveal()

@@ -22,11 +22,34 @@ pub mod tests;
 pub mod variable_base;
 pub use variable_base::*;
 
+/// Returns the ceiling of the base-2 logarithm of `x`.
+///
+/// ```
+/// use snarkvm_fft::fft::domain::log2;
+///
+/// assert_eq!(log2(16), 4);
+/// assert_eq!(log2(17), 5);
+/// assert_eq!(log2(1), 0);
+/// assert_eq!(log2(0), 0);
+/// assert_eq!(log2(usize::MAX), (core::mem::size_of::<usize>() * 8) as u32);
+/// assert_eq!(log2(1 << 15), 15);
+/// assert_eq!(log2(2usize.pow(18)), 18);
+/// ```
+pub fn log2(x: usize) -> u32 { // TODO: duplicate with snarkvm_fft::fft::domain::log2
+    if x == 0 {
+        0
+    } else if x.is_power_of_two() {
+        1usize.leading_zeros() - x.leading_zeros()
+    } else {
+        0usize.leading_zeros() - x.leading_zeros()
+    }
+}
+
 /// The result of this function is only approximately `ln(a)`
 /// [`Explanation of usage`]
 ///
 /// [`Explanation of usage`]: https://github.com/scipr-lab/zexe/issues/79#issue-556220473
 fn ln_without_floats(a: usize) -> usize {
     // log2(a) * ln(2)
-    (snarkvm_fft::fft::domain::log2(a) * 69 / 100) as usize
+    (log2(a) * 69 / 100) as usize
 }

@@ -44,7 +44,7 @@ use crate::{
 };
 use rand::RngCore;
 use snarkvm_curves::PairingEngine;
-use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
+use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero, MpcWire};
 use snarkvm_utilities::{ToBytes, to_bytes_le};
 
 use anyhow::{Result, anyhow, bail, ensure};
@@ -392,6 +392,9 @@ where
         let prover_state = AHPForR1CS::<_, SM>::prover_first_round(prover_state, zk_rng)?;
 
         let oracle_return_test = prover_state.first_round_oracles.as_ref().unwrap().batches.iter().next().unwrap().clone().1[0].0.clone();
+        for (i, oracle) in prover_state.first_round_oracles.as_ref().unwrap().batches.iter().enumerate() {
+            println!("first oracle {i} is_shared: {:?}", oracle.1[0].0.is_shared());
+        }
 
         let first_round_comm_time = start_timer!(|| "Committing to first round polys");
         let (first_commitments, first_commitment_randomnesses) = {
@@ -404,7 +407,10 @@ where
             )?
         };
         end_timer!(first_round_comm_time);
-        
+       
+        for (i, comm) in first_commitments.iter().enumerate() {
+            println!("first commitment {i} is_shared: {:?}", comm.commitment().0.is_shared());
+        }
         let commitment_return_test = first_commitments[0].commitment().clone();
 
         Self::absorb_labeled(&first_commitments, &mut sponge);

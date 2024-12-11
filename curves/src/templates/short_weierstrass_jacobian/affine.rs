@@ -18,7 +18,7 @@ use crate::{
     templates::short_weierstrass_jacobian::Projective,
     traits::{AffineCurve, ProjectiveCurve, ShortWeierstrassParameters as Parameters},
 };
-use snarkvm_fields::{Field, One, SquareRootField, Zero};
+use snarkvm_fields::{Field, One, SquareRootField, Zero, PrimeField};
 use snarkvm_utilities::{
     FromBytes,
     ToBytes,
@@ -26,6 +26,7 @@ use snarkvm_utilities::{
     io::{Error, ErrorKind, Read, Result as IoResult, Write},
     rand::Uniform,
     serialize::*,
+    cfg_into_iter,
 };
 
 use core::{
@@ -273,6 +274,17 @@ impl<P: Parameters> AffineCurve for Affine<P> {
             // for squaring: (3x^2 + a)/2y(x - y - x3) - (y - (3x^2 + a)/2) = l*(x - x3) - y
             a.y = lambda * (b.x - a.x) - b.y;
         }
+    }
+
+    /// Perform a multi-scalar multiplication.
+    /// That is, compute P = sum_i s_i * P_i
+    fn multi_scalar_mul(bases: &[Self], scalars: &[Self::ScalarField]) -> Self::Projective {
+        println!("AffineCurve::multi_scalar_mul");
+        let bigint_scalars = cfg_into_iter!(scalars)
+            .map(|s| s.to_bigint())
+            .collect::<Vec<_>>();
+        let product = crate::VariableBase::msm(&bases, &bigint_scalars);
+        product
     }
 }
 

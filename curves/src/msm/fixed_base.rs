@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_curves::traits::ProjectiveCurve;
+use crate::traits::ProjectiveCurve;
 use snarkvm_fields::{FieldParameters, PrimeField};
 use snarkvm_utilities::{ToBits, cfg_into_iter, cfg_iter, cfg_iter_mut};
 
@@ -90,6 +90,7 @@ impl FixedBase {
         table: &[Vec<T>],
         v: &[T::ScalarField],
     ) -> Vec<T> {
+        println!("msm::fixed_base::msm() called");
         let outerc = (scalar_size + window - 1) / window;
         assert!(outerc <= table.len());
 

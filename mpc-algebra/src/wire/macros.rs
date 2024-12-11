@@ -141,6 +141,16 @@ macro_rules! impl_basics_group {
         }
         impl<T: $bound, S: $share<T>> Uniform for $wrap<T, S> {
             fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
+                Self::Shared(<S as Uniform>::rand(rng))
+            }
+        }
+        impl<T: $bound, S: $share<T>> $wrap<T, S> {
+            pub fn rand_shared<R: Rng + ?Sized>(rng: &mut R) -> Self {
+                Self::Shared(<S as Uniform>::rand(rng))
+            }
+        }
+        impl<T: $bound, S: $share<T>> $wrap<T, S> {
+            pub fn rand_public<R: Rng + ?Sized>(rng: &mut R) -> Self {
                 Self::Public(<T as Uniform>::rand(rng))
             }
         }
