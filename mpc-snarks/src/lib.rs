@@ -227,7 +227,7 @@ mod tests {
         let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &assignment).unwrap();
         println!("Called circuit setup");
 
-        let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, &assignment, rng).unwrap();
+        let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, &assignment, rng).unwrap().0;
         println!("Called prover");
 
         let one = <Circuit as Environment>::BaseField::one();

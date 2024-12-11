@@ -69,17 +69,13 @@ mod squarings {
 
     pub mod marlin {
         use super::*;
-        // use ark_marlin::Marlin;
-        // use ark_marlin::*;
-        // use ark_poly_commit::marlin::marlin_pc::MarlinKZG10;
         use snarkvm_algorithms::{crypto_hash::PoseidonSponge, fft::DensePolynomial, snark::varuna::{AHPForR1CS, CircuitProvingKey, VarunaHidingMode, test_circuit::TestCircuit, VarunaSNARK}, AlgebraicSponge, SNARK};
         use snarkvm_algorithms::srs::UniversalProver;
         use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
         use snarkvm_circuit::{prelude::{Field, *}, Environment, network::AleoV0};
         use snarkvm_utilities::TestRng;
         use mpc_algebra::MpcField;
-
-        // type KzgMarlin<Fr, E> = Marlin<Fr, MarlinKZG10<E, DensePolynomial<Fr>>, Blake2s>;
+        use snarkvm_utilities::Uniform;
 
         pub struct MarlinBench;
 
@@ -129,6 +125,87 @@ mod squarings {
                 let snarkvm_rng = &mut TestRng::fixed(1); // TODO: this should be changed to a real rng
 
                 println!("START TESTS");
+
+                println!("START FIELD TESTS");
+                let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng);
+                let mut mpc_field_2 = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand_shared(snarkvm_rng);
+                mpc_field += mpc_field + mpc_field;
+                mpc_field += mpc_field + mpc_field_2;
+                mpc_field += mpc_field_2 + mpc_field;
+                mpc_field += mpc_field_2 + mpc_field_2;
+                mpc_field.reveal();
+                println!("ADD SUCCEEDED");
+                let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng);
+                let mut mpc_field_2 = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand_shared(snarkvm_rng);
+                mpc_field *= mpc_field * mpc_field;
+                mpc_field *= mpc_field * mpc_field_2;
+                mpc_field *= mpc_field_2 * mpc_field;
+                mpc_field *= mpc_field_2 * mpc_field_2;
+                mpc_field.reveal();
+                println!("MUL SUCCEEDED");
+                let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng);
+                let mut mpc_field_shared = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand_shared(snarkvm_rng);
+                mpc_field /= mpc_field / mpc_field;
+                mpc_field /= mpc_field / mpc_field_shared;
+                mpc_field /= mpc_field_shared / mpc_field;
+                mpc_field /= mpc_field_shared / mpc_field_shared;
+                mpc_field.reveal();
+                println!("DIV SUCCEEDED");
+                let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng);
+                let mut mpc_field_2 = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand_shared(snarkvm_rng);
+                mpc_field -= mpc_field - mpc_field;
+                mpc_field -= mpc_field - mpc_field_2;
+                mpc_field -= mpc_field_2 - mpc_field;
+                mpc_field -= mpc_field_2 - mpc_field_2;
+                mpc_field.reveal();
+                println!("SUB SUCCEEDED");
+                let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng);
+                let mut mpc_field_2 = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand_shared(snarkvm_rng);
+                mpc_field += mpc_field.double();
+                mpc_field.double_in_place();
+                mpc_field += mpc_field_2.double();
+                mpc_field.double_in_place();
+                mpc_field.reveal();
+                println!("DOUBLE SUCCEEDED");
+                let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng);
+                let mut mpc_field_2 = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand_shared(snarkvm_rng);
+                mpc_field += mpc_field.inverse().unwrap();
+                mpc_field.inverse_in_place();
+                mpc_field += mpc_field_2.inverse().unwrap();
+                mpc_field.inverse_in_place();
+                mpc_field.reveal();
+                println!("INVERSE SUCCEEDED");
+                let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng);
+                let mut mpc_bigint = mpc_field.to_bigint();
+                let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::from_bigint(mpc_bigint).unwrap();
+                mpc_field.reveal();
+                println!("BIGINT SUCCEEDED");
+                let evals = (0..4).map(|_| <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng)).collect::<Vec<_>>();
+                let evaluation_domain = snarkvm_fft::EvaluationDomain::new(evals.len()).unwrap();
+                let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals.clone(), evaluation_domain).interpolate();
+                let _ = poly.reveal();
+                let fft_precomputation = evaluation_domain.precompute_fft();
+                let ifft_precomputation = fft_precomputation.to_ifft_precomputation();
+                let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals, evaluation_domain).interpolate_with_pc(&ifft_precomputation);
+                let _ = poly.reveal();
+                println!("FFT SUCCEEDED");
+    
+                println!("START GROUP TESTS");
+                let mut mpc_affine = <MpcPairingEngine::<E, S> as PairingEngine>::G1Affine::rand(snarkvm_rng);
+                let mut mpc_projective = Into::<<MpcPairingEngine::<E, S> as PairingEngine>::G1Projective>::into(mpc_affine);
+                mpc_projective *= mpc_field;
+                mpc_projective += mpc_projective;
+                mpc_affine = mpc_projective.into();
+                mpc_affine.reveal();
+                println!("INTO, ADD, MUL SUCCEEDED");
+                // NOTE: 
+                // - our witness polynomial is incorrect, what happens to it? Only field operations? See `for MpcField`
+                // . - Are we even using ComField?
+                // . - Are we even using MulFieldGroup?
+                // . - Can we unimplemented! certain impls to see if they are used?
+                // - often, mul is not supported, but mulassign is
+                // - affine operations are not supported
+                
        
                 println!("START POLY TEST");
                 // NOTE: for now, its easier to test here because 1. it is not currently possible to test MPC features locally 2. it even compiles faster.

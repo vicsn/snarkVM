@@ -290,6 +290,11 @@ macro_rules! impl_basics_field {
                 Self::Public(<T as Uniform>::rand(rng))
             }
         }
+        impl<T: $bound, S: $share<T>> $wrap<T, S> {
+            pub fn rand_shared<R: Rng + ?Sized>(rng: &mut R) -> Self {
+                Self::Shared(<S as Uniform>::rand(rng))
+            }
+        }
         impl<'a, T: $bound, S: $share<T>> AddAssign<&'a $wrap<T, S>> for $wrap<T, S> {
             #[inline]
             fn add_assign(&mut self, other: &Self) {

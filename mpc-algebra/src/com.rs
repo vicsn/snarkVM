@@ -63,7 +63,7 @@ impl<Fr: PrimeField, S: FieldShare<Fr>> FromBits for MpcField<Fr, S> {
 
 // End of custom required trait implementations
 
-impl<Fr: PrimeField, S: FieldShare<Fr>>  ComField for MpcField<Fr, S> {
+impl<Fr: PrimeField, S: FieldShare<Fr>> ComField for MpcField<Fr, S> {
     type Commitment = (Vec<u8>, Vec<u8>);
     type Key = Vec<Vec<Vec<u8>>>;
     type OpeningProof = (
