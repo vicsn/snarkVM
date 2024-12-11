@@ -176,6 +176,10 @@ impl<F: Field> Reveal for SpdzFieldShare<F> {
 }
 
 impl<F: Field> FieldShare<F> for SpdzFieldShare<F> {
+    fn raw_share(&self) -> F {
+        self.sh.val
+    }
+
     fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<F> {
         let (s_vals, macs): (Vec<F>, Vec<F>) =
             selfs.into_iter().map(|s| (s.sh.val, s.mac.val)).unzip();

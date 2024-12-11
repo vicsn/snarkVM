@@ -419,7 +419,10 @@ impl<F: PrimeField, S: FieldShare<F>> PrimeField for MpcField<F, S> {
                 _marker: PhantomData,
             },
             MpcField::Shared(f) => {
-                unimplemented!("Shared field into BigInteger")
+                MpcBigInteger::<F, S, F::BigInteger>{
+                    val: f.raw_share().to_bigint(), // TODO: consider whether to use f.mac as well
+                    _marker: PhantomData,
+                }
             },
         }
     }

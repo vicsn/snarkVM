@@ -37,6 +37,8 @@ pub trait FieldShare<F: Field>:
         <Self as Reveal>::reveal(*self)
     }
 
+    fn raw_share(&self) -> F;
+
     fn map_homo<FF: Field, SS: FieldShare<FF>, Fun: Fn(F) -> FF>(self, f: Fun) -> SS {
         SS::from_add_shared(f(self.unwrap_as_public()))
     }

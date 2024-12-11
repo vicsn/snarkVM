@@ -188,6 +188,16 @@ impl<F: PrimeField, S: FieldShare<F>> Reveal for TestCircuit<MpcField<F, S>>
 {
     type Base = TestCircuit<F>;
     struct_reveal_simp_impl!(TestCircuit; a, b, num_constraints, num_variables, mul_depth);
+
+    fn king_share<R: rand::Rng>(b: Self::Base, rng: &mut R) -> Self {
+        TestCircuit {
+            a: Some(MpcField::<F, S>::king_share(b.a.unwrap(), rng)),
+            b: Some(MpcField::<F, S>::king_share(b.b.unwrap(), rng)),
+            num_constraints: b.num_constraints,
+            num_variables: b.num_variables,
+            mul_depth: b.mul_depth,
+        }
+    }
 }
 
 impl<E: PairingEngine, PS: PairingShare<E>> Reveal for CommitterKey<MpcPairingEngine<E, PS>>

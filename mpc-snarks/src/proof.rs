@@ -265,7 +265,7 @@ mod squarings {
                 let timer = start_timer!(|| _timer_label);
 
                 // MPC time
-                let mpc_circuit = TestCircuit::<MpcField<<E as PairingEngine>::Fr, S::FrShare>>::from_public(circuit); // TODO: we'll have to split among users.
+                let mpc_circuit = TestCircuit::<MpcField<<E as PairingEngine>::Fr, S::FrShare>>::king_share(circuit, snarkvm_rng); // TODO: we'll have to split among users.
                 let mpc_inputs = public_inputs.clone().into_iter().map(|x| MpcField::<<E as PairingEngine>::Fr, S::FrShare>::from_public(x)).collect::<Vec<_>>();
                 mpc_inputs.clone().reveal();
                 println!("mpc public_inputs: {:?}", mpc_inputs);
@@ -288,11 +288,11 @@ mod squarings {
                     println!("REVEALED w");
                     let _test = z_a.reveal();
                     println!("REVEALED z_a");
-                    let _test = oracle_test.polynomial.as_dense().unwrap().clone().reveal(); // TODO: revealing this fails.
+                    let _test = oracle_test.polynomial.as_dense().unwrap().clone().reveal();
                     println!("REVEALED oracle");
-                    let _test = comm_test.reveal(); // TODO: revealing this fails.
+                    let _test = comm_test.reveal();
                     println!("REVEALED commitment");
-                    proof.reveal() // TODO: revealing this fails.
+                    proof.reveal()
                 });
                 let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, public_inputs, &proof).unwrap();
                 assert!(result);

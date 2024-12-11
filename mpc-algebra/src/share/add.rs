@@ -117,11 +117,16 @@ impl<F: Field> Reveal for AdditiveFieldShare<F> {
 }
 
 impl<F: Field> FieldShare<F> for AdditiveFieldShare<F> {
+    fn raw_share(&self) -> F {
+        self.val
+    }
+
     fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<F> {
         let self_vec: Vec<F> = selfs.into_iter().map(|s| s.val).collect();
         let all_vals = Net::broadcast(&self_vec);
         (0..self_vec.len()).map(|i| all_vals.iter().map(|v| v[i]).sum()).collect()
     }
+
     fn add(&mut self, other: &Self) -> &mut Self {
         self.val += &other.val;
         self
@@ -553,6 +558,10 @@ impl<F: Field> Reveal for MulFieldShare<F> {
 }
 
 impl<F: Field> FieldShare<F> for MulFieldShare<F> {
+    fn raw_share(&self) -> F {
+        self.val
+    }
+
     fn map_homo<FF: Field, SS: FieldShare<FF>, Fun: Fn(F) -> FF>(self, _f: Fun) -> SS {
         unimplemented!()
     }
