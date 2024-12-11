@@ -4,10 +4,12 @@ use rand::Rng;
 
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{Field, PrimeField};
+use snarkvm_fields::poly_stub;
 use snarkvm_utilities::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
     CanonicalSerializeWithFlags, Flags, SerializationError, Compress, Uniform, FromBytes, ToBytes, Validate, Valid,
 };
+use std::collections::BTreeMap;
 
 
 use std::cmp::Ord;
@@ -21,7 +23,7 @@ use crate::channel::{can_cheat, MpcSerNet};
 
 use super::add::{AdditiveFieldShare, AdditiveProjectiveShare, AdditiveAffineShare, MulFieldShare};
 use crate::{
-    {DenseOrSparsePolynomial, DensePolynomial, ExtFieldShare, FieldShare},
+    {ExtFieldShare, FieldShare},
     {ProjectiveGroupShare, AffineGroupShare},
     {AffProjShare, PairingShare},
     BeaverSource,
@@ -225,9 +227,9 @@ impl<F: Field> FieldShare<F> for SpdzFieldShare<F> {
     }
 
     fn univariate_div_qr<'a>(
-        num: DenseOrSparsePolynomial<Self>,
-        den: DenseOrSparsePolynomial<F>,
-    ) -> Option<(DensePolynomial<Self>, DensePolynomial<Self>)> {
+        num: poly_stub::DenseOrSparsePolynomial<Self>,
+        den: poly_stub::DenseOrSparsePolynomial<F>,
+    ) -> anyhow::Result<(poly_stub::MpcDensePolynomial<Self>, poly_stub::MpcDensePolynomial<Self>)> {
         let (num_sh, num_mac) = match num {
             Ok(dense) => {
                 let (num_sh, num_mac): (Vec<_>, Vec<_>) =
@@ -235,7 +237,7 @@ impl<F: Field> FieldShare<F> for SpdzFieldShare<F> {
                 (Ok(num_sh), Ok(num_mac))
             }
             Err(sparse) => {
-                let (num_sh, num_mac): (Vec<_>, Vec<_>) = sparse
+                let (num_sh, num_mac): (BTreeMap<_,_>, BTreeMap<_,_>) = sparse
                     .into_iter()
                     .map(|(i, s)| ((i, s.sh), (i, s.mac)))
                     .unzip();
@@ -244,7 +246,7 @@ impl<F: Field> FieldShare<F> for SpdzFieldShare<F> {
         };
         let (q_sh, r_sh) = AdditiveFieldShare::univariate_div_qr(num_sh, den.clone()).unwrap();
         let (q_mac, r_mac) = AdditiveFieldShare::univariate_div_qr(num_mac, den).unwrap();
-        Some((
+        Ok((
             q_sh.into_iter()
                 .zip(q_mac)
                 .map(|(sh, mac)| Self { sh, mac })
@@ -658,11 +660,16 @@ impl<F: Field, S: PrimeField> Reveal for SpdzMulFieldShare<F, S> {
 }
 
 impl<F: Field, S: PrimeField> FieldShare<F> for SpdzMulFieldShare<F, S> {
+    fn raw_share(&self) -> F {
+        self.sh.val
+    }
+
     fn add(&mut self, _other: &Self) -> &mut Self {
         unimplemented!("add for SpdzMulFieldShare")
     }
 
     fn scale(&mut self, other: &F) -> &mut Self {
+        println!("SpdzMulFieldShare::scale");
         if Net::am_king() {
             self.sh.scale(other);
         }

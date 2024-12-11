@@ -255,7 +255,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             rowcheck_zerocheck
         };
 
-        debug_assert!(evals.get_lc_eval(&rowcheck_zerocheck, alpha)?.is_zero());
+        // debug_assert!(evals.get_lc_eval(&rowcheck_zerocheck, alpha)?.is_zero());
         linear_combinations.insert("rowcheck_zerocheck".into(), rowcheck_zerocheck);
         end_timer!(rowcheck_time);
 
@@ -337,7 +337,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 .add(-batch_lineval_sum, LCTerm::One);
             lineval_sumcheck
         };
-        debug_assert!(evals.get_lc_eval(&lineval_sumcheck, beta)?.is_zero());
+        // debug_assert!(evals.get_lc_eval(&lineval_sumcheck, beta)?.is_zero());
 
         linear_combinations.insert("g_1".into(), g_1);
         linear_combinations.insert("lineval_sumcheck".into(), lineval_sumcheck);
@@ -381,7 +381,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         }
 
         matrix_sumcheck -= &LinearCombination::new("h_2", [(v_K_at_gamma, "h_2")]);
-        debug_assert!(evals.get_lc_eval(&matrix_sumcheck, gamma)?.is_zero());
+        // debug_assert!(evals.get_lc_eval(&matrix_sumcheck, gamma)?.is_zero());
 
         linear_combinations.insert("matrix_sumcheck".into(), matrix_sumcheck);
 

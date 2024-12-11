@@ -153,16 +153,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let evals = EvaluationsOnDomain::from_vec_and_domain(evaluations, constraint_domain);
         let poly = evals.interpolate_with_pc_by_ref(&circuit.ifft_precomputation);
 
-        debug_assert!(
-            poly.evaluate_over_domain_by_ref(constraint_domain)
-                .evaluations
-                .into_iter()
-                .zip(&evals.evaluations)
-                .all(|(z, e)| *e == z),
-            "Label: {label}\n1: {:#?}\n2: {:#?}",
-            poly.evaluate_over_domain_by_ref(constraint_domain).evaluations,
-            &evals.evaluations,
-        );
+        // This doesn't work on secret-shared elements.
+        // debug_assert!(
+        //     poly.evaluate_over_domain_by_ref(constraint_domain)
+        //         .evaluations
+        //         .into_iter()
+        //         .zip(&evals.evaluations)
+        //         .all(|(z, e)| *e == z),
+        //     "Label: {label}\n1: {:#?}\n2: {:#?}",
+        //     poly.evaluate_over_domain_by_ref(constraint_domain).evaluations,
+        //     &evals.evaluations,
+        // );
 
         end_timer!(poly_time);
 

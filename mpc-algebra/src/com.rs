@@ -5,7 +5,7 @@ use sha2;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use snarkvm_utilities::{CanonicalSerialize, Compress, FromBits, ToBits};
 use snarkvm_fields::{FftField, PrimeField};
-use snarkvm_curves::MpcWire;
+use snarkvm_fields::MpcWire;
 
 use crate::channel;
 use crate::MpcField;

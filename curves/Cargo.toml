@@ -72,5 +72,5 @@ version = "0.8"
 rustc_version = "0.4"
 
 [features]
-default = [ "snarkvm-fields/default", "snarkvm-utilities/default" ]
+default = [ "snarkvm-fields/default", "snarkvm-utilities/default", "snarkvm-fields/serial" ]
 serial = [ "snarkvm-fields/serial" ]

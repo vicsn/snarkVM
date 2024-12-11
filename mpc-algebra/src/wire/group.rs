@@ -11,7 +11,7 @@ use snarkvm_utilities::{
     CanonicalSerializeWithFlags, Flags, SerializationError, FromBytes, ToBytes, Uniform, Compress, Validate, Valid,
 };
 use snarkvm_fields::{Zero, One};
-use snarkvm_curves::MpcWire;
+use snarkvm_fields::MpcWire;
 
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::{self, Read, Write};

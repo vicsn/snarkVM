@@ -17,7 +17,7 @@ use std::iter::{Product, Sum};
 use std::marker::PhantomData;
 use zeroize::Zeroize;
 
-use snarkvm_curves::MpcWire;
+use snarkvm_fields::MpcWire;
 use crate::{MpcProjectiveGroup, MpcAffineGroup};
 use crate::MpcField;
 use crate::FieldShare;

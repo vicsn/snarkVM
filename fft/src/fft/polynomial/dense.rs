@@ -17,7 +17,7 @@
 
 use super::PolyMultiplier;
 use crate::fft::{EvaluationDomain, Evaluations, Polynomial};
-use snarkvm_fields::{Field, PrimeField};
+use snarkvm_fields::{Field, PrimeField, poly_stub};
 use snarkvm_utilities::{cfg_iter_mut, serialize::*};
 
 use anyhow::Result;
@@ -41,6 +41,22 @@ pub struct DensePolynomial<F: Field> {
     pub coeffs: Vec<F>,
 }
 
+impl<F: Field> From<DensePolynomial<F>> for poly_stub::DensePolynomial<F> {
+    fn from(p: DensePolynomial<F>) -> Self {
+        Self {
+            coeffs: p.coeffs,
+        }
+    }
+}
+
+impl<F: Field> From<poly_stub::DensePolynomial<F>> for DensePolynomial<F> {
+    fn from(p: poly_stub::DensePolynomial<F>) -> Self {
+        Self {
+            coeffs: p.coeffs,
+        }
+    }
+}
+
 impl<F: Field> fmt::Debug for DensePolynomial<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         for (i, coeff) in self.coeffs.iter().enumerate().filter(|(_, c)| !c.is_zero()) {
@@ -57,6 +73,22 @@ impl<F: Field> fmt::Debug for DensePolynomial<F> {
 }
 
 impl<F: Field> DensePolynomial<F> {
+    /// Checks if the polynomial is (consistently) shared.
+    pub fn is_shared(&self) -> bool {
+        if self.coeffs.len() == 0 {
+            println!("is_shared backtrace: {:?}", std::backtrace::Backtrace::force_capture());
+            assert!(self.coeffs.len() > 0);
+        }
+        let all_is_shared = self.coeffs.iter().filter(|c| !c.is_zero()).map(|c| c.is_shared()).collect::<Vec<_>>();
+        let first_shared = all_is_shared[0];
+        for is_shared in &all_is_shared {
+            if *is_shared != first_shared {
+                panic!("Inconsistent sharing of DensePolynomial in {:?}", self);
+            }
+        }
+        first_shared
+    }
+
     /// Returns the zero polynomial.
     pub fn zero() -> Self {
         Self { coeffs: Vec::new() }

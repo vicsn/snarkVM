@@ -33,6 +33,7 @@ pub fn check_eq<T: CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Disp
                     break;
                 }
             }
+            // true
             result
         }
     })
@@ -287,12 +288,18 @@ macro_rules! impl_basics_field {
         }
         impl<T: $bound, S: $share<T>> Uniform for $wrap<T, S> {
             fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-                Self::Public(<T as Uniform>::rand(rng))
+                println!("Sampling shared field element");
+                Self::Shared(<S as Uniform>::rand(rng))
             }
         }
         impl<T: $bound, S: $share<T>> $wrap<T, S> {
             pub fn rand_shared<R: Rng + ?Sized>(rng: &mut R) -> Self {
                 Self::Shared(<S as Uniform>::rand(rng))
+            }
+        }
+        impl<T: $bound, S: $share<T>> $wrap<T, S> {
+            pub fn rand_public<R: Rng + ?Sized>(rng: &mut R) -> Self {
+                Self::Public(<T as Uniform>::rand(rng))
             }
         }
         impl<'a, T: $bound, S: $share<T>> AddAssign<&'a $wrap<T, S>> for $wrap<T, S> {

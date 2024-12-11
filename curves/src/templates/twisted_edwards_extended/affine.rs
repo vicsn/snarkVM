@@ -52,7 +52,7 @@ impl<P: Parameters> Affine<P> {
     }
 }
 
-impl<P: Parameters> crate::MpcWire for Affine<P> {
+impl<P: Parameters> snarkvm_fields::MpcWire for Affine<P> {
 }
 
 impl<P: Parameters> Zero for Affine<P> {

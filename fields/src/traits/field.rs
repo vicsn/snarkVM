@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{One, PrimeField, Zero};
+use crate::{One, PrimeField, Zero, poly_stub};
 use snarkvm_utilities::{
     FromBytes,
     ToBits,
@@ -90,6 +90,7 @@ pub trait Field:
     + CanonicalDeserializeWithFlags
     + Serialize
     + for<'a> Deserialize<'a>
+    + crate::MpcWire
 {
     type BasePrimeField: PrimeField;
 
@@ -175,4 +176,18 @@ pub trait Field:
     /// None. This function is primarily intended for sampling
     /// random field elements from a hash-function or RNG output.
     fn from_random_bytes_with_flags<F: Flags>(bytes: &[u8]) -> Option<(Self, F)>;
+
+    fn has_univariate_div_qr() -> bool {
+        false
+    }
+
+    fn univariate_div_qr<'a>(
+        _num: poly_stub::Polynomial<'a, Self>,
+        _den: poly_stub::Polynomial<'a, Self>,
+    ) -> anyhow::Result<(
+        poly_stub::DensePolynomial<Self>,
+        poly_stub::DensePolynomial<Self>,
+    )> {
+        panic!("No special division algorithm")
+    }
 }

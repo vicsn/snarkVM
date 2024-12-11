@@ -95,15 +95,16 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             eta_c,
         )?;
 
-        #[cfg(debug_assertions)]
-        {
-            let mut sumcheck_lhs = h_1.mul_by_vanishing_poly(max_variable_domain);
-            sumcheck_lhs += &x_g_1_sum;
-            debug_assert!(
-                sumcheck_lhs.evaluate_over_domain_by_ref(max_variable_domain).evaluations.into_iter().sum::<F>()
-                    == msg.sum(batch_combiners, *eta_b, *eta_c)
-            );
-        }
+        // Note: this only works if not secret sharing
+        // #[cfg(debug_assertions)]
+        // {
+        //     let mut sumcheck_lhs = h_1.mul_by_vanishing_poly(max_variable_domain);
+        //     sumcheck_lhs += &x_g_1_sum;
+        //     debug_assert!(
+        //         sumcheck_lhs.evaluate_over_domain_by_ref(max_variable_domain).evaluations.into_iter().sum::<F>()
+        //             == msg.sum(batch_combiners, *eta_b, *eta_c)
+        //     );
+        // }
 
         let g_1 = DensePolynomial::from_coefficients_slice(&x_g_1_sum.coeffs[1..]);
 
@@ -208,6 +209,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert_eq!(SM::ZK, mask_poly.is_some());
         assert_eq!(!SM::ZK, mask_poly.is_none());
         let mask_poly = &mask_poly.map_or(DensePolynomial::zero(), |p| p.polynomial().into_dense());
+        println!("mask_poly.is_shared(): {}", mask_poly.is_shared());
         let (mut h_1_mask, mut xg_1_mask) = mask_poly.divide_by_vanishing_poly(*max_variable_domain).unwrap();
         h_1_sum += &core::mem::take(&mut h_1_mask);
         xg_1_sum += &core::mem::take(&mut xg_1_mask);

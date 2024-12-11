@@ -140,6 +140,8 @@ mod tests {
         add r0.microcredits r1.microcredits into r2;
         output r2 as u64.public;").unwrap();
 
+        // TODO: add test that we can't generate a new record, but we have to call into credits.aleo
+
         // Deploy the program.
         let deployment = ledger.vm().deploy(&private_key, &program, None, 0, None, rng).unwrap();
         // Print the deployment cost.

@@ -16,7 +16,7 @@
 //! A sparse polynomial represented in coefficient form.
 
 use crate::fft::{EvaluationDomain, Evaluations, Polynomial};
-use snarkvm_fields::{Field, PrimeField};
+use snarkvm_fields::{Field, PrimeField, poly_stub};
 use snarkvm_utilities::serialize::*;
 
 use std::{collections::BTreeMap, fmt};
@@ -28,6 +28,22 @@ pub struct SparsePolynomial<F: Field> {
     /// The coefficient a_i of `x^i` is stored as (i, a_i) in `self.coeffs`.
     /// the entries in `self.coeffs` are sorted in increasing order of `i`.
     coeffs: BTreeMap<usize, F>,
+}
+
+impl<F: Field> From<SparsePolynomial<F>> for poly_stub::SparsePolynomial<F> {
+    fn from(p: SparsePolynomial<F>) -> Self {
+        Self {
+            coeffs: p.coeffs,
+        }
+    }
+}
+
+impl<F: Field> From<poly_stub::SparsePolynomial<F>> for SparsePolynomial<F> {
+    fn from(p: poly_stub::SparsePolynomial<F>) -> Self {
+        Self {
+            coeffs: p.coeffs,
+        }
+    }
 }
 
 impl<F: Field> fmt::Debug for SparsePolynomial<F> {
@@ -46,6 +62,19 @@ impl<F: Field> fmt::Debug for SparsePolynomial<F> {
 }
 
 impl<F: Field> SparsePolynomial<F> {
+    /// Checks if the polynomial is (consistently) shared.
+    pub fn is_shared(&self) -> bool {
+        assert!(self.coeffs.len() > 0);
+        let all_is_shared = self.coeffs.iter().filter(|c| !c.1.is_zero()).map(|c| c.1.is_shared()).collect::<Vec<_>>();
+        let first_shared = all_is_shared[0];
+        for is_shared in &all_is_shared {
+            if *is_shared != first_shared {
+                panic!("Inconsistent sharing of SparsePolynomial in {:?}", self);
+            }
+        }
+        first_shared
+    }
+
     /// Returns the zero polynomial.
     pub fn zero() -> Self {
         Self { coeffs: BTreeMap::new() }

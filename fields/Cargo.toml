@@ -73,6 +73,6 @@ path = "../curves"
 default-features = false
 
 [features]
-default = [ "snarkvm-utilities/default" ]
+default = [ "snarkvm-utilities/default", "serial" ]
 profiler = [ "aleo-std/profiler" ]
 serial = [ ]

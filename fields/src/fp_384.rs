@@ -178,6 +178,9 @@ impl<P: Fp384Parameters> One for Fp384<P> {
     }
 }
 
+impl<P: Fp384Parameters> crate::MpcWire for Fp384<P> {
+}
+
 impl<P: Fp384Parameters> Field for Fp384<P> {
     type BasePrimeField = Self;
 

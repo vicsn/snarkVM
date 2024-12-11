@@ -3,7 +3,7 @@ use derivative::Derivative;
 use rand::Rng;
 
 use snarkvm_curves::{AffineCurve, PairingEngine, ProjectiveCurve};
-use snarkvm_fields::Field;
+use snarkvm_fields::{Field, poly_stub};
 use snarkvm_utilities::bytes::{FromBytes, ToBytes};
 use snarkvm_utilities::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Compress, Flags, SerializationError, Uniform, Valid, Validate
@@ -20,9 +20,7 @@ use mpc_net::{MpcNet, MpcMultiNet as Net};
 use crate::channel::MpcSerNet;
 
 use crate::{
-    {
-        DenseOrSparsePolynomial, DensePolynomial, ExtFieldShare, FieldShare, SparsePolynomial
-    },
+    {ExtFieldShare, FieldShare},
     {ProjectiveGroupShare, AffineGroupShare},
     {AffProjShare, PairingShare},
     BeaverSource,
@@ -37,7 +35,7 @@ pub struct AdditiveFieldShare<T> {
 
 impl<F: Field> AdditiveFieldShare<F> {
     fn poly_share<'a>(
-        p: DenseOrSparsePolynomial<Self>,
+        p: poly_stub::DenseOrSparsePolynomial<Self>,
     ) -> snarkvm_fft::fft::Polynomial<'a, F> {
         match p {
             Ok(p) => snarkvm_fft::fft::Polynomial::Dense(Cow::Owned(
@@ -48,29 +46,29 @@ impl<F: Field> AdditiveFieldShare<F> {
             )),
         }
     }
-    fn d_poly_share(p: DensePolynomial<Self>) -> snarkvm_fft::fft::DensePolynomial<F> {
+    fn d_poly_share(p: poly_stub::MpcDensePolynomial<Self>) -> snarkvm_fft::fft::DensePolynomial<F> {
         snarkvm_fft::fft::DensePolynomial::from_coefficients_vec(
             p.into_iter().map(|s| s.val).collect(),
         )
     }
-    fn s_poly_share(p: SparsePolynomial<Self>) -> snarkvm_fft::fft::SparsePolynomial<F> {
+    fn s_poly_share(p: poly_stub::MpcSparsePolynomial<Self>) -> snarkvm_fft::fft::SparsePolynomial<F> {
         snarkvm_fft::fft::SparsePolynomial::from_coefficients(
             p.into_iter().map(|(i, s)| (i, s.val)),
         )
     }
     fn poly_share2<'a>(
-        p: DenseOrSparsePolynomial<F>,
+        p: poly_stub::DenseOrSparsePolynomial<F>,
     ) -> snarkvm_fft::fft::Polynomial<'a, F> {
         match p {
             Ok(p) => snarkvm_fft::fft::Polynomial::Dense(Cow::Owned(
                 snarkvm_fft::fft::DensePolynomial::from_coefficients_vec(p),
             )),
             Err(p) => snarkvm_fft::fft::Polynomial::Sparse(Cow::Owned(
-                snarkvm_fft::fft::SparsePolynomial::from_coefficients_slice(&p),
+                snarkvm_fft::fft::SparsePolynomial::from_coefficients_slice(&p.into_iter().collect::<Vec<_>>()),
             )),
         }
     }
-    fn d_poly_unshare(p: snarkvm_fft::fft::DensePolynomial<F>) -> DensePolynomial<Self> {
+    fn d_poly_unshare(p: snarkvm_fft::fft::DensePolynomial<F>) -> poly_stub::MpcDensePolynomial<Self> {
         p.coeffs
             .into_iter()
             .map(|s| Self::from_add_shared(s))
@@ -150,13 +148,13 @@ impl<F: Field> FieldShare<F> for AdditiveFieldShare<F> {
     }
 
     fn univariate_div_qr<'a>(
-        num: DenseOrSparsePolynomial<Self>,
-        den: DenseOrSparsePolynomial<F>,
-    ) -> Option<(DensePolynomial<Self>, DensePolynomial<Self>)> {
+        num: poly_stub::DenseOrSparsePolynomial<Self>,
+        den: poly_stub::DenseOrSparsePolynomial<F>,
+    ) -> anyhow::Result<(poly_stub::MpcDensePolynomial<Self>, poly_stub::MpcDensePolynomial<Self>)> {
         let num = Self::poly_share(num);
         let den = Self::poly_share2(den);
         let (q, r) = num.divide_with_q_and_r(&den).unwrap();
-        Some((Self::d_poly_unshare(q), Self::d_poly_unshare(r)))
+        Ok((Self::d_poly_unshare(q), Self::d_poly_unshare(r)))
     }
 }
 
@@ -517,6 +515,9 @@ impl_basics!(AdditiveFieldShare, Field);
 impl_basics_2_param!(AdditiveProjectiveShare, ProjectiveCurve);
 impl_basics_2_param!(AdditiveAffineShare, AffineCurve);
 
+// impl<F: Field> Field for AdditiveFieldShare<F> {
+// }
+
 #[derive(Debug, Derivative)]
 #[derivative(
     Default(bound = ""),
@@ -576,6 +577,7 @@ impl<F: Field> FieldShare<F> for MulFieldShare<F> {
     }
 
     fn scale(&mut self, other: &F) -> &mut Self {
+        println!("MulFieldShare::scale");
         if Net::am_king() {
             self.val *= other;
         }

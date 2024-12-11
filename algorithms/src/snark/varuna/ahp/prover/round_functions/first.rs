@@ -25,7 +25,7 @@ use crate::{
         witness_label,
     },
 };
-use snarkvm_fields::PrimeField;
+use snarkvm_fields::{PrimeField, MpcWire};
 use snarkvm_utilities::cfg_into_iter;
 
 use itertools::Itertools;
@@ -103,12 +103,18 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert!(SM::ZK);
         let mask_poly_time = start_timer!(|| "Computing mask polynomial");
         // We'll use the masking technique from Lunar (https://eprint.iacr.org/2020/1069.pdf, pgs 20-22).
+        // let mut h_1_mask = DensePolynomial::from_coefficients_vec((0..3).map(|_| F::rand(rng)).collect()); // selected arbitrarily.
         let h_1_mask = DensePolynomial::rand(3, rng).coeffs; // selected arbitrarily.
+        // println!("h_1_mask.is_shared(): {}", h_1_mask.is_shared());
         let h_1_mask = SparsePolynomial::from_coefficients(h_1_mask.into_iter().enumerate())
             .mul(&variable_domain.vanishing_polynomial());
+        // println!("h_1_mask.is_shared(): {}", h_1_mask.is_shared());
+        // TODO: perhaps multiplying a Shared by Public becomes Public...?
         assert_eq!(h_1_mask.degree(), variable_domain.size() + 3);
         // multiply g_1_mask by X
         let mut g_1_mask = DensePolynomial::rand(5, rng);
+        // println!("g_1_mask.is_shared(): {}", g_1_mask.is_shared());
+        // let mut g_1_mask = DensePolynomial::from_coefficients_vec((0..5).map(|_| F::rand(rng)).collect());
         g_1_mask.coeffs[0] = F::zero();
         let g_1_mask = SparsePolynomial::from_coefficients(
             g_1_mask.coeffs.into_iter().enumerate().filter(|(_, coeff)| !coeff.is_zero()),
@@ -116,7 +122,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let mut mask_poly = h_1_mask;
         mask_poly += &g_1_mask;
-        debug_assert!(variable_domain.elements().map(|z| mask_poly.evaluate(z)).sum::<F>().is_zero());
+        println!("mask_poly.is_shared(): {}", mask_poly.is_shared());
+        // This doesn't work on secret-shared elements.
+        // debug_assert!(variable_domain.elements().map(|z| mask_poly.evaluate(z)).sum::<F>().is_zero());
         assert_eq!(mask_poly.degree(), variable_domain.size() + 3);
         assert!(mask_poly.degree() <= 2 * variable_domain.size() + 2 * Self::zk_bound().unwrap() - 3);
 

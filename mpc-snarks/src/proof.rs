@@ -222,21 +222,25 @@ mod squarings {
                 // - affine operations are not supported
                 
        
-                println!("START POLY TEST");
+                println!("START POLY divide_with_q_and_r TEST");
                 // NOTE: for now, its easier to test here because 1. it is not currently possible to test MPC features locally 2. it even compiles faster.
-                // for a_degree in 0..5 {
-                //     for b_degree in 0..5 {
-                //         // NOTE: we creating shared field elements in Uniform::sample for MpcField. If we sample Public instead, then we still have issues.
-                //         // NOTE: for some sampling methods, values are combined using from_add_shared
-                //         // NOTE: if we change sampling methods to sample Public values, then polynomial division doesn't halt anymore. Consider looking at the co-snarks `divide_with_q_and_r` impl
-                //         let dividend = snarkvm_fft::DensePolynomial::<mpc_algebra::MpcField<Fr, mpc_algebra::SpdzFieldShare<Fr>>>::rand(a_degree, snarkvm_rng);
-                //         let divisor = snarkvm_fft::DensePolynomial::<mpc_algebra::MpcField<Fr, mpc_algebra::SpdzFieldShare<Fr>>>::rand(b_degree, snarkvm_rng);
-                //         let (quotient, remainder) =
-                //             snarkvm_fft::Polynomial::divide_with_q_and_r(&(&dividend).into(), &(&divisor).into()).unwrap();
-                //         assert_eq!(dividend, &(&divisor * &quotient) + &remainder)
-                //     }
-                // }
-                println!("START IMPL TEST");
+                for a_degree in 0..5 {
+                    for b_degree in 1..5 {
+                        // NOTE: we creating shared field elements in Uniform::sample for MpcField.
+                        // NOTE: for some sampling methods, values are combined using from_add_shared
+                        // NOTE: if we change sampling methods to sample Public values, then polynomial division doesn't halt anymore. Consider looking at the co-snarks `divide_with_q_and_r` impl
+                        type Fr<E, S> = <MpcPairingEngine::<E, S> as PairingEngine>::Fr;
+                        let dividend = snarkvm_fft::DensePolynomial::<Fr::<E, S>>::rand(a_degree, snarkvm_rng);
+                        let divisor_coeffs = (0..b_degree).map(|_| Fr::<E, S>::rand_public(snarkvm_rng)).collect::<Vec<_>>();
+                        let divisor = snarkvm_fft::DensePolynomial::<Fr::<E, S>>::from_coefficients_vec(divisor_coeffs);
+
+                        let (quotient, remainder) =
+                            snarkvm_fft::Polynomial::divide_with_q_and_r(&(&dividend).into(), &(&divisor).into()).unwrap();
+                        // assert_eq!(dividend, &(&divisor * &quotient) + &remainder);
+                        println!("POLY divide_with_q_and_r {a_degree}/{b_degree} SUCCEEDED");
+                    }
+                }
+                // return;
 
                 println!("START LOCAL TEST");
                

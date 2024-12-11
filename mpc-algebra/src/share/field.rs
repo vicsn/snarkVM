@@ -1,10 +1,7 @@
-use snarkvm_fields::Field;
-// use ark_ff::bytes::{FromBytes, ToBytes};
-// use ark_ff::prelude::*;
+use snarkvm_fields::{Field, poly_stub};
 use snarkvm_utilities::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, FromBytes, ToBytes, Uniform,
 };
-//use snarkvm_fft::fft::{DensePolynomial,Polynomial};
 use core::ops::*;
 use std::cmp::Ord;
 use std::fmt::{Debug, Display};
@@ -184,20 +181,16 @@ pub trait FieldShare<F: Field>:
     }
 
     fn univariate_div_qr<'a>(
-        _num: DenseOrSparsePolynomial<Self>,
-        _den: DenseOrSparsePolynomial<F>,
-    ) -> Option<(
-        DensePolynomial<Self>,
-        DensePolynomial<Self>,
+        _num: poly_stub::DenseOrSparsePolynomial<Self>,
+        _den: poly_stub::DenseOrSparsePolynomial<F>,
+    ) -> anyhow::Result<(
+        poly_stub::MpcDensePolynomial<Self>,
+        poly_stub::MpcDensePolynomial<Self>,
     )> {
         todo!("Implement generic poly div")
     }
 
 }
-
-pub type DensePolynomial<T> = Vec<T>;
-pub type SparsePolynomial<T> = Vec<(usize, T)>;
-pub type DenseOrSparsePolynomial<T> = Result<DensePolynomial<T>, SparsePolynomial<T>>;
 
 pub trait ExtFieldShare<F: Field>:
     Clone + Copy + Debug + 'static + Send + Sync + PartialEq + Eq

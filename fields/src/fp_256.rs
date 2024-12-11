@@ -144,6 +144,9 @@ impl<P: Fp256Parameters> One for Fp256<P> {
     }
 }
 
+impl<P: Fp256Parameters> crate::MpcWire for Fp256<P> {
+}
+
 impl<P: Fp256Parameters> Field for Fp256<P> {
     type BasePrimeField = Self;
 

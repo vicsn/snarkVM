@@ -3,11 +3,11 @@ use log::debug;
 use rand::Rng;
 use zeroize::Zeroize;
 
-use snarkvm_fields::{FftField, Field, One, PoseidonDefaultField, PoseidonParameters, PrimeField, SquareRootField, Zero};
+use snarkvm_fields::{FftField, Field, One, PoseidonDefaultField, PoseidonParameters, PrimeField, SquareRootField, Zero, poly_stub};
 use snarkvm_utilities::{
     BigInteger, CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Compress, Flags, FromBytes, SerializationError, ToBytes, Uniform, Valid, Validate
 };
-use snarkvm_curves::MpcWire;
+use snarkvm_fields::MpcWire;
 use crate::{FieldShare, BeaverSource, Reveal};
 use crate::MpcBigInteger;
 use crate::MpcFrParameters;
@@ -106,14 +106,17 @@ impl<T: Field, S: FieldShare<T>> MpcField<T, S> {
 impl<'a, T: Field, S: FieldShare<T>> MulAssign<&'a MpcField<T, S>> for MpcField<T, S> {
     #[inline]
     fn mul_assign(&mut self, other: &Self) {
+        // println!("MpcField::mul_assign");
         match self {
             // for some reason, a two-stage match (rather than a tuple match) avoids moving
             // self
             MpcField::Public(x) => match other {
                 MpcField::Public(y) => {
+                    // println!("MpcField::mul_assign::Public::Public");
                     *x *= y;
                 }
                 MpcField::Shared(y) => {
+                    // println!("MpcField::mul_assign::Public::Shared");
                     let mut t = *y;
                     t.scale(x);
                     *self = MpcField::Shared(t);
@@ -121,9 +124,11 @@ impl<'a, T: Field, S: FieldShare<T>> MulAssign<&'a MpcField<T, S>> for MpcField<
             },
             MpcField::Shared(x) => match other {
                 MpcField::Public(y) => {
+                    // println!("MpcField::mul_assign::Shared::Public");
                     x.scale(y);
                 }
                 MpcField::Shared(y) => {
+                    // println!("MpcField::mul_assign::Shared::Shared");
                     let t = x.mul(*y, &mut DummyFieldTripleSource::default());
                     *self = MpcField::Shared(t);
                 }
@@ -379,6 +384,47 @@ impl<F: PrimeField, S: FieldShare<F>> Field for MpcField<F, S> {
     #[inline]
     fn frobenius_map(&mut self, _: usize) {
         unimplemented!("frobenius_map")
+    }
+    fn has_univariate_div_qr() -> bool {
+        true
+    }
+    fn univariate_div_qr<'a>(
+        num: poly_stub::Polynomial<Self>,
+        den: poly_stub::Polynomial<Self>,
+    ) -> anyhow::Result<(
+        poly_stub::DensePolynomial<Self>,
+        poly_stub::DensePolynomial<Self>,
+    )> {
+        let shared_num = match num {
+            poly_stub::Polynomial::DPolynomial(d) => Ok(d.into_owned().coeffs.into_iter().filter_map(|c| (!c.is_zero()).then(||match c {
+                MpcField::Shared(s) => s,
+                MpcField::Public(_) => panic!("public numerator - backtrace: {}", std::backtrace::Backtrace::force_capture()),
+            })).collect()),
+            poly_stub::Polynomial::SPolynomial(d) => Err(d.into_owned().coeffs.into_iter().filter_map(|(i, c)| (!c.is_zero()).then(||match c {
+                MpcField::Shared(s) => (i, s),
+                MpcField::Public(_) => panic!("public numerator - backtrace: {}", std::backtrace::Backtrace::force_capture()),
+            })).collect()),
+        };
+        let pub_denom = match den {
+            poly_stub::Polynomial::DPolynomial(d) => Ok(d.into_owned().coeffs.into_iter().map(|c| match c {
+                MpcField::Public(s) => s,
+                MpcField::Shared(_) => panic!("shared denominator"),
+            }).collect()),
+            poly_stub::Polynomial::SPolynomial(d) => Err(d.into_owned().coeffs.into_iter().map(|(i, c)| match c {
+                MpcField::Public(s) => (i, s),
+                MpcField::Shared(_) => panic!("shared denominator"),
+            }).collect()),
+        };
+        S::univariate_div_qr(shared_num, pub_denom).map(|(q, r)| {
+            (
+                poly_stub::DensePolynomial {
+                    coeffs: q.into_iter().map(|qc| MpcField::Shared(qc)).collect(),
+                },
+                poly_stub::DensePolynomial {
+                    coeffs: r.into_iter().map(|rc| MpcField::Shared(rc)).collect(),
+                },
+            )
+        })
     }
 }
 

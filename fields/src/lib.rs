@@ -15,6 +15,7 @@
 
 #![allow(clippy::module_inception)]
 #![forbid(unsafe_code)]
+#![feature(associated_type_defaults)]
 
 #[macro_use]
 extern crate thiserror;
@@ -41,6 +42,8 @@ pub use fp12_2over3over2::*;
 
 mod legendre;
 pub use legendre::*;
+
+pub mod poly_stub;
 
 mod to_field_vec;
 #[allow(unused_imports)]

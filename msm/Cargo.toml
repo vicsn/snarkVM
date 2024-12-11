@@ -155,7 +155,8 @@ default = [
   "full",
   "snarkvm-curves/default",
   "snarkvm-fields/default",
-  "snarkvm-utilities/default"
+  "snarkvm-utilities/default",
+  "serial",
 ]
 full = [ ]
 profiler = [ "aleo-std/profiler" ]

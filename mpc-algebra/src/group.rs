@@ -15,7 +15,7 @@ use std::iter::Sum;
 use std::marker::PhantomData;
 use zeroize::Zeroize;
 
-use snarkvm_curves::MpcWire;
+use snarkvm_fields::MpcWire;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MulFieldGroup<F: Field, S: PrimeField> {
@@ -144,6 +144,7 @@ impl<T: Field, S: PrimeField> Default for MulFieldGroup<T, S> {
 }
 impl<T: Field, S: PrimeField> MulAssign<S> for MulFieldGroup<T, S> {
     fn mul_assign(&mut self, other: S) {
+        println!("MulFieldGroup::mul_assign");
         self.val = self.val.pow(other.to_bigint());
     }
 }

@@ -27,6 +27,9 @@ pub use field::*;
 mod field_parameters;
 pub use field_parameters::*;
 
+pub mod mpc_wire;
+pub use mpc_wire::*;
+
 mod poseidon_grain_lfsr;
 pub use poseidon_grain_lfsr::*;
 

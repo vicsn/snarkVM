@@ -17,7 +17,7 @@
 
 use crate::fft::{EvaluationDomain, Evaluations};
 use Polynomial::*;
-use snarkvm_fields::{Field, PrimeField};
+use snarkvm_fields::{Field, PrimeField, poly_stub};
 use snarkvm_utilities::{SerializationError, cfg_iter_mut, serialize::*};
 
 use anyhow::{Result, ensure};
@@ -42,6 +42,28 @@ pub enum Polynomial<'a, F: Field> {
     Sparse(Cow<'a, SparsePolynomial<F>>),
     /// Represents the case where `self` is a dense polynomial
     Dense(Cow<'a, DensePolynomial<F>>),
+}
+
+impl<'a, F: Field> From<Polynomial<'a, F>> for poly_stub::Polynomial<'a, F>
+{
+    fn from(p: Polynomial<'a, F>) -> Self {
+        use Polynomial::*;
+        match p {
+            Sparse(s) => Self::SPolynomial(Cow::Owned(s.into_owned().into())),
+            Dense(s) => Self::DPolynomial(Cow::Owned(s.into_owned().into())),
+        }
+    }
+}
+
+impl<'a, F: Field> From<poly_stub::Polynomial<'a, F>> for Polynomial<'a, F>
+{
+    fn from(p: poly_stub::Polynomial<'a, F>) -> Self {
+        use poly_stub::Polynomial::*;
+        match p {
+            SPolynomial(s) => Self::Sparse(Cow::Owned(s.into_owned().into())),
+            DPolynomial(s) => Self::Dense(Cow::Owned(s.into_owned().into())),
+        }
+    }
 }
 
 impl<'a, F: Field> CanonicalSerialize for Polynomial<'a, F> {
@@ -137,6 +159,14 @@ impl<F: Field> TryInto<SparsePolynomial<F>> for Polynomial<'_, F> {
 }
 
 impl<'a, F: Field> Polynomial<'a, F> {
+    /// Checks if the polynomial is (consistently) shared.
+    fn is_shared(&self) -> bool {
+        match self {
+            Dense(x) => x.is_shared(),
+            Sparse(x) => x.is_shared(),
+        }
+    }
+
     /// The zero polynomial.
     pub fn zero() -> Self {
         Sparse(Cow::Owned(SparsePolynomial::zero()))
@@ -221,11 +251,15 @@ impl<'a, F: Field> Polynomial<'a, F> {
     /// Divide self by another (sparse or dense) polynomial, and returns the quotient and remainder.
     pub fn divide_with_q_and_r(&self, divisor: &Self) -> Result<(DensePolynomial<F>, DensePolynomial<F>)> {
         ensure!(!divisor.is_zero(), "Dividing by zero polynomial is undefined");
-
-        // TODO: collaborative-snarks library has different contents.
+        assert!(!divisor.is_shared());
 
         if self.is_zero() {
             Ok((DensePolynomial::zero(), DensePolynomial::zero()))
+        } else if self.is_shared() {
+            // New logic from collaborative-zksnark library.
+            assert!(F::has_univariate_div_qr(), "No poly share division alg");
+            F::univariate_div_qr(self.clone().into(), divisor.clone().into())
+                .map(|(a, b)| (a.into(), b.into()))
         } else if self.degree() < divisor.degree() {
             Ok((DensePolynomial::zero(), self.clone().into()))
         } else {
@@ -235,6 +269,7 @@ impl<'a, F: Field> Polynomial<'a, F> {
             // Can unwrap here because we know self is not zero.
             let divisor_leading_inv = divisor.leading_coefficient().unwrap().inverse().unwrap();
             while !remainder.is_zero() && remainder.degree() >= divisor.degree() {
+                println!("trying to divide");
                 let cur_q_coeff = *remainder.coeffs.last().unwrap() * divisor_leading_inv;
                 let cur_q_degree = remainder.degree() - divisor.degree();
                 quotient[cur_q_degree] = cur_q_coeff;

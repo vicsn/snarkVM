@@ -226,6 +226,9 @@ impl<P: Fp12Parameters> One for Fp12<P> {
     }
 }
 
+impl<P: Fp12Parameters> crate::MpcWire for Fp12<P> {
+}
+
 impl<P: Fp12Parameters> Field for Fp12<P> {
     type BasePrimeField = <Fp6<P::Fp6Params> as Field>::BasePrimeField;
 
