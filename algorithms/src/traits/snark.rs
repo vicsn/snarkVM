@@ -76,7 +76,7 @@ pub trait SNARK {
         proving_key: &Self::ProvingKey,
         constraints: &C,
         rng: &mut R,
-    ) -> Result<(Self::Proof, Self::KZGCommitment, crate::polycommit::sonic_pc::LabeledPolynomial<Self::ScalarField>)> {
+    ) -> Result<(Self::Proof, Self::KZGCommitment, crate::polycommit::sonic_pc::LabeledPolynomial<Self::ScalarField>, Vec<Vec<Self::ScalarField>>, Vec<Vec<Self::ScalarField>>)> {
         let mut keys_to_constraints = BTreeMap::new();
         keys_to_constraints.insert(proving_key, std::slice::from_ref(constraints));
         Self::prove_batch(universal_prover, fs_parameters, &keys_to_constraints, rng)
@@ -87,7 +87,7 @@ pub trait SNARK {
         fs_parameters: &Self::FSParameters,
         keys_to_constraints: &BTreeMap<&Self::ProvingKey, &[C]>,
         rng: &mut R,
-    ) -> Result<(Self::Proof, Self::KZGCommitment, crate::polycommit::sonic_pc::LabeledPolynomial<Self::ScalarField>)>;
+    ) -> Result<(Self::Proof, Self::KZGCommitment, crate::polycommit::sonic_pc::LabeledPolynomial<Self::ScalarField>, Vec<Vec<Self::ScalarField>>, Vec<Vec<Self::ScalarField>>)>;
 
     fn verify_vk<C: ConstraintSynthesizer<Self::ScalarField>>(
         universal_verifier: &Self::UniversalVerifier,

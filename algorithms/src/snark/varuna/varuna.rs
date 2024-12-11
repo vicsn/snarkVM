@@ -340,7 +340,7 @@ where
         fs_parameters: &Self::FSParameters,
         keys_to_constraints: &BTreeMap<&CircuitProvingKey<E, SM>, &[C]>,
         zk_rng: &mut R,
-    ) -> Result<(Self::Proof, Self::KZGCommitment, crate::polycommit::sonic_pc::LabeledPolynomial<Self::ScalarField>)> {
+    ) -> Result<(Self::Proof, Self::KZGCommitment, crate::polycommit::sonic_pc::LabeledPolynomial<Self::ScalarField>, Vec<Vec<Self::ScalarField>>, Vec<Vec<Self::ScalarField>>)> {
         let prover_time = start_timer!(|| "Varuna::Prover");
         if keys_to_constraints.is_empty() {
             bail!(SNARKError::EmptyBatch);
@@ -351,6 +351,9 @@ where
             circuits_to_constraints.insert(pk.circuit.deref(), *constraints);
         }
         let prover_state = AHPForR1CS::<_, SM>::init_prover(&circuits_to_constraints, zk_rng)?;
+
+        let return_z_a = prover_state.circuit_specific_states.iter().next().unwrap().1.z_a.clone().unwrap();
+        let return_private_variables = prover_state.circuit_specific_states.iter().next().unwrap().1.private_variables.clone();
 
         // extract information from the prover key and state to consume in further calculations
         let mut batch_sizes = BTreeMap::new();
@@ -622,7 +625,7 @@ where
         ensure!(proof.pc_proof.is_hiding() == SM::ZK);
 
         end_timer!(prover_time);
-        Ok((proof, commitment_return_test, oracle_return_test))
+        Ok((proof, commitment_return_test, oracle_return_test, return_z_a, return_private_variables))
     }
 
     /// This is the main entrypoint for verifying proofs.

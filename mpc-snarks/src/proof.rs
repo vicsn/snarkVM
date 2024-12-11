@@ -133,6 +133,10 @@ mod squarings {
                 mpc_field += mpc_field + mpc_field_2;
                 mpc_field += mpc_field_2 + mpc_field;
                 mpc_field += mpc_field_2 + mpc_field_2;
+                mpc_field += &(mpc_field + &mpc_field);
+                mpc_field += &(mpc_field + &mpc_field_2);
+                mpc_field += &(mpc_field_2 + &mpc_field);
+                mpc_field += &(mpc_field_2 + &mpc_field_2);
                 mpc_field.reveal();
                 println!("ADD SUCCEEDED");
                 let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng);
@@ -141,6 +145,10 @@ mod squarings {
                 mpc_field *= mpc_field * mpc_field_2;
                 mpc_field *= mpc_field_2 * mpc_field;
                 mpc_field *= mpc_field_2 * mpc_field_2;
+                mpc_field_2.mul_assign(&mpc_field);
+                mpc_field.mul_assign(mpc_field);
+                mpc_field.mul_assign(mpc_field_2);
+                mpc_field.mul_assign(&mpc_field_2);
                 mpc_field.reveal();
                 println!("MUL SUCCEEDED");
                 let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng);
@@ -180,13 +188,20 @@ mod squarings {
                 let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::from_bigint(mpc_bigint).unwrap();
                 mpc_field.reveal();
                 println!("BIGINT SUCCEEDED");
-                let evals = (0..4).map(|_| <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng)).collect::<Vec<_>>();
+                let mut evals = (0..128).map(|_| <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng)).collect::<Vec<_>>();
                 let evaluation_domain = snarkvm_fft::EvaluationDomain::new(evals.len()).unwrap();
                 let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals.clone(), evaluation_domain).interpolate();
                 let _ = poly.reveal();
                 let fft_precomputation = evaluation_domain.precompute_fft();
                 let ifft_precomputation = fft_precomputation.to_ifft_precomputation();
-                let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals, evaluation_domain).interpolate_with_pc(&ifft_precomputation);
+                let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals.clone(), evaluation_domain).interpolate_with_pc(&ifft_precomputation);
+                let _ = poly.reveal();
+                evaluation_domain.in_order_fft_in_place_with_pc(&mut evals, &fft_precomputation);
+                let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals.clone(), evaluation_domain).interpolate_with_pc(&ifft_precomputation);
+                let _ = poly.reveal();
+                let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals.clone(), evaluation_domain).interpolate();
+                let input_domain = snarkvm_fft::EvaluationDomain::new(8).unwrap();
+                let (poly, remainder) = poly.divide_by_vanishing_poly(input_domain).unwrap();
                 let _ = poly.reveal();
                 println!("FFT SUCCEEDED");
     
@@ -266,8 +281,13 @@ mod squarings {
                 MpcMultiNet::reset_stats();
                 let snarkvm_rng = &mut TestRng::default();
                 let proof = channel::without_cheating(|| {
-                    let (proof, comm_test, oracle_test) = MpcVarunaInst::prove(&mpc_universal_prover, &mpc_fs_pp, &mpc_pk, &mpc_circuit, snarkvm_rng).unwrap();
+                    let (proof, comm_test, oracle_test, z_a, w) = MpcVarunaInst::prove(&mpc_universal_prover, &mpc_fs_pp, &mpc_pk, &mpc_circuit, snarkvm_rng).unwrap();
                     println!("CREATED MPC Proof");
+                    println!("w[0].len(): {:?}", w[0].len());
+                    let _test = w.reveal();
+                    println!("REVEALED w");
+                    let _test = z_a.reveal();
+                    println!("REVEALED z_a");
                     let _test = oracle_test.polynomial.as_dense().unwrap().clone().reveal(); // TODO: revealing this fails.
                     println!("REVEALED oracle");
                     let _test = comm_test.reveal(); // TODO: revealing this fails.

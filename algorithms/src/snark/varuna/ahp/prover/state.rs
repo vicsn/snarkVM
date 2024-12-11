@@ -42,11 +42,11 @@ pub struct CircuitSpecificState<F: PrimeField> {
 
     /// The list of private variables for each instance in the batch.
     /// The length of this list must be equal to the batch size.
-    pub(super) private_variables: Vec<Vec<F>>,
+    pub private_variables: Vec<Vec<F>>,
 
     /// The list of Az vectors for each instance in the batch.
     /// The length of this list must be equal to the batch size.
-    pub(super) z_a: Option<Vec<Vec<F>>>,
+    pub z_a: Option<Vec<Vec<F>>>,
 
     /// The list of Bz vectors for each instance in the batch.
     /// The length of this list must be equal to the batch size.
