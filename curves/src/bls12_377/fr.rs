@@ -195,14 +195,14 @@ impl FieldParameters for FrParameters {
 }
 
 impl PoseidonDefaultParameters for FrParameters {
-    const PARAMS_OPT_FOR_CONSTRAINTS: [PoseidonDefaultParametersEntry; 7] = [
-        PoseidonDefaultParametersEntry::new(2, 17, 8, 31, 0),
-        PoseidonDefaultParametersEntry::new(3, 17, 8, 31, 0),
-        PoseidonDefaultParametersEntry::new(4, 17, 8, 31, 0),
-        PoseidonDefaultParametersEntry::new(5, 17, 8, 31, 0),
-        PoseidonDefaultParametersEntry::new(6, 17, 8, 31, 0),
-        PoseidonDefaultParametersEntry::new(7, 17, 8, 31, 0),
-        PoseidonDefaultParametersEntry::new(8, 17, 8, 31, 0),
+    const PARAMS_OPT_FOR_CONSTRAINTS: [&'static PoseidonDefaultParametersEntry; 7] = [
+        &PoseidonDefaultParametersEntry::new(2, 17, 8, 31, 0),
+        &PoseidonDefaultParametersEntry::new(3, 17, 8, 31, 0),
+        &PoseidonDefaultParametersEntry::new(4, 17, 8, 31, 0),
+        &PoseidonDefaultParametersEntry::new(5, 17, 8, 31, 0),
+        &PoseidonDefaultParametersEntry::new(6, 17, 8, 31, 0),
+        &PoseidonDefaultParametersEntry::new(7, 17, 8, 31, 0),
+        &PoseidonDefaultParametersEntry::new(8, 17, 8, 31, 0),
     ];
 }
 

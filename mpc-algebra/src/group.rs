@@ -189,6 +189,3 @@ impl_mul_ref_ops!(
     MulFieldGroup
 );
 
-// impl<T: Field, S: PrimeField> Group for MulFieldGroup<T, S> {
-//     type ScalarField = S;
-// }

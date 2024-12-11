@@ -118,7 +118,7 @@ pub trait PoseidonDefaultParameters {
     ///
     /// Here, `skip_matrices` denote how many matrices to skip before
     /// finding one that satisfy all the requirements.
-    const PARAMS_OPT_FOR_CONSTRAINTS: [PoseidonDefaultParametersEntry; 7];
+    const PARAMS_OPT_FOR_CONSTRAINTS: [&'static PoseidonDefaultParametersEntry; 7];
 }
 
 /// An entry in the default Poseidon parameters

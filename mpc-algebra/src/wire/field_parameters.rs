@@ -20,7 +20,6 @@ pub struct MpcFrParameters<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> MpcFpParameters<F, S, T> for MpcFrParameters<F, S, T> {}
 
 // Copy of bls12_377::FrParameters
-// TODO: consider BigInteger = T  
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger + 'static> FftParameters for MpcFrParameters<F, S, T> {
     type BigInteger = MpcBigInteger<F, S, T>;
 
@@ -70,7 +69,7 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger + 'static> 
     }
 
     #[rustfmt::skip]
-    const TWO_ADICITY: u32 = 47;
+    const TWO_ADICITY: u32 = <<F as PrimeField>::Parameters as FftParameters>::TWO_ADICITY;
     /// TWO_ADIC_ROOT_OF_UNITY = 8065159656716812877374967518403273466521432693661810619979959746626482506078
     /// Encoded in Montgomery form, the value is
     /// (8065159656716812877374967518403273466521432693661810619979959746626482506078 * R % q) =
@@ -103,7 +102,7 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> FieldParam
         _marker: PhantomData, 
     };
     #[rustfmt::skip]
-    const MODULUS_BITS: u32 = 253;
+    const MODULUS_BITS: u32 = <<F as PrimeField>::Parameters as FieldParameters>::MODULUS_BITS;
     /// (r - 1)/2 =
     /// 4222230874714185212124412469390773265687949667577031913967616727958704619520
     #[rustfmt::skip]
@@ -122,7 +121,7 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> FieldParam
         _marker: PhantomData, 
     };
     #[rustfmt::skip]
-    const REPR_SHAVE_BITS: u32 = 3;
+    const REPR_SHAVE_BITS: u32 = <<F as PrimeField>::Parameters as FieldParameters>::REPR_SHAVE_BITS;
     // T and T_MINUS_ONE_DIV_TWO, where r - 1 = 2^s * t
 
     /// t = (r - 1) / 2^s =
@@ -143,14 +142,14 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> FieldParam
 
 // Copy of bls12_377::FrParameters
 impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> PoseidonDefaultParameters for MpcFrParameters<F, S, T> {
-    const PARAMS_OPT_FOR_CONSTRAINTS: [PoseidonDefaultParametersEntry; 7] = [
-        PoseidonDefaultParametersEntry::new(2, 17, 8, 31, 0),
-        PoseidonDefaultParametersEntry::new(3, 17, 8, 31, 0),
-        PoseidonDefaultParametersEntry::new(4, 17, 8, 31, 0),
-        PoseidonDefaultParametersEntry::new(5, 17, 8, 31, 0),
-        PoseidonDefaultParametersEntry::new(6, 17, 8, 31, 0),
-        PoseidonDefaultParametersEntry::new(7, 17, 8, 31, 0),
-        PoseidonDefaultParametersEntry::new(8, 17, 8, 31, 0),
+    const PARAMS_OPT_FOR_CONSTRAINTS: [&'static PoseidonDefaultParametersEntry; 7] = [
+        &<<F as PrimeField>::Parameters as PoseidonDefaultParameters>::PARAMS_OPT_FOR_CONSTRAINTS[0],
+        &<<F as PrimeField>::Parameters as PoseidonDefaultParameters>::PARAMS_OPT_FOR_CONSTRAINTS[1],
+        &<<F as PrimeField>::Parameters as PoseidonDefaultParameters>::PARAMS_OPT_FOR_CONSTRAINTS[2],
+        &<<F as PrimeField>::Parameters as PoseidonDefaultParameters>::PARAMS_OPT_FOR_CONSTRAINTS[3],
+        &<<F as PrimeField>::Parameters as PoseidonDefaultParameters>::PARAMS_OPT_FOR_CONSTRAINTS[4],
+        &<<F as PrimeField>::Parameters as PoseidonDefaultParameters>::PARAMS_OPT_FOR_CONSTRAINTS[5],
+        &<<F as PrimeField>::Parameters as PoseidonDefaultParameters>::PARAMS_OPT_FOR_CONSTRAINTS[6],
     ];
 }
 
@@ -171,14 +170,15 @@ impl<F: PrimeField<BigInteger = T>, S: FieldShare<F>, T: _BigInteger> Default fo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snarkvm_curves::bls12_377::Fr; // TODO: try all fields
+    use snarkvm_curves::bls12_377::Fr;
+    use snarkvm_curves::bls12_377::Fq;
     // use snarkvm_curves::bls12_377::FqParameters;
     // mpc_algebra::share::spdz::SpdzPairingShare<E>::FqShare : FieldShare<Fq>
     // type MpcFrParametersInst = MpcFrParameters<Fq, FieldShare<Fq>, _BigInteger>;
     use snarkvm_fields::{FftField, Field, PrimeField};
 
     #[test]
-    fn test_powers_of_root_of_unity() {
+    fn test_powers_of_root_of_unity_fr() {
         let two = Fr::from(2u8); // TODO: should we be supporting Fq?
 
         // Compute the expected powers of root of unity.
@@ -202,9 +202,38 @@ mod tests {
     }
 
     #[test]
+    fn test_powers_of_root_of_unity_fq() {
+        let two = Fq::from(2u8); // TODO: should we be supporting Fq?
+
+        // Compute the expected powers of root of unity.
+        let root_of_unity = Fq::two_adic_root_of_unity();
+        // TODO: does the choice of *FieldShare matter? Should we try all of them?
+        let powers = (0..MpcFrParameters::<Fq, crate::SpdzFieldShare<Fq>, _>::TWO_ADICITY - 1)
+            .map(|i| root_of_unity.pow(two.pow(Fr::from(i as u64).to_bigint()).to_bigint()))
+            .collect::<Vec<_>>();
+        assert_eq!(powers[0], Fq::two_adic_root_of_unity());
+
+        // Ensure the correct number of powers of root of unity are present.
+        assert_eq!(MpcFrParameters::<Fq, crate::SpdzFieldShare<Fq>, _>::POWERS_OF_ROOTS_OF_UNITY().len() as u64, (MpcFrParameters::<Fq, crate::SpdzFieldShare<Fq>, _>::TWO_ADICITY - 1) as u64);
+        assert_eq!(MpcFrParameters::<Fq, crate::SpdzFieldShare<Fq>, _>::POWERS_OF_ROOTS_OF_UNITY().len(), powers.len());
+
+        // Ensure the expected and candidate powers match.
+        for (expected, candidate) in powers.iter().zip(MpcFrParameters::<Fq, crate::SpdzFieldShare<Fq>, _>::POWERS_OF_ROOTS_OF_UNITY()) {
+            // println!("BigInteger({:?}),", expected.0.0);
+            println!("{:?} =?= {:?}", expected.0, candidate);
+            assert_eq!(expected.0, candidate.val);
+        }
+    }
+
+    #[test]
     fn test_two_adic_root_of_unity() {
-        // TODO: is this the right BigInteger type?
         let expected = Fr::multiplicative_generator().pow::<snarkvm_utilities::BigInteger256>(MpcFrParameters::<Fr, crate::SpdzFieldShare<Fr>, _>::T.val);
         assert_eq!(expected, Fr::two_adic_root_of_unity());
+    }
+
+    #[test]
+    fn test_two_adic_root_of_unity_fq() {
+        let expected = Fq::multiplicative_generator().pow::<snarkvm_utilities::BigInteger384>(MpcFrParameters::<Fq, crate::SpdzFieldShare<Fq>, _>::T.val);
+        assert_eq!(expected, Fq::two_adic_root_of_unity());
     }
 }
