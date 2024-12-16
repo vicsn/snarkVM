@@ -107,6 +107,14 @@ impl<P: Fp2Parameters> crate::MpcWire for Fp2<P> {
 impl<P: Fp2Parameters> Field for Fp2<P> {
     type BasePrimeField = P::Fp;
 
+    fn zero_shared() -> Self {
+        Self::zero()
+    }
+
+    fn one_shared() -> Self {
+        Self::one()
+    }
+
     fn from_base_prime_field(other: Self::BasePrimeField) -> Self {
         Self::new(other, P::Fp::zero())
     }

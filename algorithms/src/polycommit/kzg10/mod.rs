@@ -110,7 +110,8 @@ impl<E: PairingEngine> KZG10<E> {
 
         let mut commitment = match polynomial {
             Polynomial::Dense(polynomial) => {
-                let (num_leading_zeros, bigint_coeffs) = skip_leading_zeros_and_convert_to_bigints(polynomial);
+                // let (num_leading_zeros, bigint_coeffs) = skip_leading_zeros_and_convert_to_bigints(polynomial);
+                let num_leading_zeros = polynomial.coeffs.iter().take_while(|c| c.is_zero()).count();
                 // for coeff in plain_coeffs.iter() {
                 //     println!("coeff.is_shared: {:?}", coeff.is_shared());
                 // }
@@ -119,25 +120,31 @@ impl<E: PairingEngine> KZG10<E> {
                 let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + plain_coeffs.len())];
 
                 let msm_time = start_timer!(|| "MSM to compute commitment to plaintext poly");
-                // <E::G1Affine as MpcAffineGroup>::msm
-                // msm(<E::G1Affine as MpcAffineGroup>,
-
-                // let mut commitment = <E::G1Affine as AffineCurve>::msm(
-                //     &bases,
-                //     &plain_coeffs,
-                // );
-                let commitment = VariableBase::msm(bases, &bigint_coeffs);
+                let mut commitment = <E::G1Affine as AffineCurve>::multi_scalar_mul(
+                    &bases,
+                    &plain_coeffs,
+                );
+                // let commitment = VariableBase::msm(bases, &bigint_coeffs);
                 // assert_eq!(commitment_test, commitment);
+                // TODO: we should compare values.
                 end_timer!(msm_time);
 
                 commitment
             }
-            Polynomial::Sparse(polynomial) => polynomial
+            Polynomial::Sparse(polynomial) => {
+                let (bases, coeffs): (Vec<_>, Vec<_>) = polynomial
                 .coeffs()
                 .map(|(i, coeff)| {
-                    powers.powers_of_beta_g[*i].mul_bits(BitIteratorBE::new_without_leading_zeros(coeff.to_bigint()))
+                    (powers.powers_of_beta_g[*i], coeff)
+                    // powers.powers_of_beta_g[*i].mul_bits(BitIteratorBE::new_without_leading_zeros(coeff.to_bigint()))
                 })
-                .sum(),
+                .unzip();
+                <E::G1Affine as AffineCurve>::multi_scalar_mul(
+                    &bases,
+                    &coeffs,
+                )
+            }
+                // .sum(),
         };
 
         let mut randomness = KZGRandomness::empty();
@@ -154,15 +161,16 @@ impl<E: PairingEngine> KZG10<E> {
             end_timer!(sample_random_poly_time);
         }
 
-        let random_ints = convert_to_bigints(&randomness.blinding_polynomial.coeffs);
+        // let random_ints = convert_to_bigints(&randomness.blinding_polynomial.coeffs);
         let msm_time = start_timer!(|| "MSM to compute commitment to random poly");
-        // let random_commitment = <E::G1Affine as AffineCurve>::msm(
-        //     &powers.powers_of_beta_times_gamma_g,
-        //     randomness.blinding_polynomial.coeffs(),
-        // );
-        let random_commitment =
-            VariableBase::msm(&powers.powers_of_beta_times_gamma_g, random_ints.as_slice()).to_affine();
+        let random_commitment = <E::G1Affine as AffineCurve>::multi_scalar_mul(
+            &powers.powers_of_beta_times_gamma_g,
+            randomness.blinding_polynomial.coeffs(),
+        ).to_affine();
+        // let random_commitment =
+        //     VariableBase::msm(&powers.powers_of_beta_times_gamma_g, random_ints.as_slice()).to_affine();
         // assert_eq!(random_commitment_test, random_commitment);
+        // TODO: we should compare values.
         end_timer!(msm_time);
 
         commitment.add_assign_mixed(&random_commitment);
@@ -259,12 +267,19 @@ impl<E: PairingEngine> KZG10<E> {
         hiding_witness_polynomial: Option<&DensePolynomial<E::Fr>>,
     ) -> Result<KZGProof<E>, PCError> {
         Self::check_degree_is_too_large(witness_polynomial.degree(), powers.size())?;
-        let (num_leading_zeros, witness_coeffs) = skip_leading_zeros_and_convert_to_bigints(witness_polynomial);
+        // let (num_leading_zeros, witness_coeffs) = skip_leading_zeros_and_convert_to_bigints(witness_polynomial);
+        let num_leading_zeros = witness_polynomial.coeffs.iter().take_while(|c| c.is_zero()).count();
+        let witness_coeffs = witness_polynomial.coeffs().iter().cloned().skip(num_leading_zeros).collect::<Vec<_>>();
 
         let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + witness_coeffs.len())];
 
         let witness_comm_time = start_timer!(|| "Computing commitment to witness polynomial");
-        let mut w = VariableBase::msm(bases, &witness_coeffs);
+        let mut w = <E::G1Affine as AffineCurve>::multi_scalar_mul(
+            &bases,
+            &witness_coeffs,
+        );
+        // let mut w = VariableBase::msm(bases, &witness_coeffs);
+        // TODO: check if equal.
         end_timer!(witness_comm_time);
 
         let random_v = if let Some(hiding_witness_polynomial) = hiding_witness_polynomial {
@@ -273,9 +288,13 @@ impl<E: PairingEngine> KZG10<E> {
             let blinding_evaluation = blinding_p.evaluate(point);
             end_timer!(blinding_eval_time);
 
-            let random_witness_coeffs = convert_to_bigints(&hiding_witness_polynomial.coeffs);
+            // let random_witness_coeffs = convert_to_bigints(&hiding_witness_polynomial.coeffs);
             let witness_comm_time = start_timer!(|| "Computing commitment to random witness polynomial");
-            w += &VariableBase::msm(&powers.powers_of_beta_times_gamma_g, &random_witness_coeffs);
+            w += <E::G1Affine as AffineCurve>::multi_scalar_mul(
+                &powers.powers_of_beta_times_gamma_g,
+                &hiding_witness_polynomial.coeffs,
+            );
+            // w += &VariableBase::msm(&powers.powers_of_beta_times_gamma_g, &random_witness_coeffs);
             end_timer!(witness_comm_time);
             Some(blinding_evaluation)
         } else {

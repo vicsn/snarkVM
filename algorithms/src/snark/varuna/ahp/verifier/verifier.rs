@@ -137,6 +137,8 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
         ensure!(!state.max_constraint_domain.evaluate_vanishing_polynomial(alpha).is_zero());
         end_timer!(check_vanish_poly_time);
 
+        println!("Second message: alpha = {}, eta_b = {}, eta_c = {}", alpha, eta_b, eta_c);
+
         let message = SecondMessage { alpha, eta_b, eta_c };
         state.second_round_message = Some(message);
 
@@ -151,6 +153,8 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
         let elems = fs_rng.squeeze_nonnative_field_elements(1);
         let beta = elems[0];
         ensure!(!state.max_variable_domain.evaluate_vanishing_polynomial(beta).is_zero());
+
+        println!("Third message: beta = {}", beta);
 
         let message = ThirdMessage { beta };
         state.third_round_message = Some(message);
@@ -177,6 +181,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
             delta_b.push(elems[1]);
             delta_c.push(elems[2]);
         }
+        println!("Fourth message: delta_a = {:?}, delta_b = {:?}, delta_c = {:?}", delta_a, delta_b, delta_c);
         let message = FourthMessage { delta_a, delta_b, delta_c };
 
         state.fourth_round_message = Some(message.clone());
@@ -191,6 +196,8 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
         let elems = fs_rng.squeeze_nonnative_field_elements(1);
         let gamma = elems[0];
         ensure!(!state.max_non_zero_domain.evaluate_vanishing_polynomial(gamma).is_zero());
+
+        println!("Fifth round: gamma = {}", gamma);
 
         state.gamma = Some(gamma);
         Ok(state)

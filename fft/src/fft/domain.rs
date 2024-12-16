@@ -300,7 +300,9 @@ impl<F: FftField> EvaluationDomain<F> {
     /// This evaluates the vanishing polynomial for this domain at tau.
     /// For multiplicative subgroups, this polynomial is `z(X) = X^self.size - 1`.
     pub fn evaluate_vanishing_polynomial(&self, tau: F) -> F {
-        tau.pow([self.size]) - F::one()
+        let res = tau.pow([self.size]) - F::one();
+        println!("evaluate_vanishing_polynomial - tau {:?} - self.size: {:?} - res: {:?}", tau, self.size, res);
+        res
     }
 
     /// Return an iterator over the elements of the domain.

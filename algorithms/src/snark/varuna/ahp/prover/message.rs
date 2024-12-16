@@ -39,6 +39,9 @@ pub struct ThirdMessage<F: PrimeField> {
     pub sums: Vec<Vec<MatrixSums<F>>>,
 }
 
+impl<F: PrimeField> snarkvm_fields::MpcWire for ThirdMessage<F> {
+}
+
 impl<F: PrimeField> ThirdMessage<F> {
     pub(crate) fn sum(&self, batch_combiners: &BTreeMap<CircuitId, BatchCombiners<F>>, eta_b: F, eta_c: F) -> F {
         self.sums
@@ -66,6 +69,9 @@ impl<F: PrimeField> ToBytes for ThirdMessage<F> {
 #[derive(Clone, Debug, Default, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct FourthMessage<F: PrimeField> {
     pub sums: Vec<MatrixSums<F>>,
+}
+
+impl<F: PrimeField> snarkvm_fields::MpcWire for FourthMessage<F> {
 }
 
 impl<F: PrimeField> ToBytes for FourthMessage<F> {

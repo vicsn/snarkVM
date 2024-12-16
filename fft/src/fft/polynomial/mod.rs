@@ -251,12 +251,14 @@ impl<'a, F: Field> Polynomial<'a, F> {
     /// Divide self by another (sparse or dense) polynomial, and returns the quotient and remainder.
     pub fn divide_with_q_and_r(&self, divisor: &Self) -> Result<(DensePolynomial<F>, DensePolynomial<F>)> {
         ensure!(!divisor.is_zero(), "Dividing by zero polynomial is undefined");
-        assert!(!divisor.is_shared());
 
         if self.is_zero() {
             Ok((DensePolynomial::zero(), DensePolynomial::zero()))
         } else if self.is_shared() {
             // New logic from collaborative-zksnark library.
+            // println!("backtrace: {}", std::backtrace::Backtrace::force_capture());
+            // println!("divisor: {:?}", divisor);
+            assert!(!divisor.is_shared());
             assert!(F::has_univariate_div_qr(), "No poly share division alg");
             F::univariate_div_qr(self.clone().into(), divisor.clone().into())
                 .map(|(a, b)| (a.into(), b.into()))
@@ -264,6 +266,7 @@ impl<'a, F: Field> Polynomial<'a, F> {
             Ok((DensePolynomial::zero(), self.clone().into()))
         } else {
             // Now we know that self.degree() >= divisor.degree();
+            assert!(!divisor.is_shared());
             let mut quotient = vec![F::zero(); self.degree() - divisor.degree() + 1];
             let mut remainder: DensePolynomial<F> = self.clone().into();
             // Can unwrap here because we know self is not zero.

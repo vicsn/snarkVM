@@ -174,6 +174,14 @@ impl<P: Fp6Parameters> crate::MpcWire for Fp6<P> {
 impl<P: Fp6Parameters> Field for Fp6<P> {
     type BasePrimeField = <Fp2<P::Fp2Params> as Field>::BasePrimeField;
 
+    fn zero_shared() -> Self {
+        Self::zero()
+    }
+
+    fn one_shared() -> Self {
+        Self::one()
+    }
+
     fn from_base_prime_field(other: Self::BasePrimeField) -> Self {
         Self::new(Fp2::from_base_prime_field(other), Fp2::zero(), Fp2::zero())
     }

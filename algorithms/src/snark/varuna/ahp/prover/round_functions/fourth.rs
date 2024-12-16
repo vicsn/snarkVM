@@ -175,6 +175,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         job_pool.add_job(|| {
             let a_poly_time = start_timer!(|| format!("Computing a poly for {label}"));
             let a_poly = {
+                println!("row_col_val.evaluations: {:?}", row_col_val.evaluations);
+                println!("v_R_i_alpha_v_C_i_beta: {:?}", v_R_i_alpha_v_C_i_beta); // TODO: why is this Shared(0) for user 2?
                 let evals = cfg_iter!(row_col_val.evaluations).map(|v| v_R_i_alpha_v_C_i_beta * v).collect();
                 EvaluationsOnDomain::from_vec_and_domain(evals, non_zero_domain)
                     .interpolate_with_pc(ifft_precomputation)
@@ -220,6 +222,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         end_timer!(f_poly_time);
         let g = DensePolynomial::from_coefficients_slice(&f.coeffs[1..]);
+        println!("a_poly: {:?}", a_poly);
+        println!("b_poly: {:?}", b_poly);
+        println!("f: {:?}", f);
         let mut h = &a_poly
             - &{
                 let mut multiplier = PolyMultiplier::new();
@@ -228,6 +233,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 multiplier.add_precomputation(fft_precomputation, ifft_precomputation);
                 multiplier.multiply().unwrap()
             };
+        println!("h: {:?}", h);
 
         let combiner = F::one(); // We are applying combiners in the fifth round when summing the witnesses
         let (lhs, remainder) =

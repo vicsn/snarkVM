@@ -143,6 +143,7 @@ impl Connections {
         self.id == 0
     }
     fn broadcast(&mut self, bytes_out: &[u8]) -> Vec<Vec<u8>> {
+        println!("started calling broadcast");// std::backtrace::Backtrace::force_capture());
         // let timer = start_timer!(|| format!("Broadcast {}", bytes_out.len()));
         let m = bytes_out.len();
         let own_id = self.id;
@@ -169,6 +170,7 @@ impl Connections {
                 bytes_in
             })
             .collect();
+        println!("Finished calling broadcast");
         // end_timer!(timer);
         r
     }

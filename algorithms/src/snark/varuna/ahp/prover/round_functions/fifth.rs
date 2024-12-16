@@ -50,6 +50,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let lhs_sum: DensePolynomial<F> = cfg_reduce!(
             cfg_par_bridge!(verifier_message.into_iter().zip_eq(state.lhs_polys_into_iter())).map(
                 |(delta, mut lhs)| {
+                    println!("lhs: {:?} * delta {:?}", lhs, delta);
                     lhs *= delta;
                     lhs
                 }

@@ -83,8 +83,10 @@ impl<F: Field> Reveal for AdditiveFieldShare<F> {
         Net::broadcast(&self.val).into_iter().sum()
     }
     fn from_public(f: F) -> Self {
+        // assert_eq!(Net::n_parties(), 2); // Because we hardcode an additive share of F::one() below.
         Self {
             val: if Net::am_king() { f } else { F::zero() },
+            // val: if Net::am_king() { f - F::one() - F::one() } else { F::one() + F::one() },
         }
     }
     fn from_add_shared(f: F) -> Self {
@@ -136,6 +138,7 @@ impl<F: Field> FieldShare<F> for AdditiveFieldShare<F> {
     }
 
     fn scale(&mut self, other: &F) -> &mut Self {
+        println!("AdditiveFieldShare::scale");
         self.val *= other;
         self
     }
@@ -326,6 +329,11 @@ impl<G: AffineCurve, M> Reveal for AdditiveAffineShare<G, M> {
 impl<G: AffineCurve, M: Msm<G, G::ScalarField>> AffineGroupShare<G> for AdditiveAffineShare<G, M> {
     type FieldShare = AdditiveFieldShare<G::ScalarField>;
 
+    fn raw_share(&self) -> G {
+        // println!("AdditiveAffineShare::raw_share");
+        self.val
+    }
+
     fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
         let self_vec: Vec<<G as AffineCurve>::Projective> = selfs.into_iter().map(|s| s.val.into()).collect();
         let all_vals = Net::broadcast(&self_vec);
@@ -514,9 +522,6 @@ macro_rules! impl_basics_2_param {
 impl_basics!(AdditiveFieldShare, Field);
 impl_basics_2_param!(AdditiveProjectiveShare, ProjectiveCurve);
 impl_basics_2_param!(AdditiveAffineShare, AffineCurve);
-
-// impl<F: Field> Field for AdditiveFieldShare<F> {
-// }
 
 #[derive(Debug, Derivative)]
 #[derivative(

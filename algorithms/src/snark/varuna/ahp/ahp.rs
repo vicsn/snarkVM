@@ -469,19 +469,22 @@ where
     T: Borrow<LabeledPolynomial<F>> + core::fmt::Debug,
 {
     fn get_lc_eval(&self, lc: &LinearCombination<F>, point: F) -> Result<F> {
+        println!("START get_lc_eval");
         let mut eval = F::zero();
         for (coeff, term) in lc.iter() {
             let value = if let LCTerm::PolyLabel(label) = term {
-                self.iter()
+                let p = self.iter()
                     .find(|p| (*p).borrow().label() == label)
                     .ok_or_else(|| AHPError::MissingEval(format!("Missing {} for {}", label, lc.label)))?
-                    .borrow()
-                    .evaluate(point)
+                    .borrow();
+                println!("get_lc_eval poly {label}: {p:?}");
+                p.evaluate(point)
             } else {
                 ensure!(term.is_one());
                 F::one()
             };
-            eval += &(*coeff * value)
+            eval += &(*coeff * value);
+            println!("get_lc_eval: {:?}, coeff: {:?}, value: {:?}", eval, coeff, value);
         }
         Ok(eval)
     }

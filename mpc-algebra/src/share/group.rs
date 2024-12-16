@@ -143,6 +143,8 @@ pub trait AffineGroupShare<G: AffineCurve>:
 {
     type FieldShare: FieldShare<G::ScalarField>;
 
+    fn raw_share(&self) -> G;
+
     fn open(&self) -> G {
         <Self as Reveal>::reveal(*self)
     }

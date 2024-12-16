@@ -21,6 +21,7 @@ use snarkvm_fields::MpcWire;
 use crate::{MpcProjectiveGroup, MpcAffineGroup};
 use crate::MpcField;
 use crate::FieldShare;
+use crate::share::group::AffineGroupShare;
 
 use crate::{
     ExtFieldShare,
@@ -696,6 +697,12 @@ macro_rules! impl_ext_field_wrapper {
         from_prim!(u128, Field, ExtFieldShare, $wrap);
         impl<F: Field, S: ExtFieldShare<F>> Field for $wrap<F, S> {
             type BasePrimeField = MpcField<F::BasePrimeField, S::Base>;
+            fn zero_shared() -> Self {
+                Self::zero()
+            }        
+            fn one_shared() -> Self {
+                Self::one()
+            }        
             fn characteristic<'a>() -> &'a [u64] {
             // fn characteristic() -> u64 {
                 unimplemented!("extension_degree")
@@ -822,7 +829,7 @@ macro_rules! impl_pairing_curve_wrapper_aff {
                             .collect()
                     }),
                     MpcAffineGroup::Shared(a) => {
-                        unimplemented!("Shared affine group to field elements")
+                        unimplemented!("aff wrapper to_field_elements - backtrace: {:?}", std::backtrace::Backtrace::force_capture());
                     },
                 }
             }
@@ -1258,7 +1265,6 @@ macro_rules! impl_aff_proj {
                 todo!("AffineCurve::batch_add_loop_2")
             }
             fn multi_scalar_mul(bases: &[Self], scalars: &[Self::ScalarField]) -> Self::Projective {
-                println!("multi_scalar_mul4");
                 let b = {
                     assert!(bases.iter().all(|b| !b.is_shared()));
                     let scalars_shared = scalars.first().map(|s| s.is_shared()).unwrap_or(true);

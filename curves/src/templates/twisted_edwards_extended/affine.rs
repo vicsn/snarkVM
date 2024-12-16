@@ -53,6 +53,11 @@ impl<P: Parameters> Affine<P> {
 }
 
 impl<P: Parameters> snarkvm_fields::MpcWire for Affine<P> {
+    fn publicize(&mut self) {
+        self.x.publicize();
+        self.y.publicize();
+        self.t.publicize();
+    }
 }
 
 impl<P: Parameters> Zero for Affine<P> {

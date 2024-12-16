@@ -187,6 +187,14 @@ impl<P: Fp384Parameters> Field for Fp384<P> {
     // 384/64 = 6 limbs.
     impl_field_from_random_bytes_with_flags!(6);
 
+    fn zero_shared() -> Self {
+        Self::zero()
+    }
+
+    fn one_shared() -> Self {
+        Self::one()
+    }
+
     fn from_base_prime_field(other: Self::BasePrimeField) -> Self {
         other
     }

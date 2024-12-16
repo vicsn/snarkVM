@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use smallvec::SmallVec;
-use snarkvm_fields::{PrimeField, ToConstraintField};
+use snarkvm_fields::{PrimeField, ToConstraintField, MpcWire};
 use snarkvm_utilities::FromBits;
 
 use core::fmt::Debug;
@@ -38,10 +38,10 @@ pub trait AlgebraicSponge<F: PrimeField, const RATE: usize>: Clone + Debug {
     }
 
     /// Takes in field elements.
-    fn absorb_native_field_elements<T: ToConstraintField<F>>(&mut self, elements: &[T]);
+    fn absorb_native_field_elements<T: ToConstraintField<F> + MpcWire>(&mut self, elements: &[T]);
 
     /// Takes in field elements.
-    fn absorb_nonnative_field_elements<Target: PrimeField>(&mut self, elements: impl IntoIterator<Item = Target>);
+    fn absorb_nonnative_field_elements<Target: PrimeField + MpcWire>(&mut self, elements: impl IntoIterator<Item = Target>);
 
     /// Takes in bytes.
     fn absorb_bytes(&mut self, elements: &[u8]) {

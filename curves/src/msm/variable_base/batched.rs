@@ -364,7 +364,6 @@ fn batched_window<G: AffineCurve>(
 }
 
 pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
-    println!("msm::variable_base::batched::msm() called");
     if bases.len() < 15 {
         let num_bits = G::ScalarField::size_in_bits();
         let bigint_size = <G::ScalarField as PrimeField>::BigInteger::NUM_LIMBS * 64;

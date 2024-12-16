@@ -273,6 +273,12 @@ pub struct KZGCommitment<E: PairingEngine>(
     pub E::G1Affine,
 );
 
+impl<E: PairingEngine> snarkvm_fields::MpcWire for KZGCommitment<E> {
+    fn publicize(&mut self) {
+        self.0.publicize();
+    }
+}
+
 impl<E: PairingEngine> FromBytes for KZGCommitment<E> {
     fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
         CanonicalDeserialize::deserialize_compressed(&mut reader)

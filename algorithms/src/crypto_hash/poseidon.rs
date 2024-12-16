@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::{AlgebraicSponge, DuplexSpongeMode, nonnative_params::*};
-use snarkvm_fields::{FieldParameters, PoseidonParameters, PrimeField, ToConstraintField};
+use snarkvm_fields::{FieldParameters, PoseidonParameters, PrimeField, ToConstraintField, MpcWire};
 use snarkvm_utilities::{BigInteger, FromBits, ToBits};
 
 use smallvec::SmallVec;
@@ -145,8 +145,14 @@ impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSpon
     }
 
     /// Takes in field elements.
-    fn absorb_native_field_elements<T: ToConstraintField<F>>(&mut self, elements: &[T]) {
-        let input = elements.iter().flat_map(|e| e.to_field_elements().unwrap()).collect::<Vec<_>>();
+    fn absorb_native_field_elements<T: ToConstraintField<F> + MpcWire>(&mut self, elements: &[T]) {
+        let input = elements.iter().flat_map(|e| {
+            // Ensure we only absorb public values.
+            let mut e_clone = e.clone();
+            e_clone.publicize();
+            let mut fe = e_clone.to_field_elements().unwrap();
+            fe
+        }).collect::<Vec<_>>();
         if !input.is_empty() {
             match self.mode {
                 DuplexSpongeMode::Absorbing { mut next_absorb_index } => {
@@ -421,7 +427,11 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
         let src_limbs = src
             .into_iter()
             .flat_map(|elem| {
-                let limbs = Self::get_limbs_representations(&elem, ty);
+                // Ensure we only absorb public values.
+                let mut elem_clone = elem.clone();
+                elem_clone.publicize();
+
+                let limbs = Self::get_limbs_representations(&elem_clone, ty);
                 limbs.into_iter().map(|limb| (limb, F::one()))
                 // specifically set to one, since most gadgets in the constraint world would not have zero noise (due to the relatively weak normal form testing in `alloc`)
             })

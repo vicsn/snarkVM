@@ -401,13 +401,16 @@ pub type PolynomialLabel = String;
 
 /// A commitment along with information about its degree bound (if any).
 #[derive(Clone, Debug, CanonicalSerialize, PartialEq, Eq)]
-pub struct LabeledCommitment<C: CanonicalSerialize + 'static> {
+pub struct LabeledCommitment<C: CanonicalSerialize + snarkvm_fields::MpcWire + 'static> {
     label: PolynomialLabel,
     commitment: C,
     degree_bound: Option<usize>,
 }
 
-impl<F: Field, C: CanonicalSerialize + ToConstraintField<F>> ToConstraintField<F> for LabeledCommitment<C> {
+impl<C: CanonicalSerialize + snarkvm_fields::MpcWire + 'static> snarkvm_fields::MpcWire for LabeledCommitment<C> {
+}
+
+impl<F: Field, C: CanonicalSerialize + snarkvm_fields::MpcWire + ToConstraintField<F>> ToConstraintField<F> for LabeledCommitment<C> {
     fn to_field_elements(&self) -> Result<Vec<F>, ConstraintFieldError> {
         self.commitment.to_field_elements()
     }
@@ -417,14 +420,14 @@ impl<F: Field, C: CanonicalSerialize + ToConstraintField<F>> ToConstraintField<F
 // _WITHOUT_ the labels or the degree bound. Deserialization is _NOT_ supported,
 // and you should construct the struct via the `LabeledCommitment::new` method after
 // deserializing the Commitment.
-impl<C: CanonicalSerialize + ToBytes> ToBytes for LabeledCommitment<C> {
+impl<C: CanonicalSerialize + snarkvm_fields::MpcWire + ToBytes> ToBytes for LabeledCommitment<C> {
     fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
         CanonicalSerialize::serialize_compressed(&self.commitment, &mut writer)
             .map_err(|_| error("could not serialize struct"))
     }
 }
 
-impl<C: CanonicalSerialize> LabeledCommitment<C> {
+impl<C: CanonicalSerialize + snarkvm_fields::MpcWire> LabeledCommitment<C> {
     /// Instantiate a new polynomial_context.
     pub fn new(label: PolynomialLabel, commitment: C, degree_bound: Option<usize>) -> Self {
         Self { label, commitment, degree_bound }

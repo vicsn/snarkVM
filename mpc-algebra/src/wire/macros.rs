@@ -28,7 +28,7 @@ pub fn check_eq<T: CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Disp
             let mut result = true;
             for (i, other_t) in others.iter().enumerate() {
                 if &t != other_t {
-                    println!("\nConsistency check failed\nI (party {}) have {}\nvs\n  (party {}) has {} \n\n", mpc_net::MpcMultiNet::party_id(), t, i, other_t);//, std::backtrace::Backtrace::force_capture());
+                    println!("\nConsistency check failed\nI (party {}) have {}\nvs\n  (party {}) has {} \n\n - backtrace: {}", mpc_net::MpcMultiNet::party_id(), t, i, other_t, std::backtrace::Backtrace::force_capture());
                     result = false;
                     break;
                 }
@@ -395,6 +395,7 @@ macro_rules! impl_basics_field {
             #[inline]
             fn zero() -> Self {
                 $wrap::Public(T::zero())
+                // $wrap::Shared(<S as Reveal>::from_public(T::zero()))
             }
             #[inline]
             fn is_zero(&self) -> bool {

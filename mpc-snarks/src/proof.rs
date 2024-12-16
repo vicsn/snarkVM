@@ -200,12 +200,19 @@ mod squarings {
                 evaluation_domain.in_order_fft_in_place_with_pc(&mut evals, &fft_precomputation);
                 let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals.clone(), evaluation_domain).interpolate_with_pc(&ifft_precomputation);
                 let _ = poly.reveal();
-                let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals.clone(), evaluation_domain).interpolate();
-                let input_domain = snarkvm_fft::EvaluationDomain::new(8).unwrap();
-                let (poly, remainder) = poly.divide_by_vanishing_poly(input_domain).unwrap();
-                let _ = poly.reveal();
                 println!("FFT SUCCEEDED");
-    
+                let small_domain = snarkvm_fft::EvaluationDomain::new(16).unwrap();
+                let mut one = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::one();
+                let res = small_domain.evaluate_vanishing_polynomial(one + one);
+                let _ = res.reveal();
+                let mut one_shared = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::one_shared();
+                let res = small_domain.evaluate_vanishing_polynomial(one_shared + one_shared);
+                let _ = res.reveal();
+                // let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals.clone(), evaluation_domain).interpolate();
+                // let input_domain = snarkvm_fft::EvaluationDomain::new(8).unwrap();
+                // let (poly, remainder) = poly.divide_by_vanishing_poly(input_domain).unwrap();
+                // let _ = poly.reveal();
+                println!("VANISHING_POLY SUCCEEDED");
                 println!("START GROUP TESTS");
                 let mut mpc_affine = <MpcPairingEngine::<E, S> as PairingEngine>::G1Affine::rand(snarkvm_rng);
                 let mut mpc_projective = Into::<<MpcPairingEngine::<E, S> as PairingEngine>::G1Projective>::into(mpc_affine);
@@ -269,33 +276,18 @@ mod squarings {
 
                 // MPC time
                 let mpc_circuit = TestCircuit::<MpcField<<E as PairingEngine>::Fr, S::FrShare>>::king_share(circuit, snarkvm_rng); // TODO: we'll have to split among users.
-                let mpc_inputs = public_inputs.clone().into_iter().map(|x| MpcField::<<E as PairingEngine>::Fr, S::FrShare>::from_public(x)).collect::<Vec<_>>();
-                mpc_inputs.clone().reveal();
-                println!("mpc public_inputs: {:?}", mpc_inputs);
-                println!("CREATED MPC CIRCUIT");
-                // TODO: not sure if the sponge needs to be MPC'd...
-                // TODO: requires lots of new Reveal boiletplate
-                // let mpc_fs_pp = PoseidonSponge::<<MpcPairingEngine::<E, S> as PairingEngine>::Fq, 2, 1>::from_public(fs_pp); 
                 let mpc_fs_pp = PoseidonSponge::<<MpcPairingEngine::<E, S> as PairingEngine>::Fq, 2, 1>::sample_parameters();
-                println!("CREATED MPC SPONGE");
                 let mpc_pk = CircuitProvingKey::from_public(index_pk);
-                println!("CREATED MPC PK");
                 let mpc_universal_prover = UniversalProver::<MpcPairingEngine<E, S>>::from_public(universal_prover.clone());
                 MpcMultiNet::reset_stats();
                 let snarkvm_rng = &mut TestRng::default();
                 let proof = channel::without_cheating(|| {
                     let (proof, comm_test, oracle_test, z_a, w) = MpcVarunaInst::prove(&mpc_universal_prover, &mpc_fs_pp, &mpc_pk, &mpc_circuit, snarkvm_rng).unwrap();
-                    println!("CREATED MPC Proof");
-                    println!("w[0].len(): {:?}", w[0].len());
                     let _test = w.reveal();
-                    println!("REVEALED w");
                     let _test = z_a.reveal();
-                    println!("REVEALED z_a");
                     let _test = oracle_test.polynomial.as_dense().unwrap().clone().reveal();
-                    println!("REVEALED oracle");
-                    println!("comm_test.is_shared(): {:?}", comm_test.0.is_shared());
                     let _test = comm_test.reveal();
-                    println!("REVEALED commitment");
+                    let _test = proof.evaluations.g_a_evals.clone().publicize();
                     proof.reveal()
                 });
                 let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, public_inputs, &proof).unwrap();

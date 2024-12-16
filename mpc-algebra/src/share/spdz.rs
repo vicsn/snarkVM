@@ -287,8 +287,8 @@ pub struct SpdzProjectiveShare<T: ProjectiveCurve, M> {
     Hash(bound = "T: Hash")
 )]
 pub struct SpdzAffineShare<T: AffineCurve, M> {
-    sh: AdditiveAffineShare<T, M>,
-    mac: AdditiveAffineShare<T, M>,
+    pub sh: AdditiveAffineShare<T, M>,
+    pub mac: AdditiveAffineShare<T, M>,
 }
 
 impl<G: ProjectiveCurve, M> Reveal for SpdzProjectiveShare<G, M> {
@@ -475,6 +475,11 @@ impl<G: AffineCurve, M> Reveal for SpdzAffineShare<G, M> {
 
 impl<G: AffineCurve, M: Msm<G, G::ScalarField>> AffineGroupShare<G> for SpdzAffineShare<G, M> {
     type FieldShare = SpdzFieldShare<G::ScalarField>;
+
+    fn raw_share(&self) -> G {
+        println!("SpdzAffineShare::raw_share");
+        self.sh.raw_share()
+    }
 
     fn batch_open(selfs: impl IntoIterator<Item = Self>) -> Vec<G> {
         let (s_vals, macs): (Vec<<G as AffineCurve>::Projective>, Vec<<G as AffineCurve>::Projective>) =

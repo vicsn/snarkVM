@@ -232,6 +232,14 @@ impl<P: Fp12Parameters> crate::MpcWire for Fp12<P> {
 impl<P: Fp12Parameters> Field for Fp12<P> {
     type BasePrimeField = <Fp6<P::Fp6Params> as Field>::BasePrimeField;
 
+    fn zero_shared() -> Self {
+        Self::zero()
+    }
+
+    fn one_shared() -> Self {
+        Self::one()
+    }
+
     fn from_base_prime_field(other: Self::BasePrimeField) -> Self {
         Self::new(Fp6::from_base_prime_field(other), Fp6::zero())
     }

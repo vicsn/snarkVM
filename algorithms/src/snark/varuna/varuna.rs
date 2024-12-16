@@ -141,12 +141,16 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
         let mut sponge = FS::new_with_parameters(fs_parameters);
         sponge.absorb_bytes(Self::PROTOCOL_NAME);
         for (batch_size, inputs) in inputs_and_batch_sizes.values() {
+            let mut published_inputs = inputs.clone().to_vec();
+            published_inputs.publicize();
             sponge.absorb_bytes(&(*batch_size as u64).to_le_bytes());
-            for input in inputs.iter() {
+            for input in published_inputs.iter() {
                 sponge.absorb_nonnative_field_elements(input.iter().copied());
             }
         }
         for circuit_specific_commitments in circuit_commitments {
+            let mut published_commitments = circuit_specific_commitments.clone().to_vec();
+            published_commitments.publicize();
             sponge.absorb_native_field_elements(circuit_specific_commitments);
         }
         sponge
@@ -188,7 +192,7 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
         let sponge_time = start_timer!(|| "Absorbing commitments and message");
         Self::absorb(commitments, sponge);
         for sum in sums.iter() {
-            sponge.absorb_nonnative_field_elements([sum.sum_a, sum.sum_b, sum.sum_c]);
+            sponge.absorb_nonnative_field_elements([sum.sum_a, sum.sum_b, sum.sum_c]); // TODO: why are these different?
         }
         end_timer!(sponge_time);
     }
@@ -397,7 +401,7 @@ where
         }
 
         let first_round_comm_time = start_timer!(|| "Committing to first round polys");
-        let (first_commitments, first_commitment_randomnesses) = {
+        let (mut first_commitments, first_commitment_randomnesses) = {
             let first_round_oracles = prover_state.first_round_oracles.as_ref().unwrap();
             SonicKZG10::<E, FS>::commit(
                 universal_prover,
@@ -412,6 +416,9 @@ where
             println!("first commitment {i} is_shared: {:?}", comm.commitment().0.is_shared());
         }
         let commitment_return_test = first_commitments[0].commitment().clone();
+
+        // Reveal before absorbing.
+        first_commitments.publicize();
 
         Self::absorb_labeled(&first_commitments, &mut sponge);
 
@@ -432,13 +439,16 @@ where
             AHPForR1CS::<_, SM>::prover_second_round(&verifier_first_message, prover_state, zk_rng)?;
 
         let second_round_comm_time = start_timer!(|| "Committing to second round polys");
-        let (second_commitments, second_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
+        let (mut second_commitments, second_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
             second_oracles.iter().map(Into::into),
             SM::ZK.then_some(zk_rng),
         )?;
         end_timer!(second_round_comm_time);
+
+        // Reveal before absorbing.
+        second_commitments.publicize();
 
         Self::absorb_labeled(&second_commitments, &mut sponge);
 
@@ -449,7 +459,7 @@ where
         // --------------------------------------------------------------------
         // Third round
 
-        let (prover_third_message, third_oracles, prover_state) = AHPForR1CS::<_, SM>::prover_third_round(
+        let (mut prover_third_message, third_oracles, prover_state) = AHPForR1CS::<_, SM>::prover_third_round(
             &verifier_first_message,
             &verifier_second_msg,
             prover_state,
@@ -457,13 +467,17 @@ where
         )?;
 
         let third_round_comm_time = start_timer!(|| "Committing to third round polys");
-        let (third_commitments, third_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
+        let (mut third_commitments, third_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
             third_oracles.iter().map(Into::into),
             SM::ZK.then_some(zk_rng),
         )?;
         end_timer!(third_round_comm_time);
+
+        // Reveal before absorbing.
+        third_commitments.publicize();
+        prover_third_message.publicize();
 
         Self::absorb_labeled_with_sums(
             &third_commitments,
@@ -478,11 +492,11 @@ where
         // --------------------------------------------------------------------
         // Fourth round
 
-        let (prover_fourth_message, fourth_oracles, mut prover_state) =
+        let (mut prover_fourth_message, fourth_oracles, mut prover_state) =
             AHPForR1CS::<_, SM>::prover_fourth_round(&verifier_second_msg, &verifier_third_msg, prover_state, zk_rng)?;
 
         let fourth_round_comm_time = start_timer!(|| "Committing to fourth round polys");
-        let (fourth_commitments, fourth_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
+        let (mut fourth_commitments, fourth_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
             fourth_oracles.iter().map(Into::into),
@@ -490,6 +504,9 @@ where
         )?;
         end_timer!(fourth_round_comm_time);
 
+        // Reveal before absorbing.
+        fourth_commitments.publicize();
+        prover_fourth_message.publicize();
         Self::absorb_labeled_with_sums(&fourth_commitments, &prover_fourth_message.sums, &mut sponge);
 
         let (verifier_fourth_msg, verifier_state) =
@@ -508,7 +525,7 @@ where
         let fifth_oracles = AHPForR1CS::<_, SM>::prover_fifth_round(verifier_fourth_msg, prover_state, zk_rng)?;
 
         let fifth_round_comm_time = start_timer!(|| "Committing to fifth round polys");
-        let (fifth_commitments, fifth_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
+        let (mut fifth_commitments, fifth_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
             fifth_oracles.iter().map(Into::into),
@@ -516,6 +533,7 @@ where
         )?;
         end_timer!(fifth_round_comm_time);
 
+        fifth_commitments.publicize();
         Self::absorb_labeled(&fifth_commitments, &mut sponge);
 
         let verifier_state = AHPForR1CS::<_, SM>::verifier_fifth_round(verifier_state, &mut sponge)?;

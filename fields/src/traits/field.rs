@@ -94,6 +94,10 @@ pub trait Field:
 {
     type BasePrimeField: PrimeField;
 
+    /// WIP test to specify shared field elements.
+    fn zero_shared() -> Self;
+    fn one_shared() -> Self;
+
     /// Constructs an element of `Self` from an element of the base
     /// prime field.
     fn from_base_prime_field(other: Self::BasePrimeField) -> Self;
@@ -141,12 +145,13 @@ pub trait Field:
     /// Exponentiates this element by a number represented with `u64` limbs,
     /// least significant limb first.
     #[must_use]
-    fn pow<S: AsRef<[u64]>>(&self, exp: S) -> Self {
+    fn pow<S: AsRef<[u64]> + Debug + Clone>(&self, exp: S) -> Self {
         let mut res = Self::one();
+        // println!("res: {:?}", res);
 
         let mut found_one = false;
 
-        for i in BitIteratorBE::new(exp) {
+        for i in BitIteratorBE::new(exp.clone()) {
             if !found_one {
                 if i {
                     found_one = true;
@@ -160,7 +165,9 @@ pub trait Field:
             if i {
                 res *= self;
             }
+            // println!("pow::res: {:?}", res);
         }
+        // println!("pow::res: {:?} for exp: {:?}", res, exp);
         res
     }
 

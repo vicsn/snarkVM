@@ -106,17 +106,14 @@ impl<T: Field, S: FieldShare<T>> MpcField<T, S> {
 impl<'a, T: Field, S: FieldShare<T>> MulAssign<&'a MpcField<T, S>> for MpcField<T, S> {
     #[inline]
     fn mul_assign(&mut self, other: &Self) {
-        // println!("MpcField::mul_assign");
         match self {
             // for some reason, a two-stage match (rather than a tuple match) avoids moving
             // self
             MpcField::Public(x) => match other {
                 MpcField::Public(y) => {
-                    // println!("MpcField::mul_assign::Public::Public");
                     *x *= y;
                 }
                 MpcField::Shared(y) => {
-                    // println!("MpcField::mul_assign::Public::Shared");
                     let mut t = *y;
                     t.scale(x);
                     *self = MpcField::Shared(t);
@@ -124,11 +121,9 @@ impl<'a, T: Field, S: FieldShare<T>> MulAssign<&'a MpcField<T, S>> for MpcField<
             },
             MpcField::Shared(x) => match other {
                 MpcField::Public(y) => {
-                    // println!("MpcField::mul_assign::Shared::Public");
                     x.scale(y);
                 }
                 MpcField::Shared(y) => {
-                    // println!("MpcField::mul_assign::Shared::Shared");
                     let t = x.mul(*y, &mut DummyFieldTripleSource::default());
                     *self = MpcField::Shared(t);
                 }
@@ -139,7 +134,7 @@ impl<'a, T: Field, S: FieldShare<T>> MulAssign<&'a MpcField<T, S>> for MpcField<
 impl<T: Field, S: FieldShare<T>> One for MpcField<T, S> {
     #[inline]
     fn one() -> Self {
-        MpcField::Public(T::one())
+        MpcField::Public(T::one()) // NOTE: this was Public in coSnarks library, and if not leads to division by shared.
     }
 }
 impl<T: Field, S: FieldShare<T>> Product for MpcField<T, S> {
@@ -333,6 +328,14 @@ impl<F: PrimeField, S: FieldShare<F>> PoseidonDefaultField for MpcField<F, S> {
 impl<F: PrimeField, S: FieldShare<F>> Field for MpcField<F, S> {
     type BasePrimeField = Self;
     #[inline]
+    fn zero_shared() -> Self {
+        MpcField::Shared(S::from_public(F::zero()))
+    }
+    #[inline]
+    fn one_shared() -> Self {
+        MpcField::Shared(S::from_public(F::one()))
+    }
+    #[inline]
     fn characteristic<'a>() -> &'a [u64] {
         F::characteristic()
     }
@@ -456,7 +459,7 @@ impl<F: PrimeField, S: FieldShare<F>> PrimeField for MpcField<F, S> {
             F::from_bigint(r.val.clone()).unwrap()
         ))
     }
-    // We're assuming that into_repr is linear
+    // We're assuming that to_bigint is linear
     #[inline]
     fn to_bigint(&self) -> <Self as PrimeField>::BigInteger {
         match self {
@@ -465,11 +468,7 @@ impl<F: PrimeField, S: FieldShare<F>> PrimeField for MpcField<F, S> {
                 _marker: PhantomData,
             },
             MpcField::Shared(f) => {
-                MpcBigInteger::<F, S, F::BigInteger>{
-                    val: f.raw_share().to_bigint(),
-                    _marker: PhantomData,
-                }
-                // unimplemented!("No BigInt reprs for shared fields! (to_bigint) - backtrace: {}", std::backtrace::Backtrace::force_capture()) 
+                unimplemented!("(to_bigint) - Shared field into BigInteger {}", std::backtrace::Backtrace::force_capture())
             },
         }
     }
