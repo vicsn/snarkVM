@@ -200,6 +200,7 @@ pub trait Network:
     // Note: This value must **not** be changed without considering the impact on serialization.
     //  Decreasing this value will break backwards compatibility of serialization without explicit
     //  declaration of migration based on round number rather than block height.
+    //  Increasing this value will require a migration to prevent forking during network upgrades.
     const MAX_CERTIFICATES: u16;
 
     /// The maximum number of bytes in a transaction.
