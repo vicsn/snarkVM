@@ -33,6 +33,8 @@ use core::{marker::PhantomData, ops::Mul};
 use itertools::Itertools;
 use rand_core::RngCore;
 
+use snarkvm_fields::MpcWire;
+
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
@@ -160,6 +162,7 @@ impl<E: PairingEngine> KZG10<E> {
             )?;
             end_timer!(sample_random_poly_time);
         }
+        randomness.blinding_polynomial.coeffs.publicize();
 
         // let random_ints = convert_to_bigints(&randomness.blinding_polynomial.coeffs);
         let msm_time = start_timer!(|| "MSM to compute commitment to random poly");

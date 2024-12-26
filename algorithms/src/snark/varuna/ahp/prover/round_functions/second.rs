@@ -32,6 +32,7 @@ use anyhow::Result;
 use rand_core::RngCore;
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_iter_mut, cfg_reduce};
+use snarkvm_fields::MpcWire;
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -62,6 +63,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let verifier::FirstMessage { batch_combiners, .. } = verifier_message;
 
         let h_0 = Self::calculate_rowcheck_witness(&mut state, batch_combiners)?;
+
+        println!("h_0: {:?}", h_0);
+        // let mut h_0_clone = h_0.coeffs.clone();
+        // h_0_clone.publicize();
+        // println!("h_0: {:?}", h_0_clone);
 
         assert!(h_0.degree() <= 2 * max_constraint_domain.size() + 2 * zk_bound.unwrap_or(0) - 2);
 

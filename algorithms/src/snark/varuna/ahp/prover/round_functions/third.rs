@@ -40,6 +40,8 @@ use itertools::Itertools;
 use rand_core::RngCore;
 use std::collections::BTreeMap;
 
+use snarkvm_fields::MpcWire;
+
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
@@ -85,6 +87,26 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let assignments = Self::calculate_assignments(&mut state)?;
         let matrix_transposes = Self::calculate_matrix_transpose(&mut state)?;
 
+        let mut assignments_clone = assignments.clone();
+        for (circuit_id, assignments_i) in assignments_clone.iter_mut() {
+            for assignment in assignments_i.iter_mut() {
+                assignment.coeffs.publicize();
+            }
+        }
+        println!("assignments: {:?}", assignments_clone);
+        let mut matrix_transposes_clone = matrix_transposes.clone();
+        for (circuit_id, matrix_transposes_i) in matrix_transposes_clone.iter_mut() {
+            for (label, matrix_transpose) in matrix_transposes_i.iter_mut() {
+                for row in matrix_transpose.iter_mut() {
+                    for (val, index) in row.iter_mut() {
+                        val.publicize();
+                    }
+                }
+            }
+        }
+        println!("matrix_transpose: {:?}", matrix_transposes_clone);
+            
+
         let (h_1, x_g_1_sum, msg) = Self::calculate_lineval_sumcheck_witness(
             &mut state,
             batch_combiners,
@@ -94,6 +116,16 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             eta_b,
             eta_c,
         )?;
+
+        let mut h_1_clone = h_1.coeffs.clone();
+        h_1_clone.publicize();
+        println!("h_1: {:?}", h_1_clone);
+        let mut x_g_1_sum_clone = x_g_1_sum.coeffs.clone();
+        x_g_1_sum_clone.publicize();
+        println!("x_g_1_sum: {:?}", x_g_1_sum_clone);
+        let mut msg_clone = msg.clone();
+        msg_clone.publicize();
+        println!("msg: {:?}", msg_clone);
 
         // Note: this only works if not secret sharing
         // #[cfg(debug_assertions)]
@@ -205,11 +237,15 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             }
         }
 
-        let mask_poly = state.first_round_oracles.as_ref().unwrap().mask_poly.as_ref();
+        let mut mask_poly = state.first_round_oracles.as_ref().unwrap().mask_poly.as_ref();
         assert_eq!(SM::ZK, mask_poly.is_some());
         assert_eq!(!SM::ZK, mask_poly.is_none());
-        let mask_poly = &mask_poly.map_or(DensePolynomial::zero(), |p| p.polynomial().into_dense());
+        let mut mask_poly = &mut mask_poly.map_or(DensePolynomial::zero(), |p| p.polynomial().into_dense());
+        mask_poly.coeffs.publicize();
         println!("mask_poly.is_shared(): {}", mask_poly.is_shared());
+        // let mut mask_poly_clone = mask_poly.coeffs.clone();
+        // mask_poly_clone.publicize();
+        println!("mask_poly: {:?}", mask_poly);
         let (mut h_1_mask, mut xg_1_mask) = mask_poly.divide_by_vanishing_poly(*max_variable_domain).unwrap();
         h_1_sum += &core::mem::take(&mut h_1_mask);
         xg_1_sum += &core::mem::take(&mut xg_1_mask);
@@ -316,12 +352,25 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         multiplier.add_polynomial(m_at_alpha, "m_at_alpha");
         multiplier.add_polynomial_ref(assignment, "assignment");
         let mut z_m_at_alpha = multiplier.multiply().unwrap();
+        let mut z_m_at_alpha_clone = z_m_at_alpha.coeffs.clone();
+        z_m_at_alpha_clone.publicize();
+        println!("z_m_at_alpha: {:?}", z_m_at_alpha_clone);
+        let mut combiner_clone = combiner.clone();
+        combiner_clone.publicize();
+        println!("combiner: {:?}", combiner_clone);
+        let mut max_variable_domain_clone = max_variable_domain.clone();
+        println!("max_variable_domain: {:?}", max_variable_domain_clone);
+        let mut variable_domain_clone = variable_domain.clone();
+        println!("variable_domain: {:?}", variable_domain_clone);
         let sum = z_m_at_alpha.evaluate_over_domain_by_ref(*variable_domain).evaluations.into_iter().sum::<F>();
         end_timer!(z_m_at_alpha_time);
 
         let (h_1_i, xg_1_i) =
             apply_randomized_selector(&mut z_m_at_alpha, combiner, max_variable_domain, variable_domain, true)?;
         let xg_1_i = xg_1_i.ok_or(anyhow::anyhow!("Expected remainder when applying selector"))?;
+        let mut h_1_i_clone = h_1_i.coeffs.clone();
+        h_1_i_clone.publicize();
+        println!("h_1_i: {:?}", h_1_i_clone);
 
         end_timer!(sumcheck_time);
 

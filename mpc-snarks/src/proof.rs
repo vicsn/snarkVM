@@ -249,7 +249,6 @@ mod squarings {
                 }
 
                 println!("START LOCAL TEST");
-               
                 let mul_depth = 2;
                 let num_constraints = 8;
                 let num_variables = 8;
@@ -265,8 +264,10 @@ mod squarings {
                 let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
                 let fs_pp = PoseidonSponge::<E::Fq, 2, 1>::sample_parameters();
                 let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
-                
+
+                let snarkvm_rng = &mut TestRng::fixed(1); // TODO: this should be changed to a real rng 
                 let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, &circuit, snarkvm_rng).unwrap().0;
+                println!("proof: {:?}", proof); 
                 let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, public_inputs.clone(), &proof).unwrap();
                 assert!(result);
 
@@ -280,16 +281,17 @@ mod squarings {
                 let mpc_pk = CircuitProvingKey::from_public(index_pk);
                 let mpc_universal_prover = UniversalProver::<MpcPairingEngine<E, S>>::from_public(universal_prover.clone());
                 MpcMultiNet::reset_stats();
-                let snarkvm_rng = &mut TestRng::default();
+                let snarkvm_rng = &mut TestRng::fixed(1); // TODO: this should be changed to a real rng 
                 let proof = channel::without_cheating(|| {
                     let (proof, comm_test, oracle_test, z_a, w) = MpcVarunaInst::prove(&mpc_universal_prover, &mpc_fs_pp, &mpc_pk, &mpc_circuit, snarkvm_rng).unwrap();
-                    let _test = w.reveal();
-                    let _test = z_a.reveal();
-                    let _test = oracle_test.polynomial.as_dense().unwrap().clone().reveal();
-                    let _test = comm_test.reveal();
-                    let _test = proof.evaluations.g_a_evals.clone().publicize();
+                    // let _test = w.reveal();
+                    // let _test = z_a.reveal();
+                    // let _test = oracle_test.polynomial.as_dense().unwrap().clone().reveal();
+                    // let _test = comm_test.reveal();
+                    // let _test = proof.evaluations.g_a_evals.clone().publicize();
                     proof.reveal()
                 });
+                println!("proof: {:?}", proof);
                 let result = VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, public_inputs, &proof).unwrap();
                 assert!(result);
 

@@ -56,6 +56,8 @@ use std::{borrow::Borrow, collections::BTreeMap, ops::Deref, sync::Arc};
 use crate::srs::UniversalProver;
 use snarkvm_utilities::println;
 
+use mpc_algebra::macros::publicize_vector;
+
 /// The Varuna proof system.
 #[derive(Clone, Debug)]
 pub struct VarunaSNARK<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode>(
@@ -398,6 +400,9 @@ where
         let oracle_return_test = prover_state.first_round_oracles.as_ref().unwrap().batches.iter().next().unwrap().clone().1[0].0.clone();
         for (i, oracle) in prover_state.first_round_oracles.as_ref().unwrap().batches.iter().enumerate() {
             println!("first oracle {i} is_shared: {:?}", oracle.1[0].0.is_shared());
+            let mut coeff_print = oracle.1[0].0.polynomial.as_dense().unwrap().coeffs.clone();
+            coeff_print.publicize();
+            println!("first oracle {i}: {:?}", coeff_print);
         }
 
         let first_round_comm_time = start_timer!(|| "Committing to first round polys");
@@ -414,6 +419,9 @@ where
        
         for (i, comm) in first_commitments.iter().enumerate() {
             println!("first commitment {i} is_shared: {:?}", comm.commitment().0.is_shared());
+            let mut comm_print = comm.commitment().0.clone();
+            comm_print.publicize();
+            println!("first commitment {i}: {:?}", comm_print);
         }
         let commitment_return_test = first_commitments[0].commitment().clone();
 
@@ -625,7 +633,40 @@ where
         let evaluations = proof::Evaluations::from_map(&evaluations, batch_sizes.clone());
         end_timer!(eval_time);
 
+        println!("evaluations: {:?}", evaluations);
+        println!("commitment_randomnesses: {:?}", commitment_randomnesses);
+
         sponge.absorb_nonnative_field_elements(evaluations.to_field_elements());
+
+        let mut lc_s_clone = lc_s.clone().into_values().collect::<Vec<_>>();
+        for lc in lc_s_clone.iter_mut() {
+            for (_, poly) in lc.terms.iter_mut() {
+                poly.publicize();
+            }
+        }
+        println!("lc_s: {:?}", lc_s_clone);
+        let mut polynomials_clone = polynomials.clone();
+        for poly in polynomials_clone.iter_mut() {
+            match poly.polynomial {
+                snarkvm_fft::Polynomial::Sparse(ref mut inner_poly) => {
+                    println!("poly sparse {}", poly.info.label());
+                    let mut coeffs = inner_poly.values().cloned().collect::<Vec<_>>();
+                    publicize_vector(&mut coeffs);
+                    println!("poly coeffs: {:?}", coeffs);
+                }
+                snarkvm_fft::Polynomial::Dense(ref mut inner_poly) => {
+                    println!("poly dense {}", poly.info.label());
+                    let mut coeffs = inner_poly.coeffs.clone();
+                    println!("poly coeffs: {:?}", coeffs);
+                    publicize_vector(&mut coeffs);
+                    println!("poly coeffs: {:?}", coeffs);
+                }
+            }
+            // let mut coeffs = poly.polynomial.as_dense().unwrap().coeffs.clone();
+            // coeffs.publicize();
+            // println!("poly {:?} coeffs: {:?}", poly.info.label(), coeffs);
+        }
+        // let mut coeff_print = oracle.1[0].0.polynomial.as_dense().unwrap().coeffs.clone();
 
         let pc_proof = SonicKZG10::<E, FS>::open_combinations(
             universal_prover,

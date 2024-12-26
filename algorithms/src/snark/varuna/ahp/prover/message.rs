@@ -26,6 +26,14 @@ pub struct MatrixSums<F: PrimeField> {
     pub sum_c: F,
 }
 
+impl<F: PrimeField> snarkvm_fields::MpcWire for MatrixSums<F> {
+    fn publicize(&mut self) {
+        self.sum_a.publicize();
+        self.sum_b.publicize();
+        self.sum_c.publicize();
+    }
+}
+
 impl<F: PrimeField> MatrixSums<F> {
     /// Iterate over the sums
     pub fn iter(&self) -> impl ExactSizeIterator<Item = F> {
@@ -40,6 +48,9 @@ pub struct ThirdMessage<F: PrimeField> {
 }
 
 impl<F: PrimeField> snarkvm_fields::MpcWire for ThirdMessage<F> {
+    fn publicize(&mut self) {
+        self.sums.publicize();
+    }
 }
 
 impl<F: PrimeField> ThirdMessage<F> {

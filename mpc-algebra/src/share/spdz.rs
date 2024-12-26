@@ -123,7 +123,7 @@ macro_rules! impl_basics_spdz {
         }
         impl<T: $bound> Uniform for $share<T> {
             fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-                Self::from_add_shared(<T as Uniform>::rand(rng))
+                Self::from_public(<T as Uniform>::rand(rng))
             }
         }
     };
@@ -609,7 +609,7 @@ macro_rules! impl_spdz_basics_2_param {
         }
         impl<T: $bound, M> Uniform for $share<T, M> {
             fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-                Self::from_add_shared(<T as Uniform>::rand(rng))
+                Self::from_public(<T as Uniform>::rand(rng))
             }
         }
     };

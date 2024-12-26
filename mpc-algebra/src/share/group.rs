@@ -41,6 +41,7 @@ pub trait ProjectiveGroupShare<G: ProjectiveCurve>:
     }
 
     fn map_homo<G2: AffineCurve, S2: AffineGroupShare<G2>, Fun: Fn(G) -> G2>(self, f: Fun) -> S2 {
+        // TODO: understand why we use from_add_shared here
         S2::from_add_shared(f(self.unwrap_as_public()))
     }
 
@@ -150,6 +151,7 @@ pub trait AffineGroupShare<G: AffineCurve>:
     }
 
     fn map_homo<G2: ProjectiveCurve, S2: ProjectiveGroupShare<G2>, Fun: Fn(G) -> G2>(self, f: Fun) -> S2 {
+        // TODO: understand why we use from_add_shared here
         S2::from_add_shared(f(self.unwrap_as_public()))
     }
 

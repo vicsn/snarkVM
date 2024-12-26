@@ -1,16 +1,17 @@
 #![macro_use]
 
+use snarkvm_fields::{Zero, MpcWire};
 use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize};
 
 use crate::channel::{self, MpcSerNet};
 use mpc_net::MpcNet;
 
-use std::fmt::Display;
+use std::fmt::{Display, Debug};
 
 #[track_caller]
 /// Checks that both sides of the channel have the same value.
 pub fn check_eq<T: CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Display>(t: T) {
-    println!("check_eq for type {}", std::any::type_name::<T>());
+    // println!("check_eq for type {}", std::any::type_name::<T>());
     debug_assert!({
         use log::debug;
         if mpc_net::two::is_init() {
@@ -37,6 +38,31 @@ pub fn check_eq<T: CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Disp
             result
         }
     })
+}
+
+#[track_caller]
+/// Publicize vector while ensuring the length is equal.
+pub fn publicize_vector<T: MpcWire + Zero + CanonicalSerialize + CanonicalDeserialize + Clone + Eq + Display + Debug>(t: &mut Vec<T>) {
+    // println!("publicize_vector for vector of type {}", std::any::type_name::<T>());
+    if mpc_net::two::is_init() {
+        let other = channel::exchange(&t.len());
+        let length_diff = other.saturating_sub(t.len());
+        for _ in 0..length_diff {
+            t.push(T::zero());
+        }
+        println!("t: {:?}", t);
+        t.publicize();
+    } else {
+        let others = mpc_net::MpcMultiNet::broadcast(&t.len());
+        for other in others {
+            let length_diff = other.saturating_sub(t.len());
+            for _ in 0..length_diff {
+                t.push(T::zero());
+            }
+            println!("t: {:?}", t);
+            t.publicize();
+        }
+    }
 }
 
 macro_rules! impl_basics_group {
@@ -298,7 +324,6 @@ macro_rules! impl_basics_field {
         }
         impl<T: $bound, S: $share<T>> Uniform for $wrap<T, S> {
             fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-                println!("Sampling shared field element");
                 Self::Shared(<S as Uniform>::rand(rng))
             }
         }

@@ -83,10 +83,8 @@ impl<F: Field> Reveal for AdditiveFieldShare<F> {
         Net::broadcast(&self.val).into_iter().sum()
     }
     fn from_public(f: F) -> Self {
-        // assert_eq!(Net::n_parties(), 2); // Because we hardcode an additive share of F::one() below.
         Self {
             val: if Net::am_king() { f } else { F::zero() },
-            // val: if Net::am_king() { f - F::one() - F::one() } else { F::one() + F::one() },
         }
     }
     fn from_add_shared(f: F) -> Self {
@@ -138,7 +136,6 @@ impl<F: Field> FieldShare<F> for AdditiveFieldShare<F> {
     }
 
     fn scale(&mut self, other: &F) -> &mut Self {
-        println!("AdditiveFieldShare::scale");
         self.val *= other;
         self
     }
@@ -372,6 +369,7 @@ impl<G: AffineCurve, M: Msm<G, G::ScalarField>> AffineGroupShare<G> for Additive
 
     fn multi_scale_pub_group(bases: &[G], scalars: &[Self::FieldShare]) -> Self {
         let scalars: Vec<G::ScalarField> = scalars.into_iter().map(|s| s.val.clone()).collect();
+        // TODO: understand why we use from_add_shared here.
         Self::from_add_shared(M::msm(bases, &scalars))
     }
 }
@@ -442,7 +440,7 @@ macro_rules! impl_basics {
         }
         impl<T: $bound> Uniform for $share<T> {
             fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-                Self::from_add_shared(<T as Uniform>::rand(rng))
+                Self::from_public(<T as Uniform>::rand(rng))
             }
         }
     };
@@ -513,7 +511,7 @@ macro_rules! impl_basics_2_param {
         }
         impl<T: $bound, M> Uniform for $share<T, M> {
             fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-                Reveal::from_add_shared(<T as Uniform>::rand(rng))
+                Reveal::from_public(<T as Uniform>::rand(rng))
             }
         }
     };

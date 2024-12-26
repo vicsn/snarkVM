@@ -100,6 +100,10 @@ impl<F: Field> SparsePolynomial<F> {
         self.coeffs.iter()
     }
 
+    pub fn values(&self) -> impl Iterator<Item = &F> {
+        self.coeffs.values()
+    }
+
     /// Returns the degree of the polynomial.
     pub fn degree(&self) -> usize {
         if self.is_zero() {

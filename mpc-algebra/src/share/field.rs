@@ -37,6 +37,7 @@ pub trait FieldShare<F: Field>:
     fn raw_share(&self) -> F;
 
     fn map_homo<FF: Field, SS: FieldShare<FF>, Fun: Fn(F) -> FF>(self, f: Fun) -> SS {
+        // TODO: understand why we use from_add_shared here
         SS::from_add_shared(f(self.unwrap_as_public()))
     }
 

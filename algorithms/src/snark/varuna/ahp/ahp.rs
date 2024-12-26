@@ -484,6 +484,7 @@ where
                 F::one()
             };
             eval += &(*coeff * value);
+            eval.publicize();
             println!("get_lc_eval: {:?}, coeff: {:?}, value: {:?}", eval, coeff, value);
         }
         Ok(eval)
