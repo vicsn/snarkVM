@@ -27,7 +27,7 @@ use std::{collections::BTreeMap, fmt};
 pub struct SparsePolynomial<F: Field> {
     /// The coefficient a_i of `x^i` is stored as (i, a_i) in `self.coeffs`.
     /// the entries in `self.coeffs` are sorted in increasing order of `i`.
-    coeffs: BTreeMap<usize, F>,
+    pub coeffs: BTreeMap<usize, F>,
 }
 
 impl<F: Field> From<SparsePolynomial<F>> for poly_stub::SparsePolynomial<F> {

@@ -236,6 +236,16 @@ impl<T: Field, S: FieldShare<T>> MpcWire for MpcField<T, S> {
         })
     }
     #[inline]
+    fn share_from_public(&mut self) {
+        match self {
+            MpcField::Public(s) => {
+                *self = MpcField::Shared(S::from_public(s.clone()));
+            }
+            _ => {
+            }
+        }
+    }
+    #[inline]
     fn is_shared(&self) -> bool {
         match self {
             MpcField::Shared(_) => true,

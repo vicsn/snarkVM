@@ -1,6 +1,6 @@
 #![macro_use]
 
-use snarkvm_fields::{Zero, MpcWire};
+use snarkvm_fields::{Field, Zero, MpcWire};
 use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize};
 
 use crate::channel::{self, MpcSerNet};
@@ -46,20 +46,12 @@ pub fn publicize_vector<T: MpcWire + Zero + CanonicalSerialize + CanonicalDeseri
     // println!("publicize_vector for vector of type {}", std::any::type_name::<T>());
     if mpc_net::two::is_init() {
         let other = channel::exchange(&t.len());
-        let length_diff = other.saturating_sub(t.len());
-        for _ in 0..length_diff {
-            t.push(T::zero());
-        }
-        println!("t: {:?}", t);
+        assert_eq!(t.len(), other);
         t.publicize();
     } else {
         let others = mpc_net::MpcMultiNet::broadcast(&t.len());
         for other in others {
-            let length_diff = other.saturating_sub(t.len());
-            for _ in 0..length_diff {
-                t.push(T::zero());
-            }
-            println!("t: {:?}", t);
+            assert_eq!(t.len(), other);
             t.publicize();
         }
     }

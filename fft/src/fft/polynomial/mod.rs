@@ -229,6 +229,14 @@ impl<'a, F: Field> Polynomial<'a, F> {
     }
 
     #[inline]
+    pub fn as_sparse_mut(&mut self) -> Option<&mut SparsePolynomial<F>> {
+        match self {
+            Sparse(p) => Some(p.to_mut()),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn into_dense(&self) -> DensePolynomial<F> {
         self.clone().into()
     }

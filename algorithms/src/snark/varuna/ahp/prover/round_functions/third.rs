@@ -241,7 +241,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert_eq!(SM::ZK, mask_poly.is_some());
         assert_eq!(!SM::ZK, mask_poly.is_none());
         let mut mask_poly = &mut mask_poly.map_or(DensePolynomial::zero(), |p| p.polynomial().into_dense());
-        mask_poly.coeffs.publicize();
         println!("mask_poly.is_shared(): {}", mask_poly.is_shared());
         // let mut mask_poly_clone = mask_poly.coeffs.clone();
         // mask_poly_clone.publicize();

@@ -50,6 +50,8 @@ pub trait MpcWire: Clone {
     fn is_shared(&self) -> bool {
         false
     }
+    fn share_from_public(&mut self) {
+    }
 
     fn publicize_cow<'b>(&'b self) -> Cow<'b, Self> {
         if self.is_shared() {
@@ -79,6 +81,11 @@ impl<T: MpcWire> MpcWire for Vec<T> {
     fn publicize(&mut self) {
         for x in self {
             x.publicize();
+        }
+    }
+    fn share_from_public(&mut self) {
+        for x in self {
+            x.share_from_public();
         }
     }
     fn is_shared(&self) -> bool {

@@ -56,8 +56,6 @@ use std::{borrow::Borrow, collections::BTreeMap, ops::Deref, sync::Arc};
 use crate::srs::UniversalProver;
 use snarkvm_utilities::println;
 
-use mpc_algebra::macros::publicize_vector;
-
 /// The Varuna proof system.
 #[derive(Clone, Debug)]
 pub struct VarunaSNARK<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode>(
@@ -645,28 +643,6 @@ where
             }
         }
         println!("lc_s: {:?}", lc_s_clone);
-        let mut polynomials_clone = polynomials.clone();
-        for poly in polynomials_clone.iter_mut() {
-            match poly.polynomial {
-                snarkvm_fft::Polynomial::Sparse(ref mut inner_poly) => {
-                    println!("poly sparse {}", poly.info.label());
-                    let mut coeffs = inner_poly.values().cloned().collect::<Vec<_>>();
-                    publicize_vector(&mut coeffs);
-                    println!("poly coeffs: {:?}", coeffs);
-                }
-                snarkvm_fft::Polynomial::Dense(ref mut inner_poly) => {
-                    println!("poly dense {}", poly.info.label());
-                    let mut coeffs = inner_poly.coeffs.clone();
-                    println!("poly coeffs: {:?}", coeffs);
-                    publicize_vector(&mut coeffs);
-                    println!("poly coeffs: {:?}", coeffs);
-                }
-            }
-            // let mut coeffs = poly.polynomial.as_dense().unwrap().coeffs.clone();
-            // coeffs.publicize();
-            // println!("poly {:?} coeffs: {:?}", poly.info.label(), coeffs);
-        }
-        // let mut coeff_print = oracle.1[0].0.polynomial.as_dense().unwrap().coeffs.clone();
 
         let pc_proof = SonicKZG10::<E, FS>::open_combinations(
             universal_prover,

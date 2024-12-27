@@ -122,7 +122,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let mut mask_poly = h_1_mask;
         mask_poly += &g_1_mask;
+        for coeff in mask_poly.coeffs.values_mut() {
+            coeff.publicize();
+        }
         println!("mask_poly.is_shared(): {}", mask_poly.is_shared());
+        println!("mask_poly: {:?}", mask_poly);
         // This doesn't work on secret-shared elements.
         // debug_assert!(variable_domain.elements().map(|z| mask_poly.evaluate(z)).sum::<F>().is_zero());
         assert_eq!(mask_poly.degree(), variable_domain.size() + 3);

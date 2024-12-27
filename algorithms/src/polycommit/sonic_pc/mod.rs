@@ -32,6 +32,8 @@ use std::{
     collections::{BTreeMap, BTreeSet},
 };
 
+use snarkvm_fields::MpcWire;
+
 mod data_structures;
 pub use data_structures::*;
 
@@ -316,7 +318,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             let mut query_polys = Vec::with_capacity(labels.len());
             let mut query_rands = Vec::with_capacity(labels.len());
 
-            for label in labels {
+            for label in labels.clone() {
                 let (polynomial, rand) =
                     poly_rand.get(label as &str).ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
 
@@ -328,9 +330,14 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             let _randomizer = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
 
             pool.add_job(move || {
-                let proof_time = start_timer!(|| "Creating proof");
-                let proof = kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand);
+                let proof_time = start_timer!(|| format!("Creating proof {:?}", labels));
+                let mut polynomial_clone = polynomial.clone();
+                polynomial_clone.coeffs.share_from_public();
+                let proof = kzg10::KZG10::open(&ck.powers(), &polynomial_clone, query, &rand);
                 end_timer!(proof_time);
+                let mut proof_clone = proof.as_ref().unwrap().w.clone();
+                proof_clone.publicize();
+                println!("proof w: {:?}", proof_clone);
                 proof
             });
         }
@@ -455,6 +462,27 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                 }
                 // Some(_) > None, always.
                 hiding_bound = core::cmp::max(hiding_bound, cur_poly.hiding_bound());
+                if "lineval_sumcheck" == lc_label || "g_1" == lc_label {
+                    println!("{lc_label} {label} coeff: {:?}", coeff);
+                    match cur_poly.clone().polynomial() {
+                        snarkvm_fft::Polynomial::Sparse(ref inner_poly) => {
+                            let mut coeffs = inner_poly.values().cloned().collect::<Vec<_>>();
+                            println!("{lc_label} {label} poly sparse: {:?}", coeffs);
+                            coeffs.publicize();
+                            println!("{lc_label} {label} poly sparse: {:?}", coeffs);
+                        }
+                        snarkvm_fft::Polynomial::Dense(ref inner_poly) => {
+                            let mut coeffs = inner_poly.coeffs.clone();
+                            println!("{lc_label} {label} poly sparse: {:?}", coeffs);
+                            coeffs.publicize();
+                            println!("{lc_label} {label} poly dense: {:?}", coeffs);
+                        }
+                    }
+                    let mut cur_rand_clone = cur_rand.blinding_polynomial.coeffs.clone();
+                    println!("{lc_label} {label} cur_rand: {:?}", cur_rand_clone);
+                    cur_rand_clone.publicize();
+                    println!("{lc_label} {label} cur_rand: {:?}", cur_rand_clone);
+                }
                 poly += (*coeff, cur_poly.polynomial());
                 randomness += (*coeff, *cur_rand);
             }
