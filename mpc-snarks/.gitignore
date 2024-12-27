@@ -4,3 +4,4 @@ hosts
 vms
 benches
 bin
+logs_party_*.txt

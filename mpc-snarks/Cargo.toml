@@ -116,8 +116,8 @@ version = "=1.0.0"
 features = ["serial"]
 
 [[bin]]
-name = "proof"
-path = "src/proof.rs"
+name = "mpc-test"
+path = "src/test.rs"
 
 [profile.release]
 debug = true

@@ -1,25 +1,20 @@
-# Collaborative zkSNARKs
+# snarkvm-mpc-snarks
 
-This is a proof-of-concept implementation of Collaborative zkSNARKs based
-on Groth16, Marlin, and Plonk.
-This implementation is not secure; it exists for benchmarking reasons.
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE.md)
 
-This implementation accompanies the paper that introduced Collaborative zkSNARKs:
-["Experimenting with Collaborative zk-SNARKs: Zero-Knowledge Proofs for
-Distributed Secrets"][paper].
+This implementation is based off of the code accompanying the paper that introduced
+Collaborative zkSNARKs: "Experimenting with Collaborative zk-SNARKs: Zero-Knowledge 
+Proofs for Distributed Secrets".
 
-## Starting point
-
-A good place to start is:
+## Running E2E test
 
 1. Enter `mpc-snarks`.
-2. `cargo +nightly build --release --bin proof`.
+2. `cargo +nightly build --bin mpc-test`.
 3. `./scripts/bench.zsh marlin spdz 10 2`.
 
-[paper]: https://www.usenix.org/conference/usenixsecurity22/presentation/ozdemir
-
-## Development notes
-In order to make collaborative zkSNARKs work in snarkVM, refactoring is needed, because Arkworks has a generic Group trait, which snarkVM does not. Moreover, snarkVM's Affine curve does not support direct arithmetic anymore, but requires conversion to Projective representation. Some options were:
-- Re-introduce a slimmed down generic Group trait
-- Re-introduce arithmetic in AffineCurve
-- Create Affine and Projective wrappers wherever a single Group wrapper was used. This approach was chosen because it doesn't meddle with snarkVM's suggested interfaces.
+## Open TODOs
+- [ ] Currently, `mask_poly` is secret-shared in a late stage using a hacky `share_from_public`. It should be possible to directly sample into the correct type.
+- [ ] Generalize `king_share` to allow secret-sharing data from any `party_id`.
+- [ ] Review security comprehensively. In particular, currently all randomness, including the masking polynomial, is sampled publicly (i.e. known by all parties in the MPC) and from a fixed seed. Excess data is currently returned and revealed from the proof system just for testing purposes.
+- [ ] Build support in snarkVM and Leo compiler to prove arbitrary Executions in MPC. In particular, this requires language features which allow a developer to specify which program inputs, e.g. foreign records, are created by which user. Note that support for arbitrary sharing of inputs requires building out snarkVM compiler logic in MPC.
+- [ ] The current `reveal` logic, when used to reveal containers, can create subtle bugs when the containers of all parties are not equally long. Some kind of length check should be embedded.
