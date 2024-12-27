@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
-use snarkvm_curves::PairingEngine;
-use snarkvm_utilities::TestRng;
+use snarkvm_curves::{PairingEngine, bls12_377::{Bls12_377, Fq, Fr}};
+use snarkvm_curves_package::{PairingEngine as PairingEngine2, bls12_377::{Bls12_377 as Bls12_3772, Fq as Fq2, Fr as Fr2}};
+use snarkvm_utilities::{TestRng, CanonicalSerialize};
+use snarkvm_utilities_package::CanonicalDeserialize;
 use snarkvm_fields::{Field, PrimeField};
 use mpc_algebra::MpcField;
-use snarkvm_algorithms::r1cs::ConstraintSynthesizer;
-use snarkvm_algorithms::prelude::SynthesisError;
-use snarkvm_algorithms::r1cs::Variable;
-use snarkvm_curves::bls12_377::Bls12_377;
+use snarkvm_algorithms::{r1cs::{ConstraintSystem, ConstraintSynthesizer, Variable}, prelude::SynthesisError, snark::varuna::Proof};
+use snarkvm_algorithms_package::{r1cs::{ConstraintSystem as ConstraintSystem2, ConstraintSynthesizer as ConstraintSynthesizer2, Variable as Variable2}, prelude::SynthesisError as SynthesisError2, snark::varuna::Proof as Proof2};
 
 use aleo_std::{end_timer, start_timer};
 use blake2::Blake2s;
@@ -21,6 +21,7 @@ use std::path::PathBuf;
 
 mod marlin;
 mod silly;
+mod test_circuit;
 
 const TIMED_SECTION_LABEL: &str = "timed section";
 
@@ -69,11 +70,10 @@ mod squarings {
 
     pub mod marlin {
         use super::*;
-        use snarkvm_algorithms::{crypto_hash::PoseidonSponge, fft::DensePolynomial, snark::varuna::{AHPForR1CS, CircuitProvingKey, VarunaHidingMode, test_circuit::TestCircuit, VarunaSNARK}, AlgebraicSponge, SNARK};
-        use snarkvm_algorithms::srs::UniversalProver;
-        use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+        use snarkvm_algorithms::{srs::UniversalProver, crypto_hash::PoseidonSponge, fft::DensePolynomial, snark::varuna::{AHPForR1CS, CircuitProvingKey, VarunaHidingMode, test_circuit::TestCircuit, VarunaSNARK}, AlgebraicSponge, SNARK};
+        use snarkvm_algorithms_package::{srs::UniversalProver as UniversalProver2, crypto_hash::PoseidonSponge as PoseidonSponge2, fft::DensePolynomial as DensePolynomial2, snark::varuna::{AHPForR1CS as AHPForR1CS2, CircuitProvingKey as CircuitProvingKey2, VarunaHidingMode as VarunaHidingMode2, VarunaSNARK as VarunaSNARK2}, AlgebraicSponge as AlgebraicSponge2, SNARK as SNARK2};
         use snarkvm_circuit::{prelude::{Field, *}, Environment, network::AleoV0};
-        use snarkvm_utilities::TestRng;
+        use snarkvm_utilities::{TestRng, FromBytes, ToBytes};
         use mpc_algebra::MpcField;
         use snarkvm_utilities::Uniform;
         use snarkvm_fields::MpcWire;
@@ -122,6 +122,7 @@ mod squarings {
 
                 type VarunaInst<E> = VarunaSNARK::<E, PoseidonSponge<<E as PairingEngine>::Fq, 2, 1>, VarunaHidingMode>;
                 type MpcVarunaInst<E, S> = VarunaSNARK::<MpcPairingEngine<E, S>, PoseidonSponge<<MpcPairingEngine<E, S> as PairingEngine>::Fq, 2, 1>, VarunaHidingMode>;
+                type VarunaInst2<E> = VarunaSNARK2::<E, PoseidonSponge2<<E as PairingEngine2>::Fq, 2, 1>, VarunaHidingMode2>;
 
                 let snarkvm_rng = &mut TestRng::fixed(1); // TODO: this should be changed to a real rng
 
@@ -184,11 +185,6 @@ mod squarings {
                 mpc_field.inverse_in_place();
                 mpc_field.reveal();
                 println!("INVERSE SUCCEEDED");
-                // let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng);
-                // let mut mpc_bigint = mpc_field.to_bigint();
-                // let mut mpc_field = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::from_bigint(mpc_bigint).unwrap();
-                // mpc_field.reveal();
-                // println!("BIGINT SUCCEEDED");
                 let mut evals = (0..128).map(|_| <MpcPairingEngine::<E, S> as PairingEngine>::Fr::rand(snarkvm_rng)).collect::<Vec<_>>();
                 let evaluation_domain = snarkvm_fft::EvaluationDomain::new(evals.len()).unwrap();
                 let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals.clone(), evaluation_domain).interpolate();
@@ -208,11 +204,6 @@ mod squarings {
                 let mut one_shared = <MpcPairingEngine::<E, S> as PairingEngine>::Fr::one_shared();
                 let res = small_domain.evaluate_vanishing_polynomial(one_shared + one_shared);
                 let _ = res.reveal();
-                // let poly = snarkvm_fft::Evaluations::from_vec_and_domain(evals.clone(), evaluation_domain).interpolate();
-                // let input_domain = snarkvm_fft::EvaluationDomain::new(8).unwrap();
-                // let (poly, remainder) = poly.divide_by_vanishing_poly(input_domain).unwrap();
-                // let _ = poly.reveal();
-                println!("VANISHING_POLY SUCCEEDED");
                 println!("START GROUP TESTS");
                 let mut mpc_affine = <MpcPairingEngine::<E, S> as PairingEngine>::G1Affine::rand(snarkvm_rng);
                 let mut mpc_projective = Into::<<MpcPairingEngine::<E, S> as PairingEngine>::G1Projective>::into(mpc_affine);
@@ -221,14 +212,6 @@ mod squarings {
                 mpc_affine = mpc_projective.into();
                 mpc_affine.reveal();
                 println!("INTO, ADD, MUL SUCCEEDED");
-                // NOTE: 
-                // - our witness polynomial is incorrect, what happens to it? Only field operations? See `for MpcField`
-                // . - Are we even using ComField?
-                // . - Are we even using MulFieldGroup?
-                // . - Can we unimplemented! certain impls to see if they are used?
-                // - often, mul is not supported, but mulassign is
-                // - affine operations are not supported
-                
        
                 println!("START POLY divide_with_q_and_r TEST");
                 // NOTE: for now, its easier to test here because 1. it is not currently possible to test MPC features locally 2. it even compiles faster.
@@ -252,6 +235,7 @@ mod squarings {
                 let mul_depth = 2;
                 let num_constraints = 8;
                 let num_variables = 8;
+                let snarkvm_rng = &mut TestRng::fixed(1); // TODO: this should be changed to a real rng
                 let (circuit, public_inputs) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, snarkvm_rng);
                 println!("public inputs: {:?}", public_inputs);
                 // NOTE: it might be theoretically possible to use a higher level Circuit crate representation...
@@ -296,6 +280,22 @@ mod squarings {
                 assert!(result);
 
                 end_timer!(timer);
+
+                println!("START PACKAGE TEST");
+                let snarkvm_rng = &mut TestRng::fixed(1); // TODO: this should be changed to a real rng
+                let (circuit2, public_inputs2) = test_circuit::TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, snarkvm_rng); // TODO: perhaps using the existing one is good enough
+                let universal_srs = VarunaInst2::<Bls12_3772>::universal_setup(max_degree).unwrap();
+                let universal_verifier2 = &universal_srs.to_universal_verifier().unwrap();
+                let fs_pp2 = PoseidonSponge2::<<Bls12_3772 as PairingEngine2>::Fq, 2, 1>::sample_parameters();
+                let (_, index_vk2) = VarunaInst2::circuit_setup(&universal_srs, &circuit2).unwrap();
+                // Serialize proof to bytes.
+                let size = Proof::serialized_size(&proof, snarkvm_utilities::Compress::No);
+                let mut serialized = vec![0; size];
+                Proof::serialize_with_mode(&proof, &mut serialized[..], snarkvm_utilities::Compress::No).unwrap();
+                // Deserialize proof from bytes.
+                let proof = Proof2::deserialize_with_mode(&serialized[..], snarkvm_utilities_package::Compress::No, snarkvm_utilities_package::Validate::No).unwrap();
+                let result = VarunaInst2::verify(universal_verifier2, &fs_pp2, &index_vk2, public_inputs2, &proof).unwrap();
+                assert!(result);
 
                 println!("END TEST");
 
@@ -362,7 +362,7 @@ mod squarings {
     impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF>
         for RepeatedSquaringCircuit<ConstraintF>
     {
-        fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<ConstraintF>>( // Meaningful entrypoint
+        fn generate_constraints<CS: ConstraintSystem<ConstraintF>>( // Meaningful entrypoint
             &self,
             cs: &mut CS,
         ) -> Result<(), SynthesisError> {

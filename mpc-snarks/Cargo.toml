@@ -50,6 +50,11 @@ features = [ "serde" ]
 path = "../algorithms"
 features = ["snark", "profiler", "serial"]
 
+[dependencies.snarkvm-algorithms-package]
+package = "snarkvm-algorithms"
+version = "=1.0.0"
+features = ["snark", "profiler", "serial"]
+
 [dependencies.snarkvm-circuit]
 path = "../circuit"
 
@@ -66,8 +71,18 @@ path = "../console/network"
 path = "../curves"
 features = ["serial"]
 
+[dependencies.snarkvm-curves-package]
+package = "snarkvm-curves"
+version = "=1.0.0"
+features = ["serial"]
+
 [dependencies.snarkvm-fields]
 path = "../fields"
+features = ["serial"]
+
+[dependencies.snarkvm-fields-package]
+package = "snarkvm-fields"
+version = "=1.0.0"
 features = ["serial"]
 
 [dependencies.snarkvm-fft]
@@ -93,6 +108,11 @@ features = ["rocks"]
 
 [dependencies.snarkvm-utilities]
 path = "../utilities"
+features = ["serial"]
+
+[dependencies.snarkvm-utilities-package]
+package = "snarkvm-utilities"
+version = "=1.0.0"
 features = ["serial"]
 
 [[bin]]
