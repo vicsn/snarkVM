@@ -18,3 +18,4 @@ Proofs for Distributed Secrets".
 - [ ] Review security comprehensively. In particular, currently all randomness, including the masking polynomial, is sampled publicly (i.e. known by all parties in the MPC) and from a fixed seed. Excess data is currently returned and revealed from the proof system just for testing purposes.
 - [ ] Build support in snarkVM and Leo compiler to prove arbitrary Executions in MPC. In particular, this requires language features which allow a developer to specify which program inputs, e.g. foreign records, are created by which user. Note that support for arbitrary sharing of inputs requires building out snarkVM compiler logic in MPC.
 - [ ] The current `reveal` logic, when used to reveal containers, can create subtle bugs when the containers of all parties are not equally long. Some kind of length check should be embedded.
+- [ ] POWERS_OF_ROOTS_OF_UNITY should be a compile-time constant (using static lifetime references)
