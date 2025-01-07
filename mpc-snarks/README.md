@@ -8,9 +8,9 @@ Proofs for Distributed Secrets".
 
 ## Running E2E test
 
-1. Enter `mpc-snarks`.
-2. `cargo +nightly build --bin mpc-test`.
-3. `./scripts/bench.zsh marlin spdz 10 2`.
+1. Enter `mpc-snarks`
+2. `cargo +nightly build --bin mpc-test`
+3. `./scripts/bench.zsh 2`
 
 ## Open TODOs
 - [ ] Currently, `mask_poly` is secret-shared in a late stage using a hacky `share_from_public`. It should be possible to directly sample into the correct type.
