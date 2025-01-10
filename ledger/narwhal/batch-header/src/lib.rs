@@ -66,7 +66,11 @@ impl<N: Network> BatchHeader<N> {
     /// The maximum number of rounds to store before garbage collecting.
     pub const MAX_GC_ROUNDS: usize = 100;
     /// The maximum number of transmissions in a batch.
-    pub const MAX_TRANSMISSIONS_PER_BATCH: usize = N::MAX_TRANSMISSIONS_PER_BATCH as usize;
+    /// The maximum number of transmissions per batch.
+    /// Note: This limit is set to 50 as part of safety measures to prevent DoS attacks.
+    /// This limit can be increased in the future as performance improves. Alternatively,
+    /// the rate of block production can be sped up to compensate for the limit set here.
+    pub const MAX_TRANSMISSIONS_PER_BATCH: usize = 50;
 }
 
 impl<N: Network> BatchHeader<N> {
