@@ -194,11 +194,6 @@ pub trait Network:
 
     /// The maximum number of certificates in a batch.
     const MAX_CERTIFICATES: u16;
-    /// The maximum number of transmissions per batch.
-    /// Note: This limit is set to 50 as part of safety measures to prevent DoS attacks.
-    /// This limit can be increased in the future as performance improves. Alternatively,
-    /// the rate of block production can be sped up to compensate for the limit set here.
-    const MAX_TRANSMISSIONS_PER_BATCH: u16 = 50;
 
     /// The maximum number of stacks in the process
     /// Allows for fast processing for blocks made from 4 maximally full rounds.
