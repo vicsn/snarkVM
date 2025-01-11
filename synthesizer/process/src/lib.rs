@@ -374,12 +374,10 @@ impl<N: Network> Process<N> {
                 stack.program_id()
             );
             // Return the stack.
-            Ok(stack.clone())
-        // Otherwise, retrieve the stack from the storage.
-        } else {
-            // Try to load and return the stack.
-            self.load_stack(program_id)
+            return Ok(stack.clone());
         }
+        // Otherwise, retrieve the stack from the storage.
+        self.load_stack(program_id)
     }
 
     /// Returns the program for the given program ID.
