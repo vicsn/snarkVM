@@ -48,12 +48,15 @@ function compute:
     .unwrap();
     // Initialize a new process.
     let process = crate::test_helpers::sample_process(&program1);
-    // assert_eq!(process.num_stacks(), 1); // TODO: currently, storage between tests is shared, this needs to be fixed.
+    assert_eq!(process.num_stacks(), 1);
     assert!(process.contains_program_in_memory(program1.id()));
 }
 
 #[test]
 pub fn test_cache_evict() {
+    // Prepare the credit program id.
+    let credits_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+    // Create a program sampler which imports credits.aleo.
     let mid_program_template = |i| {
         format!(
             r"
@@ -72,7 +75,7 @@ function mid{i}_transfer:
     output r4 as credits.aleo/credits.record;"
         )
     };
-
+    // Create a program sampler which imports mid1.aleo and mid2.aleo.
     let root_program_template = |i| {
         format!(
             r"
@@ -113,11 +116,11 @@ function root_call:
 
     // Check whether mid1 is in memory.
     assert!(process.contains_program_in_memory(mid1.id()));
-    // assert_eq!(process.num_stacks(), 1); // TODO: currently, storage between tests is shared, this needs to be fixed.
+    assert_eq!(process.num_stacks(), 1);
     process.add_program(&mid2).unwrap();
     // Check whether mid2 is in memory.
     assert!(process.contains_program_in_memory(mid2.id()));
-    // assert_eq!(process.num_stacks(), 2); // TODO: currently, storage between tests is shared, this needs to be fixed.
+    assert_eq!(process.num_stacks(), 2);
 
     for i in 3..=<CurrentNetwork as Network>::MAX_STACKS + 1 {
         // mid1 and mid2 should still be cached.
@@ -130,9 +133,14 @@ function root_call:
     }
 
     // Only MAX_STACKS programs are cached, so the oldest root should be evicted.
-    let test_id = ProgramID::<CurrentNetwork>::from_str("root3.aleo").unwrap();
-    assert!(!process.contains_program_in_memory(&test_id));
+    let root3_id = ProgramID::<CurrentNetwork>::from_str("root3.aleo").unwrap();
+    assert!(!process.contains_program_in_memory(&root3_id));
     // Test we still have credits.aleo in memory.
-    let credits_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
     assert!(process.contains_program_in_memory(&credits_id));
+    // Test that an example root program's imports are correct.
+    let root4_id = ProgramID::<CurrentNetwork>::from_str("root4.aleo").unwrap();
+    let root4_stack = process.get_stack(root4_id).unwrap();
+    let root4_import_ids = root4_stack.all_external_stacks().into_iter().map(|(id, _)| id).collect::<Vec<_>>();
+    let expected_imports = vec![credits_id, credits_id, *mid1.id(), credits_id, *mid2.id()];
+    assert_eq!(root4_import_ids, expected_imports);
 }

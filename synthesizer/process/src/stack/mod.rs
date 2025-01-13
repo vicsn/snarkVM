@@ -454,7 +454,8 @@ impl<N: Network> Stack<N> {
     /// Note that this may contain duplicates.
     #[inline]
     pub fn all_external_stacks(&self) -> Vec<(ProgramID<N>, Arc<Stack<N>>)> {
-        let mut stacks = vec![];
+        // Allocate a container on a simple best-effort basis.
+        let mut stacks = Vec::with_capacity(self.num_external_stacks());
         // Iterate through the program imports.
         for (program_id, external_stack) in &self.external_stacks {
             // Insert imports of the import.
@@ -463,6 +464,21 @@ impl<N: Network> Stack<N> {
             stacks.push((*program_id, external_stack.clone()));
         }
         stacks
+    }
+
+    /// Returns the number of direct and indirect external stacks.
+    /// Note that this may contain duplicates.
+    #[inline]
+    fn num_external_stacks(&self) -> usize {
+        let mut num_external_stacks = 0;
+        // Iterate through the program imports.
+        for (_, external_stack) in &self.external_stacks {
+            // Insert number of imports of the import.
+            num_external_stacks += external_stack.num_external_stacks();
+            // Insert the import itself.
+            num_external_stacks += 1;
+        }
+        num_external_stacks
     }
 }
 
