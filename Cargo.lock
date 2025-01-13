@@ -3325,7 +3325,6 @@ dependencies = [
  "rocksdb",
  "serde",
  "serde_json",
- "serial_test",
  "smallvec",
  "snarkvm-console",
  "snarkvm-ledger-authority",
