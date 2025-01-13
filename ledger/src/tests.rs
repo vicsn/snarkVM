@@ -1815,7 +1815,6 @@ fn test_abort_invalid_transaction() {
 
 #[test]
 fn test_deploy_difference() {
-    println!("CONSENSUS_V2_HEIGHT: {:?}", CurrentNetwork::CONSENSUS_V2_HEIGHT);
     let rng = &mut TestRng::default();
 
     let prelim_program_1 = Program::<CurrentNetwork>::from_str(
