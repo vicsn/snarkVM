@@ -16,6 +16,9 @@ parameters:
   twoxlarge:
     type: string
     default: 2xlarge
+  twoxlargeplus:
+    type: string
+    default: 2xlarge+
 
 orbs:
   windows: circleci/windows@5.0
@@ -506,7 +509,7 @@ jobs:
     resource_class: << pipeline.parameters.large >>
     steps:
       - run_serial:
-          flags: --features=rocks,test
+          flags: --features=rocks,test -- --test-threads=2
           workspace_member: ledger
           cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-with-rocksdb-cache
 
@@ -679,7 +682,7 @@ jobs:
   synthesizer:
     docker:
       - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.twoxlarge >>
+    resource_class: << pipeline.parameters.twoxlargeplus >>
     steps:
       - run_serial:
           flags: --lib --bins -- --test-threads=1
