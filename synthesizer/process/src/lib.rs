@@ -164,15 +164,16 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn add_stack(&self, stack: Arc<Stack<N>>) -> Result<()> {
         // Collect all direct and indirect external stacks.
-        let external_stacks = stack.all_external_stacks();
+        let programs_to_add = stack.all_external_stacks();
         // Obtain the lock on the stacks.
         let mut stacks = self.stacks.lock();
         // Determine which stacks still need to be added into the process.
-        let programs_to_add = external_stacks
+        let programs_to_add = programs_to_add
             .into_iter()
-            .unique_by(|(id, _)|*id) // indirect imports might contain duplicates.
             .chain(std::iter::once((*stack.program_id(), stack))) // add the root stack.
-            .filter(|(program_id, _)| !stacks.contains(program_id)) // remove stacks present in the cache.
+            .unique_by(|(id, _)|*id) // don't add duplicates.
+            .filter(|(program_id, _)| program_id != &ProgramID::<N>::from_str("credits.aleo").unwrap()) // don't add the credits.aleo stack.
+            .filter(|(program_id, _)| !stacks.contains(program_id)) // don't add stacks present in the cache.
             .collect::<Vec<_>>();
         // Determine the required capacity.
         let current_capacity = stacks.cap().get().saturating_sub(stacks.len());
