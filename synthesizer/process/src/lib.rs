@@ -172,8 +172,10 @@ impl<N: Network> Process<N> {
             .into_iter()
             .chain(std::iter::once((*stack.program_id(), stack))) // add the root stack.
             .unique_by(|(id, _)|*id) // don't add duplicates.
-            .filter(|(program_id, _)| program_id != &ProgramID::<N>::from_str("credits.aleo").unwrap()) // don't add the credits.aleo stack.
-            .filter(|(program_id, _)| !stacks.contains(program_id)) // don't add stacks present in the cache.
+            .filter(|(program_id, _)| {
+                program_id != &ProgramID::<N>::from_str("credits.aleo").unwrap() // don't add the credits.aleo stack.
+                && !stacks.contains(program_id) // don't add stacks present in the cache.
+            })
             .collect::<Vec<_>>();
         // Determine the required capacity.
         let current_capacity = stacks.cap().get().saturating_sub(stacks.len());
