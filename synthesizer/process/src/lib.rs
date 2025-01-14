@@ -184,7 +184,7 @@ impl<N: Network> Process<N> {
             debug!("Evicting {required_capacity} stacks from the cache.");
         }
         // If the new stacks require more capacity, attempt to remove the least recently used stacks.
-        while required_capacity > 0 {
+        while required_capacity != 0 {
             // To avoid dangling stacks, we only remove stacks that do not have more than 1 reference (e.g. as external stack).
             // For this not to loop endlessly, we assume to always quickly find stacks with just one reference, so:
             // 1. queried stacks must be short-lived, which is essential anyway to avoid memory leaks.
