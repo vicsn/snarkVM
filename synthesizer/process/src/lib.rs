@@ -180,7 +180,7 @@ impl<N: Network> Process<N> {
         // Determine the required capacity.
         let current_capacity = stacks.cap().get().saturating_sub(stacks.len());
         let mut required_capacity = programs_to_add.len().saturating_sub(current_capacity);
-        if required_capacity > 0 {
+        if required_capacity != 0 {
             debug!("Evicting {required_capacity} stacks from the cache.");
         }
         // If the new stacks require more capacity, attempt to remove the least recently used stacks.
