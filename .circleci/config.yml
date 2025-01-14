@@ -692,7 +692,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: -- --test-threads=1 --ignored test_deployment_synthesis_overload test_deep_nested_execution_cost
+          flags: -- --ignored test_deployment_synthesis_overload test_deep_nested_execution_cost
           workspace_member: synthesizer
           cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-mem-heavy-cache
 
