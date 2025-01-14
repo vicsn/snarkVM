@@ -178,7 +178,7 @@ impl<N: Network> Process<N> {
             })
             .collect::<Vec<_>>();
         // Determine the required capacity.
-        let current_capacity = stacks.cap().get().saturating_sub(stacks.len());
+        let remaining_capacity = stacks.cap().get().saturating_sub(stacks.len());
         let mut required_capacity = programs_to_add.len().saturating_sub(current_capacity);
         if required_capacity != 0 {
             debug!("Evicting {required_capacity} stacks from the cache.");
