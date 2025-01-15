@@ -1058,6 +1058,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         committee.members().len() <= Committee::<N>::MAX_COMMITTEE_SIZE as usize,
                         "Ratify::Genesis(..) exceeds the maximum number of committee members"
                     );
+                    // Ensure that the number of members in the committee does not exceed the maximum before consensus V3 rules apply.
+                    if state.block_height() < N::CONSENSUS_V3_HEIGHT {
+                        ensure!(
+                            committee.members().len() <= Committee::<N>::MAX_COMMITTEE_SIZE_BEFORE_V3 as usize,
+                            "Ratify::Genesis(..) exceeds the maximum number of committee members before V3"
+                        );
+                    }
                     // Ensure that the number of delegators does not exceed the maximum.
                     ensure!(
                         bonded_balances.len().saturating_sub(committee.members().len()) <= MAX_DELEGATORS as usize,
@@ -1901,6 +1908,62 @@ finalize transfer_public:
         assert_eq!(
             confirmed_transactions[0],
             reject(0, &bond_validator_transaction, confirmed_transactions[0].finalize_operations())
+        );
+    }
+
+    #[cfg(feature = "test")]
+    #[test]
+    fn test_genesis_num_validators_does_not_exceed_maximum_before_v3() {
+        // This test will fail if the consensus v3 height is 0
+        assert_ne!(0, CurrentNetwork::CONSENSUS_V3_HEIGHT);
+
+        // Initialize an RNG.
+        let rng = &mut TestRng::default();
+
+        // Initialize the VM.
+        let vm = sample_vm();
+
+        // Initialize the validators with the maximum number of validators before consensus v3.
+        let validators = sample_validators::<CurrentNetwork>(
+            Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE_BEFORE_V3 as usize + 1,
+            rng,
+        );
+
+        // Initialize a new address.
+        let new_validator_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let new_validator_address = Address::try_from(&new_validator_private_key).unwrap();
+
+        // Construct the committee.
+        // Track the allocated amount.
+        let (committee_map, allocated_amount) =
+            sample_committee_map_and_allocated_amount(&validators, &IndexMap::new());
+
+        // Collect all of the addresses in a single place
+        let validator_addresses =
+            validators.keys().map(|private_key| Address::try_from(private_key).unwrap()).collect::<Vec<_>>();
+
+        // Construct the public balances, allocating the remaining supply.
+        let new_validator_balance = MIN_VALIDATOR_STAKE + 100_000_000;
+        let mut public_balances = sample_public_balances(
+            &validator_addresses,
+            <CurrentNetwork as Network>::STARTING_SUPPLY - allocated_amount - new_validator_balance,
+        );
+        // Set the public balance of the new validator to the minimum validator stake.
+        public_balances.insert(new_validator_address, new_validator_balance);
+
+        // Construct the bonded balances.
+        let bonded_balances = sample_bonded_balances(&validators, &IndexMap::new());
+
+        // Ensure that the block with too many validators fails to be created.
+        assert!(
+            vm.genesis_quorum(
+                validators.keys().next().unwrap(),
+                Committee::new_genesis(committee_map).unwrap(),
+                public_balances,
+                bonded_balances,
+                rng,
+            )
+            .is_err()
         );
     }
 
