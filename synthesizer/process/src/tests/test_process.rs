@@ -48,7 +48,8 @@ function compute:
     .unwrap();
     // Initialize a new process.
     let process = crate::test_helpers::sample_process(&program1);
-    assert_eq!(process.num_stacks(), 1);
+    // Check whether the program is in memory.
+    assert_eq!(process.num_stacks_in_memory(), 1);
     assert!(process.contains_program_in_memory(program1.id()));
 }
 
@@ -116,20 +117,20 @@ function root_call:
 
     // Check whether mid1 is in memory.
     assert!(process.contains_program_in_memory(mid1.id()));
-    assert_eq!(process.num_stacks(), 1);
+    assert_eq!(process.num_stacks_in_memory(), 1);
+    // add mid2 to memory
     process.add_program(&mid2).unwrap();
     // Check whether mid2 is in memory.
     assert!(process.contains_program_in_memory(mid2.id()));
-    assert_eq!(process.num_stacks(), 2);
+    assert_eq!(process.num_stacks_in_memory(), 2);
 
     for i in 3..=<CurrentNetwork as Network>::MAX_STACKS + 1 {
-        // mid1 and mid2 should still be cached.
-        assert!(process.contains_program_in_memory(mid1.id()));
-        assert!(process.contains_program_in_memory(mid2.id()));
         let (_, program) = Program::<CurrentNetwork>::parse(&root_program_template(i)).unwrap();
         process.add_program(&program).unwrap();
-        // The new program should be cached.
+        // The new program and imports should be cached.
         assert!(process.contains_program_in_memory(program.id()));
+        assert!(process.contains_program_in_memory(mid1.id()));
+        assert!(process.contains_program_in_memory(mid2.id()));
     }
 
     // Only MAX_STACKS programs are cached, so the oldest root should be evicted.

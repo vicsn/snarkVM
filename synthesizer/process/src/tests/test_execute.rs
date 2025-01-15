@@ -2493,7 +2493,7 @@ function {function_name}:
 #[test]
 fn test_long_import_chain() {
     // Initialize a new program.
-    let program = Program::<CurrentNetwork>::from_str(
+    let child_program = Program::<CurrentNetwork>::from_str(
         r"
     program test0.aleo;
     function c:",
@@ -2501,7 +2501,8 @@ fn test_long_import_chain() {
     .unwrap();
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program);
+    let mut process = crate::test_helpers::sample_process(&child_program);
+    assert_eq!(process.num_stacks_in_memory(), 1);
 
     // Add `MAX_PROGRAM_DEPTH` programs to the process.
     for i in 1..=CurrentNetwork::MAX_PROGRAM_DEPTH {
@@ -2518,6 +2519,7 @@ fn test_long_import_chain() {
         .unwrap();
         // Add the program to the process.
         process.add_program(&program).unwrap();
+        assert_eq!(process.num_stacks_in_memory(), i + 1);
     }
 
     // Add the `MAX_PROGRAM_DEPTH + 1` program to the process, which should fail.
@@ -2532,6 +2534,8 @@ fn test_long_import_chain() {
     .unwrap();
     let result = process.add_program(&program);
     assert!(result.is_err());
+    assert_eq!(process.num_stacks_in_memory(), CurrentNetwork::MAX_PROGRAM_DEPTH);
+    assert!(process.get_stack(program.id()).is_err());
 }
 
 #[test]
