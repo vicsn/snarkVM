@@ -274,7 +274,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     );
 
                     // Get the transition ID used to initialize the finalize registers.
-                    // If the block height is less than `CONSENSUS_V3_HEIGHT`, then use the top-level transition ID.
+                    // If the block height is greater than or equal to `CONSENSUS_V3_HEIGHT`, then use the top-level transition ID.
                     // Otherwise, query the call graph for the child transition ID corresponding to the future that is being awaited.
                     let transition_id = match state.block_height() < N::CONSENSUS_V3_HEIGHT {
                         true => {
