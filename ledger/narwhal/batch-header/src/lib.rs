@@ -64,7 +64,12 @@ impl<N: Network> BatchHeader<N> {
     #[cfg(any(test, feature = "test-helpers"))]
     pub const MAX_CERTIFICATES: u16 = 100;
     /// The maximum number of certificates in a batch before consensus V3 rules apply.
+    #[cfg(not(any(test, feature = "test-helpers")))]
     pub const MAX_CERTIFICATES_BEFORE_V3: u16 = N::MAX_CERTIFICATES_BEFORE_V3;
+    /// The maximum number of certificates in a batch before consensus V3 rules apply.
+    /// This is deliberately set to a high value (100) for testing purposes only.
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub const MAX_CERTIFICATES_BEFORE_V3: u16 = 100;
     /// The maximum number of rounds to store before garbage collecting.
     pub const MAX_GC_ROUNDS: usize = 100;
     /// The maximum number of transmissions in a batch.

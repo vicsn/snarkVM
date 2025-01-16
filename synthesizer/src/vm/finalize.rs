@@ -1825,8 +1825,10 @@ finalize transfer_public:
         let vm = sample_vm();
 
         // Initialize the validators with the maximum number of validators.
-        let validators =
-            sample_validators::<CurrentNetwork>(Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE as usize, rng);
+        let validators = sample_validators::<CurrentNetwork>(
+            Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE_BEFORE_V3 as usize,
+            rng,
+        );
 
         // Initialize a new address.
         let new_validator_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -2647,8 +2649,10 @@ finalize compute:
 
         // Reset the validators.
         // Note: We use a smaller committee size to ensure that there is enough supply to allocate to the validators and genesis block transactions.
-        let validators =
-            sample_validators::<CurrentNetwork>(Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE as usize, rng);
+        let validators = sample_validators::<CurrentNetwork>(
+            Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE_BEFORE_V3 as usize,
+            rng,
+        );
 
         // Construct the committee.
         // Track the allocated amount.
@@ -2690,8 +2694,10 @@ finalize compute:
 
         // Construct the validators.
         // Note: We use a smaller committee size to ensure that there is enough supply to allocate to the validators and genesis block transactions.
-        let validators =
-            sample_validators::<CurrentNetwork>(Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE as usize / 4, rng);
+        let validators = sample_validators::<CurrentNetwork>(
+            Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE_BEFORE_V3 as usize / 4,
+            rng,
+        );
 
         // Construct the delegators, greater than the maximum delegator size.
         let delegators = (0..MAX_DELEGATORS + 1)
