@@ -73,7 +73,7 @@ use aleo_std::{
 use lru::LruCache;
 use parking_lot::{Mutex, RwLock};
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
-use tracing::debug;
+use tracing::{debug, warn};
 
 #[cfg(feature = "aleo-cli")]
 use colored::Colorize;
@@ -83,29 +83,20 @@ use ledger_store::helpers::memory::ConsensusMemory;
 #[cfg(feature = "rocks")]
 use ledger_store::helpers::rocksdb::ConsensusDB;
 
-#[cfg(feature = "rocks")]
-#[derive(Clone)]
-pub struct Process<N: Network> {
-    /// The universal SRS.
-    universal_srs: Arc<UniversalSRS<N>>,
-    /// The Stack for credits.aleo
-    credits: Option<Arc<Stack<N>>>,
-    /// The mapping of program IDs to stacks.
-    stacks: Arc<Mutex<LruCache<ProgramID<N>, Arc<Stack<N>>>>>,
-    /// The storage.
-    store: Option<ConsensusStore<N, ConsensusDB<N>>>,
-}
+type NumParentsInMemory = usize;
 
-#[cfg(not(feature = "rocks"))]
 #[derive(Clone)]
 pub struct Process<N: Network> {
     /// The universal SRS.
     universal_srs: Arc<UniversalSRS<N>>,
     /// The Stack for credits.aleo
     credits: Option<Arc<Stack<N>>>,
-    /// The mapping of program IDs to stacks.
-    stacks: Arc<Mutex<LruCache<ProgramID<N>, Arc<Stack<N>>>>>,
+    /// The LRU cache of stacks.
+    stacks: Arc<Mutex<LruCache<ProgramID<N>, (Arc<Stack<N>>, NumParentsInMemory)>>>,
     /// The storage.
+    #[cfg(feature = "rocks")]
+    store: Option<ConsensusStore<N, ConsensusDB<N>>>,
+    #[cfg(not(feature = "rocks"))]
     store: Option<ConsensusStore<N, ConsensusMemory<N>>>,
 }
 
@@ -115,12 +106,7 @@ impl<N: Network> Process<N> {
     pub fn setup<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(rng: &mut R) -> Result<Self> {
         let timer = timer!("Process:setup");
         // Initialize the process.
-        let mut process = Self {
-            universal_srs: Arc::new(UniversalSRS::load()?),
-            credits: None,
-            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(N::MAX_STACKS).unwrap()))),
-            store: None,
-        };
+        let mut process = Self::load_no_storage()?;
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -163,6 +149,8 @@ impl<N: Network> Process<N> {
     /// If you intend to `execute` the program, use `deploy` and `finalize_deployment` instead.
     #[inline]
     pub fn add_stack(&self, stack: Arc<Stack<N>>) -> Result<()> {
+        // Construct the 'credits.aleo' program ID.
+        let credits_id = ProgramID::<N>::from_str("credits.aleo")?;
         // Collect all direct and indirect external stacks.
         let programs_to_add = stack.all_external_stacks();
         // Obtain the lock on the stacks.
@@ -172,47 +160,67 @@ impl<N: Network> Process<N> {
             .into_iter()
             .chain(std::iter::once((*stack.program_id(), stack))) // add the root stack.
             .unique_by(|(id, _)|*id) // don't add duplicates.
-            .filter(|(program_id, _)| program_id != &ProgramID::<N>::from_str("credits.aleo").unwrap()) // don't add the credits.aleo stack.
-            .filter(|(program_id, _)| !stacks.contains(program_id)) // don't add stacks present in the cache.
+            .filter(|(program_id, _)| {
+                *program_id != credits_id // don't add the credits.aleo stack.
+                && !stacks.contains(program_id) // don't add stacks present in the cache.
+            })
             .collect::<Vec<_>>();
         // Determine the required capacity.
-        let current_capacity = stacks.cap().get().saturating_sub(stacks.len());
-        let mut required_capacity = programs_to_add.len().saturating_sub(current_capacity);
-        if required_capacity > 0 {
+        let remaining_capacity = stacks.cap().get().saturating_sub(stacks.len());
+        let mut required_capacity = programs_to_add.len().saturating_sub(remaining_capacity);
+        if required_capacity != 0 {
             debug!("Evicting {required_capacity} stacks from the cache.");
         }
         // If the new stacks require more capacity, attempt to remove the least recently used stacks.
-        while required_capacity > 0 {
-            // To avoid dangling stacks, we only remove stacks that do not have more than 1 reference (e.g. as external stack).
-            // For this not to loop endlessly, we assume to always quickly find stacks with just one reference, so:
-            // 1. queried stacks must be short-lived, which is essential anyway to avoid memory leaks.
-            // 2. queried stacks must expire before a querying thread queries the next stack.
+        while required_capacity != 0 {
+            // To avoid dangling stacks, we only remove stacks which are not imported by any other stack.
             let root_program_ids = stacks
                 .iter()
                 .rev()
-                .filter_map(|(program_id, stack)| (std::sync::Arc::<_>::strong_count(stack) == 1).then_some(program_id))
+                .filter_map(|(program_id, (_, num_parents))| (*num_parents == 0).then_some(program_id))
                 .take(required_capacity)
                 .cloned()
                 .collect::<Vec<_>>();
-            // Lower the required capacity.
-            required_capacity = required_capacity.saturating_sub(root_program_ids.len());
             // Evict the old stacks from the cache.
             for program_id in root_program_ids {
-                if stacks.pop(&program_id).is_none() {
-                    bail!("Could not find expected program id in cache.")
+                if let Some((removed_stack, _)) = stacks.pop(&program_id) {
+                    // Decrement the number of tracked parents of the external stacks.
+                    for (import_program_id, _) in
+                        removed_stack.program().imports().into_iter().filter(|(id, _)| **id != credits_id)
+                    {
+                        if let Some((_, num_parents)) = stacks.get_mut(import_program_id) {
+                            *num_parents = num_parents.saturating_sub(1);
+                        } else {
+                            bail!("Could not find expected import program id {} in cache.", import_program_id)
+                        }
+                    }
+                } else {
+                    bail!("Could not find expected program id {program_id} in cache.")
                 }
+                // Lower the required capacity.
+                required_capacity = required_capacity.saturating_sub(1);
             }
         }
-        // Add a new stacks into the cache.
+        // Add new stacks into the cache, from lowest the highest level.
         for (program_id, stack) in programs_to_add {
-            stacks.put(program_id, stack);
+            // Increment the tracked number of parents of the external stacks.
+            for (import_program_id, _) in stack.program().imports().into_iter().filter(|(id, _)| **id != credits_id) {
+                if let Some((_, num_parents)) = stacks.get_mut(import_program_id) {
+                    *num_parents += 1;
+                } else {
+                    bail!("Could not find expected import program id {} in cache.", import_program_id)
+                }
+            }
+            // Add the stack itself into the cache.
+            stacks.put(program_id, (stack, 0));
         }
         Ok(())
     }
 
+    #[cfg(test)]
     /// Returns the size of the cache.
     #[inline]
-    pub fn num_stacks(&self) -> usize {
+    pub fn num_stacks_in_memory(&self) -> usize {
         self.stacks.lock().len()
     }
 }
@@ -328,7 +336,7 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
         // Check if the program is in memory.
-        if self.contains_program_in_memory(program_id) {
+        if self.contains_program_in_cache(program_id) {
             return true;
         }
         // Retrieve the stores.
@@ -338,8 +346,8 @@ impl<N: Network> Process<N> {
             // Check if the program ID exists in the storage.
             match deployment_store.find_transaction_id_from_program_id(program_id) {
                 Ok(Some(_)) => return true,
-                Ok(None) => debug!("Program ID not found in storage"),
-                Err(err) => debug!("Could not retrieve transaction ID for program ID: {err}"),
+                Ok(None) => debug!("Program ID {program_id} not found in storage"),
+                Err(err) => warn!("Could not retrieve transaction ID for program ID {program_id}: {err}"),
             }
         }
 
@@ -348,7 +356,7 @@ impl<N: Network> Process<N> {
 
     /// Returns `true` if the process contains the program with the given ID.
     #[inline]
-    pub fn contains_program_in_memory(&self, program_id: &ProgramID<N>) -> bool {
+    pub fn contains_program_in_cache(&self, program_id: &ProgramID<N>) -> bool {
         // Check if the program ID is 'credits.aleo'.
         if self.credits.as_ref().map_or(false, |stack| stack.program_id() == program_id) {
             return true;
@@ -358,22 +366,17 @@ impl<N: Network> Process<N> {
     }
 
     /// Returns the stack for the given program ID.
+    /// Note: stacks are large, so queried stacks should be short-lived to avoid memory leaks.
     #[inline]
     pub fn get_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<Arc<Stack<N>>> {
         // Prepare the program ID.
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
         // Check if the program is 'credits.aleo'.
-        if program_id == ProgramID::<N>::from_str("credits.aleo")? {
+        if self.credits.as_ref().map_or(false, |stack| *stack.program_id() == program_id) {
             return self.credits.clone().ok_or_else(|| anyhow!("Failed to get stack for 'credits.aleo'"));
         }
         // Try to retrieve the stack from the LRU cache.
-        if let Some(stack) = self.stacks.lock().get(&program_id) {
-            // Ensure the program ID matches.
-            ensure!(
-                stack.program_id() == &program_id,
-                "Expected program '{}', found '{program_id}'",
-                stack.program_id()
-            );
+        if let Some((stack, _)) = self.stacks.lock().get(&program_id) {
             // Return the stack.
             return Ok(stack.clone());
         }
