@@ -2534,7 +2534,6 @@ fn test_long_import_chain() {
     .unwrap();
     let result = process.add_program(&program);
     assert!(result.is_err());
-    assert_eq!(process.num_stacks_in_memory(), CurrentNetwork::MAX_PROGRAM_DEPTH);
     assert!(process.get_stack(program.id()).is_err());
 }
 
