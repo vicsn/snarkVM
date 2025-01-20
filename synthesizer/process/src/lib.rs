@@ -375,7 +375,7 @@ impl<N: Network> Process<N> {
         // Prepare the program ID.
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
         // Check if the program is 'credits.aleo'.
-        if program_id == ProgramID::<N>::from_str("credits.aleo")? {
+        if self.credits.as_ref().map_or(false, |stack| *stack.program_id() == program_id) {
             return self.credits.clone().ok_or_else(|| anyhow!("Failed to get stack for 'credits.aleo'"));
         }
         // Try to retrieve the stack from the LRU cache.
