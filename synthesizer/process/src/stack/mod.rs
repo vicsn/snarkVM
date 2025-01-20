@@ -204,7 +204,7 @@ impl<N: Network> Stack<N> {
         // Retrieve the program ID.
         let program_id = program.id();
         // Ensure the program does not already exist in the process.
-        ensure!(!process.contains_program_in_memory(program_id), "Program '{program_id}' already exists");
+        ensure!(!process.contains_program_in_cache(program_id), "Program '{program_id}' already exists");
         // Ensure the program contains functions.
         ensure!(!program.functions().is_empty(), "No functions present in the deployment for program '{program_id}'");
 

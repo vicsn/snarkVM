@@ -339,7 +339,7 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
         // Check if the program is in memory.
-        if self.contains_program_in_memory(program_id) {
+        if self.contains_program_in_cache(program_id) {
             return true;
         }
         // Retrieve the stores.
@@ -359,7 +359,7 @@ impl<N: Network> Process<N> {
 
     /// Returns `true` if the process contains the program with the given ID.
     #[inline]
-    pub fn contains_program_in_memory(&self, program_id: &ProgramID<N>) -> bool {
+    pub fn contains_program_in_cache(&self, program_id: &ProgramID<N>) -> bool {
         // Check if the program ID is 'credits.aleo'.
         if self.credits.as_ref().map_or(false, |stack| stack.program_id() == program_id) {
             return true;
