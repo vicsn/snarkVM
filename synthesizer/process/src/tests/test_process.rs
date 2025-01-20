@@ -1029,9 +1029,9 @@ finalize execute:
     )
     .unwrap();
 
-    let program_i = |i| { 
-        Program::<CurrentNetwork>::from_str(
-            &format!(r"
+    let program_i = |i| {
+        Program::<CurrentNetwork>::from_str(&format!(
+            r"
     import credits.aleo;
     import staking_v1.aleo;
     import staker_v1_b.aleo;
@@ -1119,8 +1119,8 @@ finalize execute:
         input r1 as staker_v1_b.aleo/set_admin.future;
         await r0;
         await r1;
-            ")
-        )
+            "
+        ))
         .unwrap()
     };
 
