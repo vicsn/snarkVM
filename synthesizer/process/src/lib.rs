@@ -106,12 +106,7 @@ impl<N: Network> Process<N> {
     pub fn setup<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(rng: &mut R) -> Result<Self> {
         let timer = timer!("Process:setup");
         // Initialize the process.
-        let mut process = Self {
-            universal_srs: Arc::new(UniversalSRS::load()?),
-            credits: None,
-            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(N::MAX_STACKS).unwrap()))),
-            store: None,
-        };
+        let mut process = Self::load_no_storage()?;
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
