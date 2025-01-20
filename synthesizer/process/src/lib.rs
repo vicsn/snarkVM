@@ -222,6 +222,7 @@ impl<N: Network> Process<N> {
         Ok(())
     }
 
+    #[cfg(test)]
     /// Returns the size of the cache.
     #[inline]
     pub fn num_stacks_in_memory(&self) -> usize {
