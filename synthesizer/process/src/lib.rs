@@ -73,7 +73,7 @@ use aleo_std::{
 use lru::LruCache;
 use parking_lot::{Mutex, RwLock};
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
-use tracing::debug;
+use tracing::{debug, warn};
 
 #[cfg(feature = "aleo-cli")]
 use colored::Colorize;
@@ -349,8 +349,8 @@ impl<N: Network> Process<N> {
             // Check if the program ID exists in the storage.
             match deployment_store.find_transaction_id_from_program_id(program_id) {
                 Ok(Some(_)) => return true,
-                Ok(None) => debug!("Program ID not found in storage"),
-                Err(err) => debug!("Could not retrieve transaction ID for program ID: {err}"),
+                Ok(None) => debug!("Program ID {program_id} not found in storage"),
+                Err(err) => warn!("Could not retrieve transaction ID for program ID {program_id}: {err}"),
             }
         }
 
