@@ -243,7 +243,6 @@ impl<N: Network> Process<N> {
     pub fn load_from_storage(storage_mode: Option<StorageMode>) -> Result<Self> {
         let timer = timer!("Process::load_from_storage");
 
-        debug!("Opening storage");
         let storage_mode = storage_mode.clone().ok_or_else(|| anyhow!("Failed to get storage mode"))?;
         // try to lazy load the stack
         #[cfg(feature = "rocks")]
@@ -255,7 +254,6 @@ impl<N: Network> Process<N> {
             Ok(store) => store,
             Err(e) => bail!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{e}\n"),
         };
-        debug!("Opened storage");
 
         // Initialize the process.
         let mut process = Self {
