@@ -244,7 +244,7 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::load_from_storage");
 
         let storage_mode = storage_mode.ok_or_else(|| anyhow!("Failed to get storage mode"))?;
-        // try to lazy load the stack
+        // Try to lazily load the stack.
         #[cfg(feature = "rocks")]
         let store = ConsensusStore::<N, ConsensusDB<N>>::open(storage_mode);
         #[cfg(not(feature = "rocks"))]
