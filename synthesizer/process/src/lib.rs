@@ -83,7 +83,7 @@ use ledger_store::helpers::memory::ConsensusMemory;
 #[cfg(feature = "rocks")]
 use ledger_store::helpers::rocksdb::ConsensusDB;
 
-type NUM_PARENTS_IN_MEMORY: usize;
+type NumParentsInMemory = usize;
 
 #[cfg(feature = "rocks")]
 #[derive(Clone)]
@@ -93,7 +93,7 @@ pub struct Process<N: Network> {
     /// The Stack for credits.aleo
     credits: Option<Arc<Stack<N>>>,
     /// The mapping of program IDs to stacks and its number of parents in memory.
-    stacks: Arc<Mutex<LruCache<ProgramID<N>, (Arc<Stack<N>>, NUM_PARENTS_IN_MEMORY)>>>,
+    stacks: Arc<Mutex<LruCache<ProgramID<N>, (Arc<Stack<N>>, NumParentsInMemory)>>>,
     /// The storage.
     store: Option<ConsensusStore<N, ConsensusDB<N>>>,
 }
@@ -106,7 +106,7 @@ pub struct Process<N: Network> {
     /// The Stack for credits.aleo
     credits: Option<Arc<Stack<N>>>,
     /// The mapping of program IDs to stacks.
-    stacks: Arc<Mutex<LruCache<ProgramID<N>, (Arc<Stack<N>>, NUM_PARENTS_IN_MEMORY)>>>,
+    stacks: Arc<Mutex<LruCache<ProgramID<N>, (Arc<Stack<N>>, NumParentsInMemory)>>>,
     /// The storage.
     store: Option<ConsensusStore<N, ConsensusMemory<N>>>,
 }
