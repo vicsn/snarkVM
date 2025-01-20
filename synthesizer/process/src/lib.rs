@@ -150,7 +150,10 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn add_stack(&self, stack: Arc<Stack<N>>) -> Result<()> {
         // Construct the 'credits.aleo' program ID.
-        let credits_id = ProgramID::<N>::from_str("credits.aleo")?;
+        let credits_id = self
+            .credits
+            .as_ref()
+            .map_or(ProgramID::<N>::from_str("credits.aleo").unwrap(), |stack| *stack.program_id());
         // Collect all direct and indirect external stacks.
         let programs_to_add = stack.all_external_stacks();
         // Obtain the lock on the stacks.
