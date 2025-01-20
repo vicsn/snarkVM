@@ -197,11 +197,7 @@ pub trait Network:
 
     /// The maximum number of stacks in the process.
     /// Must be at least Self::MAX_PROGRAM_DEPTH * Self::MAX_IMPORTS to be safe.
-    #[cfg(not(any(test, feature = "test")))]
     const MAX_STACKS: usize = Self::MAX_PROGRAM_DEPTH * Self::MAX_IMPORTS * 10;
-    /// The maximum number of stacks in the process.
-    #[cfg(any(test, feature = "test"))]
-    const MAX_STACKS: usize = 65;
 
     /// The maximum number of bytes in a transaction.
     // Note: This value must **not** be decreased as it would invalidate existing transactions.
