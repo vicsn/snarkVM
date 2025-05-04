@@ -31,5 +31,8 @@ pub use pedersen::*;
 pub mod poseidon;
 pub use poseidon::*;
 
+pub mod sha2;
+pub use sha2::*;
+
 pub mod traits;
 pub use traits::*;
