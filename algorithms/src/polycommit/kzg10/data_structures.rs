@@ -35,6 +35,8 @@ use core::ops::{Add, AddAssign};
 use rand_core::RngCore;
 use std::{collections::BTreeMap, io, ops::Range, sync::Arc};
 
+use crate::msm::twisted_edwards::EdAffine;
+
 /// `UniversalParams` are the universal parameters for the KZG10 scheme.
 #[derive(Clone, Debug)]
 pub struct UniversalParams<E: PairingEngine> {
@@ -155,6 +157,9 @@ pub struct Powers<'a, E: PairingEngine> {
     pub powers_of_beta_g: Cow<'a, [E::G1Affine]>,
     /// Group elements of the form `β^i γG`, for different values of `i`.
     pub powers_of_beta_times_gamma_g: Cow<'a, [E::G1Affine]>,
+
+    // pub ed_powers_of_beta_g: Cow<'a, [EdAffine]>,
+    // pub ed_powers_of_beta_times_gamma_g: Cow<'a, [EdAffine]>,
 }
 
 impl<E: PairingEngine> Powers<'_, E> {
@@ -174,6 +179,9 @@ pub struct LagrangeBasis<'a, E: PairingEngine> {
     /// Domain representing the multiplicative subgroup the powers
     /// in `self.lagrange_basis_at_beta_g` are defined over.
     pub domain: EvaluationDomain<E::Fr>,
+
+    // pub ed_lagrange_basis_at_beta_g: Cow<'a, [EdAffine]>,
+    // pub ed_powers_of_beta_times_gamma_g: Cow<'a, [EdAffine]>,
 }
 
 impl<E: PairingEngine> LagrangeBasis<'_, E> {

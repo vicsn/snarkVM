@@ -45,7 +45,7 @@ use snarkvm_circuit_types_boolean::Boolean;
 #[derive(Clone)]
 pub struct Field<E: Environment> {
     /// The linear combination contains the primary representation of the field.
-    linear_combination: LinearCombination<E::BaseField>,
+    pub linear_combination: LinearCombination<E::BaseField>,
     /// An optional secondary representation in little-endian bits is provided,
     /// so that calls to `ToBits` only incur constraint costs once.
     bits_le: OnceCell<Vec<Boolean<E>>>,

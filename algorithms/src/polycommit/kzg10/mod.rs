@@ -116,8 +116,15 @@ impl<E: PairingEngine> KZG10<E> {
 
                 let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + plain_coeffs.len())];
 
+                // let ed_bases = &powers.ed_powers_of_beta_g[num_leading_zeros..(num_leading_zeros + plain_coeffs.len())];
+
                 let msm_time = start_timer!(|| "MSM to compute commitment to plaintext poly");
+
+                let time = std::time::Instant::now();
+
                 let commitment = VariableBase::msm(bases, &plain_coeffs);
+                // let commitment: E::G1Projective = VariableBase::te_msm::<E::G1Affine>(ed_bases, &plain_coeffs);
+
                 end_timer!(msm_time);
 
                 commitment
@@ -148,6 +155,7 @@ impl<E: PairingEngine> KZG10<E> {
         let msm_time = start_timer!(|| "MSM to compute commitment to random poly");
         let random_commitment =
             VariableBase::msm(&powers.powers_of_beta_times_gamma_g, random_ints.as_slice()).to_affine();
+            // VariableBase::te_msm::<E::G1Affine>(&powers.ed_powers_of_beta_times_gamma_g, random_ints.as_slice()).to_affine();
         end_timer!(msm_time);
 
         commitment.add_assign_mixed(&random_commitment);
@@ -178,6 +186,7 @@ impl<E: PairingEngine> KZG10<E> {
         let evaluations = evaluations.iter().map(|e| e.to_bigint()).collect::<Vec<_>>();
         let msm_time = start_timer!(|| "MSM to compute commitment to plaintext poly");
         let mut commitment = VariableBase::msm(&lagrange_basis.lagrange_basis_at_beta_g, &evaluations);
+        // let mut commitment: E::G1Projective = VariableBase::te_msm::<E::G1Affine>(&lagrange_basis.ed_lagrange_basis_at_beta_g, &evaluations);
         end_timer!(msm_time);
 
         let mut randomness = KZGRandomness::empty();
@@ -248,9 +257,11 @@ impl<E: PairingEngine> KZG10<E> {
         let (num_leading_zeros, witness_coeffs) = skip_leading_zeros_and_convert_to_bigints(witness_polynomial);
 
         let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + witness_coeffs.len())];
+        // let ed_bases = &powers.ed_powers_of_beta_g[num_leading_zeros..(num_leading_zeros + witness_coeffs.len())];
 
         let witness_comm_time = start_timer!(|| "Computing commitment to witness polynomial");
         let mut w = VariableBase::msm(bases, &witness_coeffs);
+        // let mut w: E::G1Projective = VariableBase::te_msm::<E::G1Affine>(ed_bases, &witness_coeffs);
         end_timer!(witness_comm_time);
 
         let random_v = if let Some(hiding_witness_polynomial) = hiding_witness_polynomial {
@@ -485,6 +496,7 @@ mod tests {
     use snarkvm_utilities::{FromBytes, ToBytes, rand::TestRng};
 
     use std::borrow::Cow;
+    use crate::msm::te_standard::generate_ed_bases;
 
     type KZG_Bls12_377 = KZG10<Bls12_377>;
 
@@ -507,9 +519,14 @@ mod tests {
                 vec![]
             };
 
+            let ed_powers_of_beta_g = generate_ed_bases(powers_of_beta_g.as_slice());
+            let ed_powers_of_beta_times_gamma_g = generate_ed_bases(powers_of_beta_times_gamma_g.as_slice());
+
             let powers = Powers {
                 powers_of_beta_g: Cow::Owned(powers_of_beta_g),
                 powers_of_beta_times_gamma_g: Cow::Owned(powers_of_beta_times_gamma_g),
+                ed_powers_of_beta_g: Cow::Owned(ed_powers_of_beta_g),
+                ed_powers_of_beta_times_gamma_g: Cow::Owned(ed_powers_of_beta_times_gamma_g),
             };
             let vk = VerifierKey {
                 g: pp.power_of_beta_g(0).unwrap(),
@@ -537,19 +554,23 @@ mod tests {
 
     fn end_to_end_test_template<E: PairingEngine>() -> Result<(), PCError> {
         let rng = &mut TestRng::default();
-        for _ in 0..100 {
+        for _ in 0..10 {
             let mut degree = 0;
             while degree <= 1 {
-                degree = usize::rand(rng) % 20;
+                degree = usize::rand(rng) % 200000;
             }
             let pp = KZG10::<E>::load_srs(degree)?;
             let hiding_bound = Some(1);
             let (ck, vk) = KZG10::trim(&pp, degree, hiding_bound);
             let p = DensePolynomial::rand(degree, rng);
+
             let (comm, rand) = KZG10::<E>::commit(&ck, &(&p).into(), hiding_bound, Some(rng))?;
+
             let point = E::Fr::rand(rng);
             let value = p.evaluate(point);
+
             let proof = KZG10::<E>::open(&ck, &p, point, &rand)?;
+
             assert!(
                 KZG10::<E>::check(&vk, &comm, point, value, &proof)?,
                 "proof was incorrect for max_degree = {}, polynomial_degree = {}, hiding_bound = {:?}",

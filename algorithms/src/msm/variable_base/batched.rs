@@ -17,6 +17,8 @@ use snarkvm_curves::{AffineCurve, ProjectiveCurve};
 use snarkvm_fields::{Field, One, PrimeField, Zero};
 use snarkvm_utilities::{BigInteger, BitIteratorBE, cfg_into_iter};
 
+use crate::msm::twisted_edwards::*;
+
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
@@ -173,6 +175,7 @@ fn batch_add_write<G: AffineCurve>(
     }
     scratch_space.clear();
 }
+
 
 #[inline]
 pub(super) fn batch_add<G: AffineCurve>(

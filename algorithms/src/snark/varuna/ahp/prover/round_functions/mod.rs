@@ -50,7 +50,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let init_time = start_timer!(|| "AHP::Prover::Init");
 
         let mut randomizing_assignments = Vec::with_capacity(circuits_to_constraints.len());
-        for constraints in circuits_to_constraints.values() {
+        // for constraints in circuits_to_constraints.values() {
+        circuits_to_constraints.iter().for_each(|(_, constraints)| {
             let mut circuit_assignments = Vec::with_capacity(constraints.len());
             for _ in 0..constraints.len() {
                 if SM::ZK {
@@ -63,7 +64,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 }
             }
             randomizing_assignments.push(circuit_assignments);
-        }
+        });
 
         let indices_and_assignments = circuits_to_constraints
             .iter()

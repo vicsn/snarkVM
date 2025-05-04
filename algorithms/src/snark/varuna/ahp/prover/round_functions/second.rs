@@ -80,7 +80,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let mut job_pool = ExecutionPool::with_capacity(state.circuit_specific_states.len());
         let max_constraint_domain = state.max_constraint_domain;
 
-        for (circuit, circuit_specific_state) in state.circuit_specific_states.iter_mut() {
+        for (&ref circuit, circuit_specific_state) in state.circuit_specific_states.iter_mut() {
             let z_a = circuit_specific_state.z_a.take().unwrap();
             let z_b = circuit_specific_state.z_b.take().unwrap();
             let z_c = circuit_specific_state.z_c.take().unwrap();

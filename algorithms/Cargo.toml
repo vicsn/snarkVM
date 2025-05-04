@@ -108,7 +108,6 @@ version = "0.11.0"
 
 [dependencies.lazy_static]
 version = "1.4"
-optional = true
 
 [dependencies.locktick]
 version = "0.3"

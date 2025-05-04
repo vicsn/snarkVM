@@ -27,6 +27,8 @@ use std::{
     ops::{AddAssign, MulAssign, SubAssign},
 };
 
+use crate::msm::{te_standard::generate_ed_bases, twisted_edwards::EdAffine};
+
 /// `UniversalParams` are the universal parameters for the KZG10 scheme.
 pub type UniversalParams<E> = kzg10::UniversalParams<E>;
 
@@ -321,7 +323,7 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
                 };
 
                 let ck = kzg10::Powers {
-                    powers_of_beta_g: shifted_powers_of_beta_g[powers_range].into(),
+                    powers_of_beta_g: shifted_powers_of_beta_g[powers_range.clone()].into(),
                     powers_of_beta_times_gamma_g: shifted_powers_of_beta_times_gamma_g[&bound].clone().into(),
                 };
 

@@ -388,10 +388,16 @@ where
         }
         ensure!(prover_state.total_instances == total_instances);
 
-        let committer_key = CommitterUnionKey::union(keys_to_constraints.keys().map(|pk| pk.committer_key.deref()));
+        // let committer_key = CommitterUnionKey::union(keys_to_constraints.keys().map(|pk| pk.committer_key.deref()));
+
+        // let circuit_commitments =
+        //     keys_to_constraints.keys().map(|pk| pk.circuit_verifying_key.circuit_commitments.as_slice());
+
+        let mut committer_key = CommitterUnionKey::union(keys_to_constraints.iter().map(|(pk, _)| pk.committer_key.deref()));
 
         let circuit_commitments =
-            keys_to_constraints.keys().map(|pk| pk.circuit_verifying_key.circuit_commitments.as_slice());
+            keys_to_constraints.iter().map(|(pk, _)| pk.circuit_verifying_key.circuit_commitments.as_slice());
+
 
         let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone());
 
@@ -689,6 +695,10 @@ where
         ensure!(proof.pc_proof.is_hiding() == SM::ZK);
 
         end_timer!(prover_time);
+
+        committer_key.lagrange_bases_at_beta_g.clear();
+        committer_key.shifted_powers_of_beta_times_gamma_g.unwrap().clear();
+
         Ok(proof)
     }
 

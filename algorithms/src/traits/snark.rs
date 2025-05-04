@@ -21,8 +21,9 @@ use anyhow::Result;
 use rand::{CryptoRng, Rng};
 use std::{borrow::Borrow, collections::BTreeMap, fmt::Debug};
 
-/// Defines trait that describes preparing from an unprepared version to a
-/// prepare version.
+use crate::snark::varuna::CircuitProvingKey;
+
+/// Defines trait that describes preparing from an unprepared version to a prepare version.
 pub trait Prepare {
     type Prepared;
     fn prepare(&self) -> Self::Prepared;

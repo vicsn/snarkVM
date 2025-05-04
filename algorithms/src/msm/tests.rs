@@ -48,7 +48,14 @@ fn variable_base_test_with_bls12() {
     let naive = naive_variable_base_msm(g.as_slice(), v.as_slice());
     let fast = VariableBase::msm(g.as_slice(), v.as_slice());
 
+    // testing twisted_edwards
+    use crate::msm::te_standard::generate_ed_bases;
+    use snarkvm_curves::bls12_377::G1Affine;
+    let te_bases = generate_ed_bases(g.as_slice());
+    let te_msm = VariableBase::te_msm::<G1Affine>(te_bases.as_slice(), v.as_slice());
+
     assert_eq!(naive.to_affine(), fast.to_affine());
+    assert_eq!(naive.to_affine(), te_msm.to_affine());
 }
 
 #[test]

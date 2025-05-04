@@ -15,6 +15,8 @@
 
 pub mod batched;
 pub mod standard;
+pub mod twisted_edwards;
+pub mod te_standard;
 
 #[cfg(target_arch = "x86_64")]
 pub mod prefetch;
@@ -22,11 +24,20 @@ pub mod prefetch;
 use snarkvm_curves::{bls12_377::G1Affine, traits::AffineCurve};
 use snarkvm_fields::PrimeField;
 
+use crate::msm::twisted_edwards::*;
+
 use core::any::TypeId;
 
 pub struct VariableBase;
 
 impl VariableBase {
+    pub fn te_msm<G: AffineCurve>(
+        bases: &[EdAffine],
+        scalars: &[<G::ScalarField as PrimeField>::BigInteger],
+    ) -> G::Projective {
+        te_standard::te_msm::<G>(bases, scalars)
+    }
+
     pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
         // For BLS12-377, we perform variable base MSM using a batched addition
         // technique.
@@ -99,11 +110,20 @@ mod tests {
             let naive_b = VariableBase::msm_naive_parallel(bases.as_slice(), scalars.as_slice()).to_affine();
             assert_eq!(naive_a, naive_b, "MSM size: {msm_size}");
 
+            let time = std::time::Instant::now();
+
             let candidate = standard::msm(bases.as_slice(), scalars.as_slice()).to_affine();
             assert_eq!(naive_a, candidate, "MSM size: {msm_size}");
 
+            println!("standard msm time = {:?}", time.elapsed());
+            let time = std::time::Instant::now();
+
+
             let candidate = batched::msm(bases.as_slice(), scalars.as_slice()).to_affine();
             assert_eq!(naive_a, candidate, "MSM size: {msm_size}");
+
+            println!("batched msm time = {:?}", time.elapsed());
+
         }
     }
 
