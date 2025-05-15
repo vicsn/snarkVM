@@ -13,26 +13,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![forbid(unsafe_code)]
-#![allow(clippy::too_many_arguments)]
+mod hash;
 
-pub mod bhp;
-pub use bhp::*;
+use std::marker::PhantomData;
+use snarkvm_circuit_types::Boolean;
+use snarkvm_circuit_types::prelude::Environment;
+use crate::Hash;
 
-pub mod elligator2;
-pub use elligator2::Elligator2;
+/// The RIPEMD-160 hash.
+/// Source: https://homes.esat.kuleuven.be/~bosselae/ripemd160/pdf/AB-9601/AB-9601.pdf
+pub struct Ripemd160<E: Environment> {
+    phantom_data: PhantomData<E>
+}
 
-pub mod keccak;
-pub use keccak::*;
-
-mod ripemd160;
-
-pub mod pedersen;
-pub use pedersen::*;
-
-pub mod poseidon;
-pub use poseidon::*;
-
-pub mod traits;
-
-pub use traits::*;
+impl<E: Environment> Ripemd160<E> {
+    /// Initializes a new RIPEMD-160 hash.
+    pub fn new() -> Self {
+        Self { phantom_data : PhantomData}
+    }
+}
