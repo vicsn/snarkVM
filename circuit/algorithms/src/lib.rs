@@ -25,7 +25,8 @@ pub use elligator2::Elligator2;
 pub mod keccak;
 pub use keccak::*;
 
-mod ripemd160;
+pub mod ripemd160;
+pub use ripemd160::*;
 
 pub mod pedersen;
 pub use pedersen::*;
