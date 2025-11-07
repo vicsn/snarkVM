@@ -69,15 +69,36 @@ use snarkvm_utilities::{
     BitIteratorBE,
     biginteger::{BigInteger, BigInteger256, BigInteger384},
     rand::{TestRng, Uniform},
+    serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate},
 };
 
 use rand::Rng;
 use std::{
     cmp::Ordering,
+    fmt::Debug,
     ops::{AddAssign, Mul, MulAssign, SubAssign},
 };
 
 pub(crate) const ITERATIONS: usize = 10;
+
+fn assert_canonical_roundtrip<T>(value: &T)
+where
+    T: Clone + PartialEq + Debug + CanonicalSerialize + CanonicalDeserialize,
+{
+    let combinations = [
+        (Compress::No, Validate::No),
+        (Compress::Yes, Validate::No),
+        (Compress::No, Validate::Yes),
+        (Compress::Yes, Validate::Yes),
+    ];
+    for (compress, validate) in combinations {
+        let mut serialized = Vec::new();
+        value.serialize_with_mode(&mut serialized, compress).unwrap();
+        let decoded = T::deserialize_with_mode(&serialized[..], compress, validate).unwrap();
+        assert_eq!(value.clone(), decoded);
+        assert_eq!(value.serialized_size(compress), serialized.len());
+    }
+}
 
 #[test]
 fn test_bls12_377_fr() {
@@ -145,6 +166,31 @@ fn test_bls12_377_fq12() {
     }
     frobenius_test::<Fq12, _>(Fq::characteristic(), 13, &mut rng);
     field_serialization_test::<Fq12>(&mut rng);
+}
+
+#[test]
+fn test_bls12_377_fr_canonical_serialization() {
+    let mut rng = TestRng::default();
+    assert_canonical_roundtrip(&Fr::zero());
+    assert_canonical_roundtrip(&Fr::one());
+    for _ in 0..ITERATIONS {
+        let element: Fr = rng.gen();
+        assert_canonical_roundtrip(&element);
+    }
+}
+
+#[test]
+fn test_bls12_377_g1_affine_canonical_serialization() {
+    assert_canonical_roundtrip(&G1Affine::zero());
+    assert_canonical_roundtrip(&G1Affine::prime_subgroup_generator());
+
+    let generator = G1Projective::prime_subgroup_generator();
+    let mut current = G1Projective::zero();
+    for _ in 0..ITERATIONS {
+        current += &generator;
+        let affine = G1Affine::from(current);
+        assert_canonical_roundtrip(&affine);
+    }
 }
 
 #[test]

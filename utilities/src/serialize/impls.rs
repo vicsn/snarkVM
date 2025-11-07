@@ -201,7 +201,8 @@ impl<T: CanonicalSerialize> CanonicalSerialize for Option<T> {
 
     #[inline]
     fn serialized_size(&self, compress: Compress) -> usize {
-        8 + self.as_ref().map(|s| s.serialized_size(compress)).unwrap_or(0)
+        bool::serialized_size(&self.is_some(), compress)
+            + self.as_ref().map(|s| s.serialized_size(compress)).unwrap_or(0)
     }
 }
 
@@ -504,7 +505,7 @@ impl<T: CanonicalSerialize> CanonicalSerialize for [T; 32] {
 
     #[inline]
     fn serialized_size(&self, compress: Compress) -> usize {
-        8 + self.iter().map(|item| item.serialized_size(compress)).sum::<usize>()
+        self.iter().map(|item| item.serialized_size(compress)).sum::<usize>()
     }
 }
 
@@ -642,10 +643,12 @@ mod test {
             (Compress::Yes, Validate::Yes),
         ];
         for (compress, validate) in combinations {
-            let mut serialized = vec![0; data.serialized_size(compress)];
-            data.serialize_with_mode(&mut serialized[..], compress).unwrap();
+            let mut serialized = vec![];
+            data.serialize_with_mode(&mut serialized, compress).unwrap();
             let de = T::deserialize_with_mode(&serialized[..], compress, validate).unwrap();
             assert_eq!(data, de);
+
+            assert_eq!(data.serialized_size(compress), serialized.len());
         }
     }
 
@@ -702,7 +705,9 @@ mod test {
 
     #[test]
     fn test_tuple() {
+        test_serialize((123u64, 234u32));
         test_serialize((123u64, 234u32, 999u16));
+        test_serialize((123u64, 234u32, 999u16, 88u8));
     }
 
     #[test]
@@ -719,5 +724,28 @@ mod test {
     #[test]
     fn test_phantomdata() {
         test_serialize(std::marker::PhantomData::<u64>);
+    }
+
+    #[test]
+    fn test_array_32() {
+        let mut array = [0u64; 32];
+        for (i, item) in array.iter_mut().enumerate() {
+            *item = i as u64;
+        }
+        test_serialize(array);
+    }
+
+    #[test]
+    fn test_btreemap() {
+        let mut map = std::collections::BTreeMap::new();
+        map.insert(1u32, "one".to_string());
+        map.insert(2u32, "two".to_string());
+        test_serialize(map);
+        test_serialize(std::collections::BTreeMap::<u32, u32>::new());
+    }
+
+    #[test]
+    fn test_arc() {
+        test_serialize(std::sync::Arc::new(vec![1u16, 2, 3]));
     }
 }
