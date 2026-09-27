@@ -13,10 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod json;
+
 use super::*;
 
 use aleo_std::aleo_ledger_dir;
 use indexmap::IndexSet;
+use snarkvm_ledger_store::HistoryScope;
 use std::{
     ops::RangeInclusive,
     sync::{atomic::AtomicU64, mpsc},
@@ -48,47 +51,47 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.vm.finalize_store().history_synced_height()
     }
 
-    /// Records mapping history only for `programs` from now on, and stores the list with the
+    /// Records mapping history only within `scope` from now on, and stores the scope with the
     /// history. Staking rewards are recorded for every staker.
     ///
-    /// Fails if the history was recorded for a different list. History that an earlier build
-    /// indexed without a list covers every program. Call [`Self::reset_history`] to change the
-    /// list.
-    pub fn configure_history(&self, programs: IndexSet<ProgramID<N>>) -> Result<()> {
+    /// Fails if the history was recorded for a different scope. History that an earlier build
+    /// indexed without a scope covers every mapping. Call [`Self::reset_history`] to change the
+    /// scope.
+    pub fn configure_history(&self, scope: HistoryScope<N>) -> Result<()> {
         let store = self.vm.finalize_store();
-        let names =
-            |programs: &IndexSet<ProgramID<N>>| programs.iter().map(ToString::to_string).collect_vec().join(", ");
-        match store.stored_history_programs()? {
+        match store.stored_history_scope()? {
             Some(stored) => ensure!(
-                stored == programs,
-                "History is recorded for [{}], not [{}]; reset the history to change the programs",
-                names(&stored),
-                names(&programs)
+                stored == scope,
+                "History is recorded for {stored}, not {scope}; reset the history to change what it records"
             ),
             None => {
                 let cursor = self.history_synced_height();
                 ensure!(
                     cursor == 0,
-                    "History below block {cursor} is recorded for every program, not [{}]; reset the history to change the programs",
-                    names(&programs)
+                    "History below block {cursor} is recorded for every program, not {scope}; reset the history to change what it records"
                 );
-                store.store_history_programs(&programs)?;
+                store.store_history_scope(&scope)?;
             }
         }
-        store.set_history_programs(Some(programs.clone()));
+        store.set_history_scope(Some(scope.clone()));
         if let Some(replay) = self.history_replay.lock().as_ref() {
-            replay.vm.finalize_store().set_history_programs(Some(programs));
+            replay.vm.finalize_store().set_history_scope(Some(scope));
         }
         Ok(())
     }
 
-    /// Returns whether this ledger records mapping history for `program_id`.
+    /// Returns whether this ledger records the history of every mapping of `program_id`.
     pub fn records_history_of(&self, program_id: &ProgramID<N>) -> bool {
         self.vm.finalize_store().records_history_of(program_id)
     }
 
+    /// Returns whether this ledger records the history of `program_id/mapping_name`.
+    pub fn records_mapping_history_of(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> bool {
+        self.vm.finalize_store().records_mapping_history_of(program_id, mapping_name)
+    }
+
     /// Deletes this ledger's history and its history replay, so a later backfill starts from
-    /// genesis. The history cursor becomes 0 and the stored program list is removed.
+    /// genesis. The history cursor becomes 0 and the stored scope is removed.
     ///
     /// Call it before this process opens the history replay.
     pub fn reset_history(&self) -> Result<()> {
@@ -129,9 +132,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.import_recorded_heights(&replay, replay.latest_height()?, &import_stats)?;
         replay.vm.finalize_store().prune_history_events_below(self.history_synced_height())?;
 
+        // With every height indexed, the replay is not advanced; it may lag behind, for example
+        // after a JSON import, and catches up in a later backfill.
         let tip = self.latest_height();
         let first = replay.latest_height()? + 1;
-        if first > tip {
+        if first > tip || self.history_synced_height() > tip {
             return Ok(());
         }
         // Heights below the cursor are indexed already. Recording starts at the cursor, unless the
@@ -251,15 +256,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         Ok(())
     }
 
-    /// Applies `block` to the history replay without recording it.
-    ///
-    /// Heights the replay has not applied yet are applied first, also without recording.
+    /// Applies `block` to the history replay without recording it, when the replay's latest block
+    /// is the one before it.
     pub(crate) fn sync_history_replay_state(&self, block: &Block<N>) -> Result<()> {
         let replay = self.history_replay()?;
-        while replay.latest_height()? < block.height() {
-            let next = replay.latest_height()? + 1;
-            let next_block = if next == block.height() { block.clone() } else { self.get_block(next)? };
-            replay.finalize(next_block, HistoryRecording::Off)?;
+        // A replay further behind, for example after a JSON import, is left for a later backfill;
+        // catching it up here would re-finalize those blocks while this block is being added.
+        if replay.latest_height()? + 1 == block.height() {
+            replay.finalize(block.clone(), HistoryRecording::Off)?;
         }
         Ok(())
     }
@@ -338,7 +342,7 @@ impl<N: Network, C: ConsensusStorage<N>> HistoryReplay<N, C> {
         let store = ConsensusStore::<N, C>::open(storage)?;
         let height = store.finalize_store().committee_store().current_height().ok();
         let replay = Self { vm: VM::from_history_replay(store, &ledger.vm, height)? };
-        replay.vm.finalize_store().set_history_programs(ledger.vm.finalize_store().history_programs());
+        replay.vm.finalize_store().set_history_scope(ledger.vm.finalize_store().history_scope());
         if height.is_none() {
             let recording =
                 if ledger.history_synced_height() == 0 { HistoryRecording::Events } else { HistoryRecording::Off };
@@ -640,18 +644,25 @@ finalize set:
         assert!(!open_at(Some(0)));
         assert!(open_at(Some(1)));
 
-        // A reopened replay resumes, then finalizes a later call into the deployed program.
+        // A reopened replay that kept its state finalizes a later call into the deployed program.
+        // An in-memory replay reopens at genesis, and a new block leaves it there.
         drop(replay);
         *backfilled.history_replay.lock() = None;
         backfilled.set_record_history(true);
+        let reopened_at = backfilled.history_replay().unwrap().latest_height().unwrap();
         let update = execute("2u8", "7u64", rng);
         advance(vec![update], rng);
         let replay = backfilled.history_replay().unwrap();
-        assert_eq!(replay.latest_height().unwrap(), 4);
-        assert_eq!(
-            replay.vm.finalize_store().get_checksum_confirmed().unwrap(),
-            backfilled.vm.finalize_store().get_checksum_confirmed().unwrap()
-        );
+        match reopened_at {
+            3 => {
+                assert_eq!(replay.latest_height().unwrap(), 4);
+                assert_eq!(
+                    replay.vm.finalize_store().get_checksum_confirmed().unwrap(),
+                    backfilled.vm.finalize_store().get_checksum_confirmed().unwrap()
+                );
+            }
+            _ => assert_eq!(replay.latest_height().unwrap(), reopened_at),
+        }
         assert_eq!(backfilled.history_synced_height(), 5);
         assert_eq!(recorded_history(&backfilled), recorded_history(&live));
     }
@@ -730,7 +741,7 @@ finalize set:
     }
 
     #[test]
-    fn test_configure_history_requires_a_reset_to_change_programs() {
+    fn test_configure_history_requires_a_reset_to_change_scope() {
         let rng = &mut TestRng::default();
         let private_key = console::account::PrivateKey::new(rng).unwrap();
         let ledger = sample_ledger(private_key, rng);
@@ -739,16 +750,18 @@ finalize set:
 
         // Genesis history was recorded for every program, without a stored list.
         assert_eq!(ledger.history_synced_height(), 1);
-        let error = ledger.configure_history(IndexSet::from([credits])).unwrap_err().to_string();
+        let error =
+            ledger.configure_history(HistoryScope::programs(IndexSet::from([credits]))).unwrap_err().to_string();
         assert!(error.contains("recorded for every program"), "{error}");
 
         ledger.reset_history().unwrap();
         assert_eq!(ledger.history_synced_height(), 0);
-        ledger.configure_history(IndexSet::from([credits])).unwrap();
-        ledger.configure_history(IndexSet::from([credits])).unwrap();
+        ledger.configure_history(HistoryScope::programs(IndexSet::from([credits]))).unwrap();
+        ledger.configure_history(HistoryScope::programs(IndexSet::from([credits]))).unwrap();
         assert!(ledger.records_history_of(&credits));
         assert!(!ledger.records_history_of(&other));
-        let error = ledger.configure_history(IndexSet::from([credits, other])).unwrap_err().to_string();
+        let error =
+            ledger.configure_history(HistoryScope::programs(IndexSet::from([credits, other]))).unwrap_err().to_string();
         assert!(error.contains("History is recorded for [credits.aleo], not [credits.aleo, other.aleo]"), "{error}");
 
         // The backfill records only the listed programs, and staking rewards.

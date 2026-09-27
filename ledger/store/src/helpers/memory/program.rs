@@ -24,6 +24,7 @@ use crate::{
     HistoryEvent,
     HistoryRecording,
     HistoryRow,
+    HistoryScope,
     HistoryTable,
     helpers::{
         Map,
@@ -72,10 +73,10 @@ pub struct FinalizeMemory<N: Network> {
     block_height: Arc<AtomicU32>,
     /// Where mapping updates and staking rewards are recorded.
     history_recording: Arc<AtomicU8>,
-    /// The programs whose mapping history is recorded, or `None` for every program.
-    history_programs: Arc<RwLock<Option<IndexSet<ProgramID<N>>>>>,
-    /// The program list stored with this store's history.
-    stored_history_programs: Arc<RwLock<Option<IndexSet<ProgramID<N>>>>>,
+    /// The scope of recorded mapping history, or `None` for every mapping.
+    history_scope: Arc<RwLock<Option<HistoryScope<N>>>>,
+    /// The scope stored with this store's history.
+    stored_history_scope: Arc<RwLock<Option<HistoryScope<N>>>>,
     /// Sequence number of the next history event in the current block.
     history_event_seq: Arc<AtomicU32>,
     /// The next block height history indexing will process.
@@ -114,8 +115,8 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             history_event_map: MemoryMap::default(),
             block_height: Arc::new(AtomicU32::new(initial_height)),
             history_recording: Arc::new(AtomicU8::new(HistoryRecording::Off as u8)),
-            history_programs: Default::default(),
-            stored_history_programs: Default::default(),
+            history_scope: Default::default(),
+            stored_history_scope: Default::default(),
             history_event_seq: Arc::new(AtomicU32::new(0)),
             history_synced_height: Arc::new(AtomicU32::new(0)),
             storage_mode: storage,
@@ -167,24 +168,24 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
         &self.history_recording
     }
 
-    /// Returns the programs whose mapping history is recorded.
-    fn history_programs(&self) -> &RwLock<Option<IndexSet<ProgramID<N>>>> {
-        &self.history_programs
+    /// Returns the scope of recorded mapping history.
+    fn history_scope(&self) -> &RwLock<Option<HistoryScope<N>>> {
+        &self.history_scope
     }
 
-    /// Returns the program list stored with this store's history.
-    fn stored_history_programs(&self) -> Result<Option<IndexSet<ProgramID<N>>>> {
-        Ok(self.stored_history_programs.read().clone())
+    /// Returns the scope stored with this store's history.
+    fn stored_history_scope(&self) -> Result<Option<HistoryScope<N>>> {
+        Ok(self.stored_history_scope.read().clone())
     }
 
-    /// Stores the program list this store's history is recorded for.
-    fn store_history_programs(&self, programs: &IndexSet<ProgramID<N>>) -> Result<()> {
-        *self.stored_history_programs.write() = Some(programs.clone());
+    /// Stores the scope this store's history is recorded for.
+    fn store_history_scope(&self, scope: &HistoryScope<N>) -> Result<()> {
+        *self.stored_history_scope.write() = Some(scope.clone());
         Ok(())
     }
 
-    /// Deletes the history tables, the event log, and the stored program list, and sets the
-    /// history cursor to 0.
+    /// Deletes the history tables, the event log, and the stored scope, and sets the history
+    /// cursor to 0.
     fn reset_history(&self) -> Result<()> {
         let updates = self.mapping_update_map.keys_confirmed().map(|key| key.into_owned()).collect::<Vec<_>>();
         updates.iter().try_for_each(|key| self.mapping_update_map.remove(key))?;
@@ -192,7 +193,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
         rewards.iter().try_for_each(|key| self.staking_rewards_map.remove(key))?;
         let events = self.history_event_map.keys_confirmed().map(|key| key.into_owned()).collect::<Vec<_>>();
         events.iter().try_for_each(|key| self.history_event_map.remove(key))?;
-        *self.stored_history_programs.write() = None;
+        *self.stored_history_scope.write() = None;
         self.set_history_synced_height(0)
     }
 

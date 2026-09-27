@@ -101,6 +101,43 @@ pub type HistoryRow = (HistoryTable, Vec<u8>, Vec<u8>);
 /// both in microcredits.
 pub type StakingReward<N> = (Address<N>, u64, u64);
 
+/// The programs, and single mappings, whose mapping history a store records.
+///
+/// Staking rewards are recorded whatever the scope holds.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HistoryScope<N: Network> {
+    /// Programs whose every mapping is recorded.
+    pub programs: IndexSet<ProgramID<N>>,
+    /// Single mappings that are recorded, as `(program ID, mapping name)`.
+    pub mappings: IndexSet<(ProgramID<N>, Identifier<N>)>,
+}
+
+impl<N: Network> HistoryScope<N> {
+    /// Returns a scope of whole programs.
+    pub fn programs(programs: IndexSet<ProgramID<N>>) -> Self {
+        Self { programs, mappings: IndexSet::new() }
+    }
+
+    /// Returns whether every mapping of `program_id` is recorded.
+    pub fn covers_program(&self, program_id: &ProgramID<N>) -> bool {
+        self.programs.contains(program_id)
+    }
+
+    /// Returns whether `program_id/mapping_name` is recorded.
+    pub fn covers_mapping(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> bool {
+        self.covers_program(program_id) || self.mappings.contains(&(*program_id, *mapping_name))
+    }
+}
+
+impl<N: Network> Display for HistoryScope<N> {
+    /// Lists the programs, then the single mappings as `program/mapping`.
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let programs = self.programs.iter().map(ToString::to_string);
+        let mappings = self.mappings.iter().map(|(program_id, mapping_name)| format!("{program_id}/{mapping_name}"));
+        write!(f, "[{}]", programs.chain(mappings).collect::<Vec<_>>().join(", "))
+    }
+}
+
 /// One history record written while a block was finalized.
 ///
 /// Records for a single height are stored under `(height, sequence)` so a later pass can copy
@@ -259,24 +296,29 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// discriminant.
     fn history_recording(&self) -> &AtomicU8;
 
-    /// Returns the programs whose mapping history is recorded, or `None` for every program.
+    /// Returns the scope of recorded mapping history, or `None` for every mapping.
     ///
     /// Staking rewards are recorded whatever this holds.
-    fn history_programs(&self) -> &RwLock<Option<IndexSet<ProgramID<N>>>>;
+    fn history_scope(&self) -> &RwLock<Option<HistoryScope<N>>>;
 
-    /// Returns the program list stored with this store's history, if one was stored.
-    fn stored_history_programs(&self) -> Result<Option<IndexSet<ProgramID<N>>>>;
+    /// Returns the scope stored with this store's history, if one was stored.
+    fn stored_history_scope(&self) -> Result<Option<HistoryScope<N>>>;
 
-    /// Stores the program list this store's history is recorded for.
-    fn store_history_programs(&self, programs: &IndexSet<ProgramID<N>>) -> Result<()>;
+    /// Stores the scope this store's history is recorded for.
+    fn store_history_scope(&self, scope: &HistoryScope<N>) -> Result<()>;
 
-    /// Deletes the history tables, the event log, and the stored program list, and sets the
-    /// history cursor to 0. The deletion is outside any atomic batch.
+    /// Deletes the history tables, the event log, and the stored scope, and sets the history
+    /// cursor to 0. The deletion is outside any atomic batch.
     fn reset_history(&self) -> Result<()>;
 
-    /// Returns whether mapping history is recorded for `program_id`.
+    /// Returns whether every mapping of `program_id` has its history recorded.
     fn records_history_of(&self, program_id: &ProgramID<N>) -> bool {
-        self.history_programs().read().as_ref().is_none_or(|programs| programs.contains(program_id))
+        self.history_scope().read().as_ref().is_none_or(|scope| scope.covers_program(program_id))
+    }
+
+    /// Returns whether `program_id/mapping_name` has its history recorded.
+    fn records_mapping_history_of(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> bool {
+        self.history_scope().read().as_ref().is_none_or(|scope| scope.covers_mapping(program_id, mapping_name))
     }
 
     /// Returns the next block height history indexing will process.
@@ -388,13 +430,14 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.history_event_map().insert((height.to_be_bytes(), seq.to_be_bytes()), event)
     }
 
-    /// Returns whether a mapping update of `program_id` is recorded now.
-    fn records_mapping_history(&self, program_id: &ProgramID<N>) -> bool {
-        HistoryRecording::load(self.history_recording()) != HistoryRecording::Off && self.records_history_of(program_id)
+    /// Returns whether an update of `program_id/mapping_name` is recorded now.
+    fn records_mapping_history(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> bool {
+        HistoryRecording::load(self.history_recording()) != HistoryRecording::Off
+            && self.records_mapping_history_of(program_id, mapping_name)
     }
 
     /// Records one mapping history entry, as selected by [`Self::history_recording`] and
-    /// [`Self::history_programs`].
+    /// [`Self::history_scope`].
     ///
     /// The write joins the caller's atomic batch, so a speculative finalize that aborts does not
     /// keep it.
@@ -405,7 +448,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         key: Plaintext<N>,
         value: HistoricalMappingValue<N>,
     ) -> Result<()> {
-        if !self.records_history_of(&program_id) {
+        if !self.records_mapping_history_of(&program_id, &mapping_name) {
             return Ok(());
         }
         match HistoryRecording::load(self.history_recording()) {
@@ -427,7 +470,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
     /// Records a deletion for every key currently in `mapping_name`.
     fn record_mapping_absences(&self, program_id: ProgramID<N>, mapping_name: Identifier<N>) -> Result<()> {
-        if !self.records_mapping_history(&program_id) {
+        if !self.records_mapping_history(&program_id, &mapping_name) {
             return Ok(());
         }
         let entries = self.key_value_map().get_map_speculative(&(program_id, mapping_name))?;
@@ -642,7 +685,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
             bail!("Illegal operation: '{program_id}/{mapping_name}' is not initialized - cannot replace mapping.")
         }
 
-        let record = record_history && self.records_mapping_history(&program_id);
+        let record = record_history && self.records_mapping_history(&program_id, &mapping_name);
         atomic_batch_scope!(self, {
             // Values before the replacement, read only when the replacement is recorded.
             let mut old_entries: IndexMap<Plaintext<N>, Value<N>> = match record {
@@ -1025,35 +1068,40 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         &self.block_height
     }
 
-    /// Returns the programs whose mapping history is recorded, or `None` for every program.
-    pub fn history_programs(&self) -> Option<IndexSet<ProgramID<N>>> {
-        self.storage.history_programs().read().clone()
+    /// Returns the scope of recorded mapping history, or `None` for every mapping.
+    pub fn history_scope(&self) -> Option<HistoryScope<N>> {
+        self.storage.history_scope().read().clone()
     }
 
-    /// Sets the programs whose mapping history is recorded, or `None` for every program.
+    /// Sets the scope of recorded mapping history, or `None` for every mapping.
     ///
     /// Staking rewards are recorded whatever this holds.
-    pub fn set_history_programs(&self, programs: Option<IndexSet<ProgramID<N>>>) {
-        *self.storage.history_programs().write() = programs;
+    pub fn set_history_scope(&self, scope: Option<HistoryScope<N>>) {
+        *self.storage.history_scope().write() = scope;
     }
 
-    /// Returns whether mapping history is recorded for `program_id`.
+    /// Returns whether every mapping of `program_id` has its history recorded.
     pub fn records_history_of(&self, program_id: &ProgramID<N>) -> bool {
         self.storage.records_history_of(program_id)
     }
 
-    /// Returns the program list stored with this store's history, if one was stored.
-    pub fn stored_history_programs(&self) -> Result<Option<IndexSet<ProgramID<N>>>> {
-        self.storage.stored_history_programs()
+    /// Returns whether `program_id/mapping_name` has its history recorded.
+    pub fn records_mapping_history_of(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> bool {
+        self.storage.records_mapping_history_of(program_id, mapping_name)
     }
 
-    /// Stores the program list this store's history is recorded for.
-    pub fn store_history_programs(&self, programs: &IndexSet<ProgramID<N>>) -> Result<()> {
-        self.storage.store_history_programs(programs)
+    /// Returns the scope stored with this store's history, if one was stored.
+    pub fn stored_history_scope(&self) -> Result<Option<HistoryScope<N>>> {
+        self.storage.stored_history_scope()
     }
 
-    /// Deletes the history tables, the event log, and the stored program list, and sets the
-    /// history cursor to 0.
+    /// Stores the scope this store's history is recorded for.
+    pub fn store_history_scope(&self, scope: &HistoryScope<N>) -> Result<()> {
+        self.storage.store_history_scope(scope)
+    }
+
+    /// Deletes the history tables, the event log, and the stored scope, and sets the history
+    /// cursor to 0.
     pub fn reset_history(&self) -> Result<()> {
         self.storage.reset_history()
     }
@@ -1079,7 +1127,10 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         if height >= synced {
             bail!("Block {height} is not in the history index (history is indexed before height {synced})");
         }
-        ensure!(self.records_history_of(&program_id), "Mapping history is not recorded for '{program_id}'");
+        ensure!(
+            self.records_mapping_history_of(&program_id, &mapping_name),
+            "Mapping history is not recorded for '{program_id}/{mapping_name}'"
+        );
 
         let seek_key = (program_id, mapping_name, mapping_key.clone(), height.to_be_bytes());
         let update = match self.storage.mapping_update_map().get_floor_confirmed(&seek_key)? {
@@ -2373,7 +2424,7 @@ mod tests {
     /// Verifies that only the listed programs' mappings are recorded, and that staking rewards
     /// are recorded regardless.
     #[test]
-    fn test_history_programs_filter_mapping_history() {
+    fn test_history_scope_filters_mapping_history() {
         use std::sync::atomic::Ordering;
 
         let recorded = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
@@ -2383,25 +2434,34 @@ mod tests {
         let value = Value::<CurrentNetwork>::from_str("1u64").unwrap();
         let staker = Address::<CurrentNetwork>::zero();
 
+        let single = Identifier::<CurrentNetwork>::from_str("single").unwrap();
         let store = FinalizeStore::from(FinalizeMemory::open(StorageMode::Test(None)).unwrap()).unwrap();
         store.set_history_synced_height(2).unwrap();
-        for program_id in [recorded, skipped] {
+        for (program_id, mapping_name) in [(recorded, mapping_name), (skipped, mapping_name), (skipped, single)] {
             store.initialize_mapping(program_id, mapping_name).unwrap();
         }
-        store.set_history_programs(Some(IndexSet::from([recorded])));
+        // Every mapping of `hello.aleo`, and only `other.aleo/single`.
+        let scope =
+            HistoryScope { programs: IndexSet::from([recorded]), mappings: IndexSet::from([(skipped, single)]) };
+        assert_eq!(scope.to_string(), "[hello.aleo, other.aleo/single]");
+        store.set_history_scope(Some(scope));
         store.set_record_history(true);
         store.current_block_height().store(1, Ordering::SeqCst);
-        for program_id in [recorded, skipped] {
+        for (program_id, mapping_name) in [(recorded, mapping_name), (skipped, mapping_name), (skipped, single)] {
             store.update_key_value(program_id, mapping_name, key.clone(), value.clone()).unwrap();
             store.replace_mapping(program_id, mapping_name, vec![(key.clone(), value.clone())]).unwrap();
         }
         store.record_staking_reward(staker, staker, 3, 4).unwrap();
 
-        let at_1 = store.get_historical_mapping_value(recorded, mapping_name, key.clone(), 1).unwrap();
-        assert_eq!(at_1.map(Cow::into_owned), Some(value.clone()));
+        for (program_id, mapping_name) in [(recorded, mapping_name), (skipped, single)] {
+            let at_1 = store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 1).unwrap();
+            assert_eq!(at_1.map(Cow::into_owned), Some(value.clone()));
+        }
+        assert!(store.records_history_of(&recorded));
+        assert!(!store.records_history_of(&skipped));
         assert!(store.get_mapping_update_heights(skipped, mapping_name, key.clone()).unwrap().is_none());
         let error = store.get_historical_mapping_value(skipped, mapping_name, key, 1).unwrap_err().to_string();
-        assert!(error.contains("Mapping history is not recorded for 'other.aleo'"), "{error}");
+        assert!(error.contains("Mapping history is not recorded for 'other.aleo/account'"), "{error}");
         assert_eq!(store.get_staking_reward(staker, 1).unwrap(), Some((staker, 3, 4)));
     }
 
@@ -2427,7 +2487,7 @@ mod tests {
         let store = FinalizeStore::from(FinalizeMemory::open(StorageMode::Test(None)).unwrap()).unwrap();
         store.set_history_synced_height(10).unwrap();
         store.initialize_mapping(credits, bonded).unwrap();
-        store.set_history_programs(Some(IndexSet::from([credits])));
+        store.set_history_scope(Some(HistoryScope::programs(IndexSet::from([credits]))));
         store.set_record_history(true);
         let at_height = |height: u32| store.current_block_height().store(height, Ordering::SeqCst);
 
@@ -2459,19 +2519,20 @@ mod tests {
     }
 
     /// Checks that the stored program list persists, and that a reset deletes it with the history.
-    fn check_stored_history_programs_and_reset<P: FinalizeStorage<CurrentNetwork>>(
+    fn check_stored_history_scope_and_reset<P: FinalizeStorage<CurrentNetwork>>(
         store: FinalizeStore<CurrentNetwork, P>,
     ) {
         use std::sync::atomic::Ordering;
 
-        let programs = IndexSet::from([
-            ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap(),
-            ProgramID::from_str("hello.aleo").unwrap(),
-        ]);
+        let credits = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let scope = HistoryScope {
+            programs: IndexSet::from([ProgramID::from_str("hello.aleo").unwrap()]),
+            mappings: IndexSet::from([(credits, Identifier::from_str("bonded").unwrap())]),
+        };
         let staker = Address::<CurrentNetwork>::zero();
-        assert_eq!(store.stored_history_programs().unwrap(), None);
-        store.store_history_programs(&programs).unwrap();
-        assert_eq!(store.stored_history_programs().unwrap(), Some(programs));
+        assert_eq!(store.stored_history_scope().unwrap(), None);
+        store.store_history_scope(&scope).unwrap();
+        assert_eq!(store.stored_history_scope().unwrap(), Some(scope));
 
         store.set_history_synced_height(3).unwrap();
         store.set_record_history(true);
@@ -2483,23 +2544,23 @@ mod tests {
         assert!(store.get_staking_reward(staker, 1).unwrap().is_some());
 
         store.reset_history().unwrap();
-        assert_eq!(store.stored_history_programs().unwrap(), None);
+        assert_eq!(store.stored_history_scope().unwrap(), None);
         assert_eq!(store.history_synced_height(), 0);
         assert!(store.staking_rewards_map().get_confirmed(&(staker, 1u32.to_be_bytes())).unwrap().is_none());
         assert!(store.history_events(1).unwrap().is_empty());
     }
 
     #[test]
-    fn test_stored_history_programs_and_reset() {
-        check_stored_history_programs_and_reset(
+    fn test_stored_history_scope_and_reset() {
+        check_stored_history_scope_and_reset(
             FinalizeStore::from(FinalizeMemory::open(StorageMode::Test(None)).unwrap()).unwrap(),
         );
     }
 
     #[cfg(feature = "rocks")]
     #[test]
-    fn test_stored_history_programs_and_reset_rocks() {
-        check_stored_history_programs_and_reset(
+    fn test_stored_history_scope_and_reset_rocks() {
+        check_stored_history_scope_and_reset(
             FinalizeStore::<CurrentNetwork, crate::helpers::rocksdb::FinalizeDB<CurrentNetwork>>::open(
                 StorageMode::new_test(None),
             )

@@ -24,8 +24,9 @@ use crate::{
     HistoryEvent,
     HistoryRecording,
     HistoryRow,
+    HistoryScope,
     HistoryTable,
-    helpers::rocksdb::{self, CommitteeMap, DataMap, Database, MapID, NestedDataMap, ProgramMap},
+    helpers::rocksdb::{self, CommitteeMap, DataMap, Database, MapID, MetadataKey, NestedDataMap, ProgramMap},
 };
 use console::{
     prelude::*,
@@ -68,8 +69,8 @@ pub struct FinalizeDB<N: Network> {
     block_height: Arc<AtomicU32>,
     /// Where mapping updates and staking rewards are recorded.
     history_recording: Arc<AtomicU8>,
-    /// The programs whose mapping history is recorded, or `None` for every program.
-    history_programs: Arc<RwLock<Option<IndexSet<ProgramID<N>>>>>,
+    /// The scope of recorded mapping history, or `None` for every mapping.
+    history_scope: Arc<RwLock<Option<HistoryScope<N>>>>,
     /// Sequence number of the next history event in the current block.
     history_event_seq: Arc<AtomicU32>,
     /// The next block height history indexing will process.
@@ -115,7 +116,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
             history_event_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::HistoryEvent))?,
             block_height: Arc::new(AtomicU32::new(initial_height)),
             history_recording: Arc::new(AtomicU8::new(HistoryRecording::Off as u8)),
-            history_programs: Default::default(),
+            history_scope: Default::default(),
             history_event_seq: Arc::new(AtomicU32::new(0)),
             history_synced_height,
             database,
@@ -168,31 +169,39 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         &self.history_recording
     }
 
-    /// Returns the programs whose mapping history is recorded.
-    fn history_programs(&self) -> &RwLock<Option<IndexSet<ProgramID<N>>>> {
-        &self.history_programs
+    /// Returns the scope of recorded mapping history.
+    fn history_scope(&self) -> &RwLock<Option<HistoryScope<N>>> {
+        &self.history_scope
     }
 
-    /// Returns the program list stored with this store's history.
-    fn stored_history_programs(&self) -> Result<Option<IndexSet<ProgramID<N>>>> {
-        match self.database.history_programs()? {
-            Some(bytes) => Ok(Some(unchecked_deserialize(&bytes)?)),
-            None => Ok(None),
-        }
+    /// Returns the scope stored with this store's history.
+    ///
+    /// The scope is present when its program list is. Its single mappings default to none.
+    fn stored_history_scope(&self) -> Result<Option<HistoryScope<N>>> {
+        let Some(programs) = self.database.metadata(MetadataKey::HistoryPrograms)? else {
+            return Ok(None);
+        };
+        let mappings = match self.database.metadata(MetadataKey::HistoryMappings)? {
+            Some(mappings) => unchecked_deserialize(&mappings)?,
+            None => IndexSet::new(),
+        };
+        Ok(Some(HistoryScope { programs: unchecked_deserialize(&programs)?, mappings }))
     }
 
-    /// Stores the program list this store's history is recorded for.
-    fn store_history_programs(&self, programs: &IndexSet<ProgramID<N>>) -> Result<()> {
-        self.database.set_history_programs(&bincode::serialize(programs)?)
+    /// Stores the scope this store's history is recorded for.
+    fn store_history_scope(&self, scope: &HistoryScope<N>) -> Result<()> {
+        self.database.set_metadata(MetadataKey::HistoryMappings, &bincode::serialize(&scope.mappings)?)?;
+        self.database.set_metadata(MetadataKey::HistoryPrograms, &bincode::serialize(&scope.programs)?)
     }
 
-    /// Deletes the history tables, the event log, and the stored program list, and sets the
-    /// history cursor to 0.
+    /// Deletes the history tables, the event log, and the stored scope, and sets the history
+    /// cursor to 0.
     fn reset_history(&self) -> Result<()> {
         for map in [ProgramMap::MappingUpdate, ProgramMap::StakingRewards, ProgramMap::HistoryEvent] {
             self.database.delete_map(MapID::Program(map))?;
         }
-        self.database.delete_history_programs()?;
+        self.database.delete_metadata(MetadataKey::HistoryPrograms)?;
+        self.database.delete_metadata(MetadataKey::HistoryMappings)?;
         self.set_history_synced_height(0)
     }
 

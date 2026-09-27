@@ -201,6 +201,10 @@ workspace = true
 [dependencies.rayon]
 workspace = true
 
+[dependencies.serde_json]
+workspace = true
+features = [ "preserve_order" ]
+
 [dependencies.thiserror]
 workspace = true
 
@@ -233,10 +237,6 @@ workspace = true
 
 [dev-dependencies.aleo-std-storage]
 workspace = true
-
-[dev-dependencies.serde_json]
-workspace = true
-features = [ "preserve_order" ]
 
 [dev-dependencies.snarkvm-circuit]
 workspace = true

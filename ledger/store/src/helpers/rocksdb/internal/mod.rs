@@ -23,6 +23,7 @@ mod nested_map;
 pub use nested_map::*;
 
 mod schema;
+pub(crate) use schema::MetadataKey;
 pub use schema::{STORAGE_VERSION, StorageVersion};
 
 #[cfg(test)]
@@ -145,19 +146,19 @@ impl RocksDB {
         schema::set_history_synced_height(self, self.network_id, height)
     }
 
-    /// Returns the stored history program list, as the finalize store serialized it.
-    pub(crate) fn history_programs(&self) -> Result<Option<Vec<u8>>> {
-        schema::read_history_programs(self, self.network_id)
+    /// Returns a metadata entry's raw bytes.
+    pub(crate) fn metadata(&self, key: MetadataKey) -> Result<Option<Vec<u8>>> {
+        schema::read_metadata(self, self.network_id, key)
     }
 
-    /// Stores the history program list, as the finalize store serialized it.
-    pub(crate) fn set_history_programs(&self, programs: &[u8]) -> Result<()> {
-        schema::set_history_programs(self, self.network_id, programs)
+    /// Writes a metadata entry's raw bytes, outside any atomic batch.
+    pub(crate) fn set_metadata(&self, key: MetadataKey, value: &[u8]) -> Result<()> {
+        schema::set_metadata(self, self.network_id, key, value)
     }
 
-    /// Deletes the stored history program list.
-    pub(crate) fn delete_history_programs(&self) -> Result<()> {
-        schema::delete_history_programs(self, self.network_id)
+    /// Deletes a metadata entry, outside any atomic batch.
+    pub(crate) fn delete_metadata(&self, key: MetadataKey) -> Result<()> {
+        schema::delete_metadata(self, self.network_id, key)
     }
 
     /// Deletes every entry of the map `map_id`, with one range deletion outside any atomic batch.
