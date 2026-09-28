@@ -23,10 +23,19 @@
 
 use super::*;
 
-use snarkvm_ledger_store::{HistoricalMappingValue, HistoryEvent};
+use indexmap::IndexSet;
+use snarkvm_ledger_store::{
+    FinalizeStorage,
+    FinalizeStore,
+    HistoricalMappingValue,
+    HistoryEvent,
+    helpers::memory::ConsensusMemory,
+};
 use std::{
     collections::{BTreeMap, HashMap},
+    ops::RangeInclusive,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 /// The `credits.aleo` mappings a JSON snapshot holds, by file name.
@@ -63,12 +72,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// replaying blocks.
     ///
     /// Records the scope of [`Self::history_json_scope`], and fails if history was recorded for
-    /// another scope. Block 0 is indexed by finalizing the genesis block on the history replay.
+    /// another scope. Block 0 is indexed by finalizing the genesis block on a throwaway VM.
     /// Fails before indexing anything if the files of the tip are missing. Stops at the first
     /// missing or invalid file, and a later call continues there.
-    ///
-    /// The history replay stays behind, so a later [`Self::backfill_history`] replays those
-    /// blocks only if the history cursor is not past the tip.
     pub fn import_history_json(&self, dir: &Path) -> Result<()> {
         ensure!(!self.record_history.load(Ordering::SeqCst), "History recording must be off to import JSON history");
         self.configure_history(Self::history_json_scope()?)?;
@@ -76,24 +82,24 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         if self.history_synced_height() > tip {
             return Ok(());
         }
-        // Block 0 has no files; it is indexed from the history replay.
+        // Block 0 has no files; it is indexed from a throwaway genesis finalize.
         for name in JSON_MAPPINGS.into_iter().chain([STAKING_REWARDS]).filter(|_| tip > 0) {
             let path = json_path(dir, tip, name);
             ensure!(path.is_file(), "The JSON history does not reach block {tip}: {} is missing", path.display());
         }
 
+        let mut genesis = None;
         if self.history_synced_height() == 0 {
-            let replay = self.history_replay()?;
-            self.import_recorded_heights(&replay, 0, &ImportStats::default())?;
-            replay.vm.finalize_store().prune_history_events_below(self.history_synced_height())?;
+            genesis = Some(self.import_genesis_history_snapshot()?);
         }
         let start = self.history_synced_height();
-        ensure!(start > 0, "The history replay holds no history of block 0; reset the history");
+        ensure!(start > 0, "Genesis history was not indexed; reset the history");
         if start > tip {
             return Ok(());
         }
-        let genesis = match start {
-            1 => Some(self.genesis_json_snapshot()?),
+        let genesis = match (start, genesis) {
+            (1, Some(snapshot)) => Some(snapshot),
+            (1, None) => Some(self.genesis_json_snapshot()?),
             _ => None,
         };
         info!("Importing history for blocks {start} to {tip} from {}", dir.display());
@@ -119,21 +125,48 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         Ok(())
     }
 
-    /// Returns the [`JSON_MAPPINGS`] after the genesis block, from the history replay.
-    fn genesis_json_snapshot(&self) -> Result<Snapshot> {
-        let replay = self.history_replay()?;
-        ensure!(
-            replay.latest_height()? == 0,
-            "The history replay is past block 0, so it cannot provide the state before block 1; reset the history"
-        );
-        let credits = ProgramID::from_str("credits.aleo")?;
-        let mut snapshot = Snapshot::default();
-        for (entries, name) in snapshot.iter_mut().zip_eq(JSON_MAPPINGS) {
-            let mapping = replay.vm.finalize_store().get_mapping_confirmed(credits, Identifier::from_str(name)?)?;
-            *entries = mapping.into_iter().map(|(key, value)| (key.to_string(), value.to_string())).collect();
-        }
-        Ok(snapshot)
+    /// Indexes the genesis block's history from a throwaway finalize of this ledger's genesis
+    /// block.
+    pub fn import_genesis_history(&self) -> Result<()> {
+        self.import_genesis_history_snapshot().map(|_| ())
     }
+
+    /// Indexes genesis history and returns the [`JSON_MAPPINGS`] after that block.
+    fn import_genesis_history_snapshot(&self) -> Result<Snapshot> {
+        ensure!(self.history_synced_height() == 0, "Genesis history is already indexed");
+        let vm = self.genesis_history_vm(HistoryRecording::Events)?;
+        let events = vm.finalize_store().history_events(0)?;
+        ensure!(!events.is_empty(), "Genesis produced no history events");
+        self.vm.finalize_store().import_history_events(vec![(0, events)])?;
+        self.vm.finalize_store().set_history_synced_height(1)?;
+        json_snapshot_from_store(vm.finalize_store())
+    }
+
+    /// Returns the [`JSON_MAPPINGS`] after the genesis block.
+    fn genesis_json_snapshot(&self) -> Result<Snapshot> {
+        json_snapshot_from_store(self.genesis_history_vm(HistoryRecording::Off)?.finalize_store())
+    }
+
+    /// Finalizes this ledger's genesis block on a throwaway in-memory VM.
+    fn genesis_history_vm(&self, recording: HistoryRecording) -> Result<VM<N, ConsensusMemory<N>>> {
+        let store = ConsensusStore::<N, ConsensusMemory<N>>::open(StorageMode::new_test(None))?;
+        let vm = VM::from(store)?;
+        vm.finalize_store().set_history_scope(self.vm.finalize_store().history_scope());
+        vm.finalize_store().set_history_recording(recording);
+        vm.replay_finalize(self.genesis_block.clone()).with_context(|| "Failed to finalize genesis for history")?;
+        Ok(vm)
+    }
+}
+
+/// Returns the [`JSON_MAPPINGS`] of `credits.aleo` in `store`.
+fn json_snapshot_from_store<N: Network, F: FinalizeStorage<N>>(store: &FinalizeStore<N, F>) -> Result<Snapshot> {
+    let credits = ProgramID::from_str("credits.aleo")?;
+    let mut snapshot = Snapshot::default();
+    for (entries, name) in snapshot.iter_mut().zip_eq(JSON_MAPPINGS) {
+        let mapping = store.get_mapping_confirmed(credits, Identifier::from_str(name)?)?;
+        *entries = mapping.into_iter().map(|(key, value)| (key.to_string(), value.to_string())).collect();
+    }
+    Ok(snapshot)
 }
 
 /// Turns JSON snapshots into history events.
@@ -387,8 +420,7 @@ mod tests {
         let live = sample_ledger(private_key, rng);
         let genesis = live.get_block(0).unwrap();
         live.reset_history().unwrap();
-        live.configure_history(CurrentLedger::history_json_scope().unwrap()).unwrap();
-        live.backfill_history().unwrap();
+        live.import_history_json(&dir).unwrap();
         assert_eq!(live.history_synced_height(), 1);
         live.set_record_history(true);
         // `imported` adds the same blocks without recording.
@@ -449,10 +481,9 @@ mod tests {
         assert!(!expected.1.is_empty());
         assert_eq!(json_history(&imported, &keys), expected);
 
-        // Nothing is left to index, and the replay stays at genesis.
+        // Nothing is left to index.
         imported.import_history_json(&dir).unwrap();
-        imported.backfill_history().unwrap();
-        assert_eq!(imported.history_replay().unwrap().latest_height().unwrap(), 0);
+        assert_eq!(imported.history_synced_height(), tip + 1);
 
         // Recording continues on the imported history, within the JSON scope.
         imported.set_record_history(true);
@@ -524,5 +555,163 @@ mod tests {
     fn test_json_path() {
         let path = json_path(Path::new("/history-0"), 65_536, "bonded");
         assert_eq!(path, Path::new("/history-0/group-1/block-65536/block-65536-bonded.json"));
+    }
+
+    /// Writes data-snarkVM-shaped JSON for `heights`, with a mainnet-sized staker set.
+    ///
+    /// Every height pays a small reward and grows each staker's bond, so the importer writes a
+    /// staking row per staker and a delegated update per validator.
+    fn write_dummy_json(dir: &Path, heights: RangeInclusive<u32>, rng: &mut TestRng) {
+        const VALIDATORS: usize = 26;
+        const DELEGATORS: usize = 423;
+        let validators = (0..VALIDATORS)
+            .map(|_| Address::try_from(PrivateKey::<CurrentNetwork>::new(rng).unwrap()).unwrap().to_string())
+            .collect_vec();
+        let stakers = validators
+            .iter()
+            .cloned()
+            .chain(
+                (0..DELEGATORS)
+                    .map(|_| Address::try_from(PrivateKey::<CurrentNetwork>::new(rng).unwrap()).unwrap().to_string()),
+            )
+            .collect_vec();
+        let validator_of = |index: usize| validators[index % VALIDATORS].as_str();
+        let bond = |staker_index: usize, stake: u64| {
+            format!("{{\n  validator: {},\n  microcredits: {stake}u64\n}}", validator_of(staker_index))
+        };
+        let metadata = serde_json::to_string_pretty(&[(
+            "aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc",
+            "26u32",
+        )])
+        .unwrap();
+        let unbonding = "[]";
+        let withdraw = serde_json::to_string_pretty(
+            &stakers.iter().enumerate().map(|(index, staker)| (staker, validator_of(index))).collect_vec(),
+        )
+        .unwrap();
+
+        cfg_into_iter!(heights.collect_vec()).for_each(|height| {
+            std::fs::create_dir_all(json_path(dir, height, STAKING_REWARDS).parent().unwrap()).unwrap();
+            let bonded = stakers
+                .iter()
+                .enumerate()
+                .map(|(index, staker)| (staker, bond(index, 1_000_000_000 + u64::from(height))))
+                .collect_vec();
+            let delegated = validators
+                .iter()
+                .map(|validator| {
+                    let bonded_to = 1 + DELEGATORS / VALIDATORS;
+                    (validator, format!("{}u64", bonded_to as u64 * (1_000_000_000 + u64::from(height))))
+                })
+                .collect_vec();
+            let rewards: BTreeMap<_, _> =
+                stakers.iter().enumerate().map(|(index, staker)| (staker, (validator_of(index), 1_000u64))).collect();
+            std::fs::write(json_path(dir, height, "bonded"), serde_json::to_string_pretty(&bonded).unwrap()).unwrap();
+            std::fs::write(json_path(dir, height, "delegated"), serde_json::to_string_pretty(&delegated).unwrap())
+                .unwrap();
+            std::fs::write(json_path(dir, height, "metadata"), &metadata).unwrap();
+            std::fs::write(json_path(dir, height, "unbonding"), unbonding).unwrap();
+            std::fs::write(json_path(dir, height, "withdraw"), &withdraw).unwrap();
+            std::fs::write(json_path(dir, height, STAKING_REWARDS), serde_json::to_string_pretty(&rewards).unwrap())
+                .unwrap();
+        });
+    }
+
+    /// Returns the total size of regular files under `dir`.
+    fn dir_size(dir: &Path) -> u64 {
+        fn walk(path: &Path) -> u64 {
+            let Ok(entries) = std::fs::read_dir(path) else { return 0 };
+            entries
+                .flatten()
+                .map(|entry| {
+                    let path = entry.path();
+                    let Ok(meta) = entry.metadata() else { return 0 };
+                    if meta.is_dir() { walk(&path) } else { meta.len() }
+                })
+                .sum()
+        }
+        walk(dir)
+    }
+
+    /// Times a 1000-block dummy JSON import and prints a mainnet extrapolation.
+    ///
+    /// The ledger stays at genesis; the timed loop is the same decode-and-write path
+    /// [`Ledger::import_history_json`] uses after block 0. Dummy snapshots hold 26 validators and
+    /// 423 delegators, the staker counts of a recent mainnet tip.
+    #[test]
+    #[ignore]
+    fn test_import_history_json_1000_dummy_blocks() {
+        const BLOCKS: u32 = 1_000;
+        const MAINNET_HEIGHT: u32 = 22_240_447;
+        let rng = &mut TestRng::default();
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!("snarkvm-history-json-bench-{}-{nanos}", std::process::id()));
+        struct RemoveDir(PathBuf);
+        impl Drop for RemoveDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = RemoveDir(dir.clone());
+
+        let ledger = sample_ledger(private_key, rng);
+        ledger.set_record_history(false);
+        ledger.reset_history().unwrap();
+        ledger.import_history_json(&dir).unwrap();
+        assert_eq!(ledger.history_synced_height(), 1);
+
+        let wrote = Instant::now();
+        write_dummy_json(&dir, 1..=BLOCKS, rng);
+        println!("Wrote {BLOCKS} dummy JSON heights in {:.1}s", wrote.elapsed().as_secs_f64());
+        let json_bytes = dir_size(&dir);
+        println!(
+            "JSON: {:.1} MB total ({:.1} KB/block); height 1 files: bonded {:.1} KB, staking_rewards {:.1} KB, delegated {:.1} KB, withdraw {:.1} KB, metadata {} B, unbonding {} B",
+            json_bytes as f64 / 1e6,
+            json_bytes as f64 / 1e3 / f64::from(BLOCKS),
+            std::fs::metadata(json_path(&dir, 1, "bonded")).unwrap().len() as f64 / 1e3,
+            std::fs::metadata(json_path(&dir, 1, STAKING_REWARDS)).unwrap().len() as f64 / 1e3,
+            std::fs::metadata(json_path(&dir, 1, "delegated")).unwrap().len() as f64 / 1e3,
+            std::fs::metadata(json_path(&dir, 1, "withdraw")).unwrap().len() as f64 / 1e3,
+            std::fs::metadata(json_path(&dir, 1, "metadata")).unwrap().len(),
+            std::fs::metadata(json_path(&dir, 1, "unbonding")).unwrap().len(),
+        );
+
+        let store_dir = aleo_std::aleo_ledger_dir(CurrentNetwork::ID, ledger.vm.finalize_store().storage_mode());
+        let before = dir_size(&store_dir);
+
+        let decoder = JsonDecoder::<CurrentNetwork>::new().unwrap();
+        let genesis = ledger.genesis_json_snapshot().unwrap();
+        let started = Instant::now();
+        let mut events = 0usize;
+        for first in (1..=BLOCKS).step_by(JSON_BATCH_BLOCKS as usize) {
+            let last = first.saturating_add(JSON_BATCH_BLOCKS - 1).min(BLOCKS);
+            let blocks = decoder.read_blocks(&dir, first..=last, Some(&genesis)).unwrap();
+            events += blocks.iter().map(|(_, events)| events.len()).sum::<usize>();
+            ledger.vm.finalize_store().import_history_events(blocks).unwrap();
+            ledger.vm.finalize_store().set_history_synced_height(last + 1).unwrap();
+        }
+        let elapsed = started.elapsed();
+        let seconds = elapsed.as_secs_f64();
+        let rate = f64::from(BLOCKS) / seconds;
+        let mainnet = Duration::from_secs_f64(f64::from(MAINNET_HEIGHT) / rate);
+        println!(
+            "Imported {BLOCKS} dummy JSON blocks in {seconds:.2}s ({rate:.1} blocks/s, {events} events, {:.0} events/block); mainnet {MAINNET_HEIGHT} at this rate is {}",
+            events as f64 / f64::from(BLOCKS),
+            format_eta(Some(mainnet)),
+        );
+        let after = dir_size(&store_dir);
+        let history_bytes = after.saturating_sub(before);
+        println!(
+            "RocksDB history: {:.1} MB for {BLOCKS} blocks ({:.0} bytes/block, {:.1} bytes/event); scaled to mainnet {MAINNET_HEIGHT}: {:.1} GB. JSON scaled to mainnet: {:.1} GB ({:.0}x).",
+            history_bytes as f64 / 1e6,
+            history_bytes as f64 / f64::from(BLOCKS),
+            history_bytes as f64 / events as f64,
+            history_bytes as f64 / f64::from(BLOCKS) * f64::from(MAINNET_HEIGHT) / 1e9,
+            json_bytes as f64 / f64::from(BLOCKS) * f64::from(MAINNET_HEIGHT) / 1e9,
+            json_bytes as f64 / history_bytes.max(1) as f64,
+        );
+        assert_eq!(ledger.history_synced_height(), BLOCKS + 1);
+        assert!(events >= (BLOCKS as usize) * 449);
     }
 }

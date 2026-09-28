@@ -152,18 +152,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         Self::from_store_and_process(store, process)
     }
 
-    /// Initializes a history-replay VM, whose store holds finalize state but no blocks.
-    ///
-    /// `height` is the last block the replay finalized, or `None` before it finalizes genesis.
-    /// Programs deployed at or below `height` are loaded from `source`, the VM being replayed.
-    pub fn from_history_replay(store: ConsensusStore<N, C>, source: &Self, height: Option<u32>) -> Result<Self> {
-        let process = Self::process_at_height(height.unwrap_or(0))?;
-        if let Some(height) = height {
-            Self::load_deployments(&process, source.block_store(), source.transaction_store(), height)?;
-        }
-        Self::from_store_and_process(store, process)
-    }
-
     /// Returns a new process with the `credits.aleo` verifying keys used at `height`.
     #[cfg(not(any(test, feature = "test")))]
     fn process_at_height(height: u32) -> Result<Process<N>> {
@@ -683,7 +671,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     self.partially_verified_transactions().write().clear();
                 }
                 // Advance the history cursor only for the next height that is not indexed yet.
-                // A gap stays unindexed until backfill fills it.
+                // A gap stays unindexed until JSON import fills it.
                 if self.finalize_store().record_history()
                     && block.height() == self.finalize_store().history_synced_height()
                 {
@@ -720,9 +708,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Finalizes the given block into this VM's finalize store, without storing the block.
     ///
-    /// A history-replay VM uses this to rebuild mapping state. The finalize inputs match
-    /// [`Self::add_next_block`], and finalize checks the resulting operations against the block's
-    /// confirmed transactions, so a replay that diverges from the chain fails.
+    /// JSON history import uses this to index genesis on a throwaway VM. The finalize inputs
+    /// match [`Self::add_next_block`], and finalize checks the resulting operations against the
+    /// block's confirmed transactions.
     ///
     /// # Panics
     /// This function panics if called from an async context.

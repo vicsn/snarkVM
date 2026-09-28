@@ -226,10 +226,8 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
     committee_cache: Mutex<LruCache<u64, Committee<N>>>,
     /// The cache that holds the provers and the number of solutions they have submitted for the current epoch.
     epoch_provers_cache: Arc<RwLock<IndexMap<Address<N>, u32>>>,
-    /// When set, each new block is applied to the history replay after it is committed here.
+    /// When set, each new block records mapping and staking history on this ledger.
     record_history: AtomicBool,
-    /// Side VM that re-finalizes blocks to rebuild mapping and staking history.
-    history_replay: Mutex<Option<history::HistoryReplay<N, C>>>,
 
     /// Optional dev committee, returned for any round `>= committee.starting_round()`.
     ///
@@ -401,7 +399,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             committee_cache,
             epoch_provers_cache: Default::default(),
             record_history: AtomicBool::new(false),
-            history_replay: Mutex::new(None),
             #[cfg(feature = "dev-committee")]
             dev_committee,
         }));

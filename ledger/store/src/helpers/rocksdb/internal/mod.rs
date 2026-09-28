@@ -122,20 +122,7 @@ impl Clone for RocksDB {
     }
 }
 
-/// Returns whether `storage` is a history-replay ledger directory.
-fn is_history_replay_mode(network_id: u16, storage: &StorageMode) -> bool {
-    aleo_std_storage::aleo_ledger_dir(network_id, storage)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.ends_with("-history-replay"))
-}
-
 impl RocksDB {
-    /// Returns whether this database is a history-replay ledger.
-    fn is_history_replay(&self) -> bool {
-        is_history_replay_mode(self.network_id, &self.storage_mode)
-    }
-
     /// Returns the next block height history indexing will process.
     pub(crate) fn history_synced_height(&self) -> Result<u32> {
         schema::read_history_synced_height(self, self.network_id)
@@ -254,21 +241,12 @@ impl Database for RocksDB {
             db
         };
 
-        // Outside tests, there is one primary database and, when history backfill is running, one
-        // replay database whose directory name ends with `-history-replay`. Test databases may
-        // share the process with the replay databases of their test ledgers.
-        let is_replay = |db: &RocksDB| db.is_history_replay();
+        // Outside tests, there is one primary database. Test databases may share the process.
         let is_test = |db: &RocksDB| matches!(&db.storage_mode, StorageMode::Test(_));
         if matches!(storage, StorageMode::Test(_)) {
-            ensure!(databases.values().all(|db| is_test(db) || is_replay(db)));
-        } else if is_history_replay_mode(network_id, &storage) {
-            let replays = databases.values().filter(|db| is_replay(db)).count();
-            ensure!(
-                replays <= 1 || databases.values().any(is_test),
-                "There can only be one active history-replay database."
-            );
+            ensure!(databases.values().all(is_test));
         } else {
-            let primaries = databases.values().filter(|db| !is_test(db) && !is_replay(db)).count();
+            let primaries = databases.values().filter(|db| !is_test(db)).count();
             ensure!(primaries <= 1, "There can only be one active rocksDB database when not in test mode.");
         }
 
