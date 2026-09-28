@@ -682,7 +682,18 @@ mod tests {
 
     #[test]
     fn test_varuna_version_from_consensus() {
-        // First boundary: V4
+        // Check that all consensus versions map to a valid Varuna version.
+        for consensus_version in enum_iterator::all::<ConsensusVersion>() {
+            let varuna_version = varuna_version_from_consensus(consensus_version);
+            let valid = match varuna_version {
+                VarunaVersion::V1 => consensus_version < ConsensusVersion::V4,
+                VarunaVersion::V2 => (ConsensusVersion::V4..ConsensusVersion::V21).contains(&consensus_version),
+                VarunaVersion::V3 => consensus_version >= ConsensusVersion::V21,
+            };
+            assert!(valid, "{consensus_version:?} incorrectly maps to {varuna_version:?}");
+        }
+
+        // Add spot checks.
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V3), VarunaVersion::V1);
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V4), VarunaVersion::V2);
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V20), VarunaVersion::V2);

@@ -138,14 +138,18 @@ macro_rules! do_snark_verification {
 
         let varuna_version = || match $varuna_version {
             Value::Plaintext(Plaintext::Literal(Literal::U8(version), _)) => {
-                if *version == VarunaVersion::V3 as u8 && $consensus_version.is_some_and(|version| version < ConsensusVersion::V21) {
-                    return Err(io_error("Invalid Varuna version").into());
-                }
                 let version = VarunaVersion::from_bytes_le(&[*version])?;
-                if $consensus_version.is_some_and(|version| version >= ConsensusVersion::V21)
-                    && version != VarunaVersion::V3
-                {
-                    return Err(io_error("Varuna V3 is required for snark verification").into());
+                match version {
+                    VarunaVersion::V1 | VarunaVersion::V2 => {
+                        if $consensus_version.is_some_and(|version| version >= ConsensusVersion::V21) {
+                            return Err(io_error("Varuna V3 is required for snark verification").into());
+                        }
+                    }
+                    VarunaVersion::V3 => {
+                        if $consensus_version.is_some_and(|version| version < ConsensusVersion::V21) {
+                            return Err(io_error("Invalid Varuna version").into());
+                        }
+                    }
                 }
                 Ok(version)
             }
