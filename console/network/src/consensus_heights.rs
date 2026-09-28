@@ -76,8 +76,10 @@ pub enum ConsensusVersion {
     /// V20: Adds more accurate type checking for the root call, and bounds the size of every
     /// `PlaintextType` declared in a deployed program.
     V20 = 20,
-    /// V21: TBD
+    /// V21: Activates Varuna V3.
     V21 = 21,
+    /// V22: TBD
+    V22 = 22,
 }
 
 impl ToBytes for ConsensusVersion {
@@ -111,6 +113,7 @@ impl FromBytes for ConsensusVersion {
             19 => Ok(Self::V19),
             20 => Ok(Self::V20),
             21 => Ok(Self::V21),
+            22 => Ok(Self::V22),
             _ => Err(io_error("Invalid consensus version")),
         }
     }
@@ -155,6 +158,7 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V19, u32::MAX),
     (ConsensusVersion::V20, u32::MAX),
     (ConsensusVersion::V21, u32::MAX),
+    (ConsensusVersion::V22, u32::MAX),
 ];
 
 /// The consensus version height for `MainnetV0`.
@@ -179,7 +183,9 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V18, 20_794_000),
     (ConsensusVersion::V19, 21_342_000),
     (ConsensusVersion::V20, 22_175_000),
-    (ConsensusVersion::V21, u32::MAX),
+    // Target: October 2, 2026 at 19:00 UTC (noon PDT); activation is height-based.
+    (ConsensusVersion::V21, 22_453_000),
+    (ConsensusVersion::V22, u32::MAX),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -205,6 +211,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V19, 18_813_000),
     (ConsensusVersion::V20, 19_374_000),
     (ConsensusVersion::V21, u32::MAX),
+    (ConsensusVersion::V22, u32::MAX),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
@@ -233,6 +240,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V19, 22),
     (ConsensusVersion::V20, 23),
     (ConsensusVersion::V21, 24),
+    (ConsensusVersion::V22, 25),
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
@@ -349,7 +357,13 @@ macro_rules! consensus_config_value_by_version {
 /// Returns the Varuna version for the specified consensus version.
 pub fn varuna_version_from_consensus(consensus_version: ConsensusVersion) -> VarunaVersion {
     // If new varuna versions are added, test_varuna_version_from_consensus below must be updated accordingly.
-    if consensus_version >= ConsensusVersion::V4 { VarunaVersion::V2 } else { VarunaVersion::V1 }
+    if consensus_version >= ConsensusVersion::V21 {
+        VarunaVersion::V3
+    } else if consensus_version >= ConsensusVersion::V4 {
+        VarunaVersion::V2
+    } else {
+        VarunaVersion::V1
+    }
 }
 
 #[cfg(test)]
@@ -671,5 +685,8 @@ mod tests {
         // First boundary: V4
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V3), VarunaVersion::V1);
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V4), VarunaVersion::V2);
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V20), VarunaVersion::V2);
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V21), VarunaVersion::V3);
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V22), VarunaVersion::V3);
     }
 }
