@@ -99,6 +99,7 @@ Pre-commit hook runs workspace-wide: `cargo clippy --workspace --all-targets --a
 ## Pull requests
 - Follow `.github/PULL_REQUEST_TEMPLATE.md`.
 - Write the PR README in Simplified Technical English. Use short sentences, the active voice, and one idea per sentence.
+- Keep the pull request description succinct and DRY.
 - Explain each commit in one line.
 
 ## Style
