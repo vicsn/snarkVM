@@ -183,8 +183,8 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V18, 20_794_000),
     (ConsensusVersion::V19, 21_342_000),
     (ConsensusVersion::V20, 22_175_000),
-    // Target: October 2, 2026 at 19:00 UTC (noon PDT); activation is height-based.
-    (ConsensusVersion::V21, 22_453_000),
+    // Target: October 1, 2026 at 21:00 UTC (2 PM PDT)
+    (ConsensusVersion::V21, 22_433_000),
     (ConsensusVersion::V22, u32::MAX),
 ];
 
