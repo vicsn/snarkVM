@@ -145,6 +145,12 @@ impl Database for RocksDB {
             // Customize database options.
             let mut options = rocksdb::Options::default();
             options.set_compression_type(rocksdb::DBCompressionType::Lz4);
+            // The databases in `DATABASES` are never closed, so a process can exit while RocksDB's
+            // timer thread is dumping stats, which reads C++ statics that exit has already destroyed.
+            // The first dump runs as the database opens, and a test process exits soon after that.
+            if matches!(storage, StorageMode::Test(_)) {
+                options.set_stats_dump_period_sec(0);
+            }
 
             // Register the prefix length.
             let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
