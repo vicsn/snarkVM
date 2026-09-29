@@ -34,7 +34,9 @@ macro_rules! remove_file {
         // Safely remove the corrupt file, if it exists.
         #[cfg(not(feature = "wasm"))]
         if std::path::PathBuf::from(&$filepath).exists() {
-            match std::fs::remove_file(&$filepath) {
+            let _removed = std::fs::remove_file(&$filepath);
+            #[cfg(not(feature = "no_std_out"))]
+            match _removed {
                 Ok(()) => println!("Removed {:?}. Please retry the command.", $filepath),
                 Err(err) => eprintln!("Failed to remove {:?}: {err}", $filepath),
             }
@@ -296,6 +298,7 @@ macro_rules! impl_load_bytes_logic_remote {
                 // Ensure the checksum matches.
                 let candidate_checksum = checksum!(buffer.as_slice());
                 if $expected_checksum != candidate_checksum {
+                    remove_file!(file_path);
                     return checksum_error!($expected_checksum, candidate_checksum)
                 }
                 return Ok(buffer);
