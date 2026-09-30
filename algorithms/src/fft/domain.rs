@@ -1244,4 +1244,20 @@ mod tests {
             assert_eq!(random_polynomial.coeffs, polynomial_evaluations_cuda, "domain size = {domain_size}");
         }
     }
+
+    #[test]
+    fn test_reindex_by_subdomain_is_a_permutation() {
+        // `(4, 2)` makes `period - 1` equal 1, and `(8, 1)` is the smallest subdomain.
+        for (big, small) in [(8usize, 2usize), (16, 4), (32, 8), (64, 2), (128, 32), (4, 2), (8, 1)] {
+            let g = EvaluationDomain::<Fr>::new(big).unwrap();
+            let s = EvaluationDomain::<Fr>::new(small).unwrap();
+            let mut image = (0..g.size()).map(|i| g.reindex_by_subdomain(&s, i).unwrap()).collect::<Vec<_>>();
+            // The subdomain's elements are every `period`-th element of the domain.
+            for (i, j) in image.iter().enumerate().take(s.size()) {
+                assert_eq!(*j, i * (big / small), "big={big} small={small} i={i}");
+            }
+            image.sort_unstable();
+            assert_eq!(image, (0..g.size()).collect::<Vec<_>>(), "big={big} small={small} not a permutation");
+        }
+    }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger"
-version = "4.9.0"
+version = "4.10.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A node ledger for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -75,10 +75,6 @@ history = [
 history-staking-rewards = [
   "snarkvm-ledger-store/history-staking-rewards",
   "snarkvm-synthesizer/history-staking-rewards",
-]
-slipstream-plugins = [
-  "snarkvm-ledger-store/slipstream-plugins",
-  "snarkvm-synthesizer/slipstream-plugins",
 ]
 locktick = [
   "dep:locktick",

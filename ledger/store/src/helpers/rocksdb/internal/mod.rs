@@ -42,7 +42,7 @@ use std::{
     sync::{
         Arc,
         LazyLock,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
 };
 
@@ -136,27 +136,44 @@ impl Database for RocksDB {
     fn open<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self> {
         let storage = storage.into();
 
-        // Retrieve the database.
-        let db_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage);
+        // Obtain the path to the primary instance.
+        let primary_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage);
+        // Obtain the path to the secondary instance, if applicable.
+        let secondary_path = aleo_std_storage::aleo_secondary_ledger_dir(network_id, &storage);
+        // A secondary instance is registered under its own path.
+        let db_path = secondary_path.as_ref().unwrap_or(&primary_path);
+
         let mut databases = DATABASES.lock();
-        let database = if let Some(db) = databases.get(&db_path) {
+        let database = if let Some(db) = databases.get(db_path) {
             db.clone()
         } else {
             // Customize database options.
             let mut options = rocksdb::Options::default();
             options.set_compression_type(rocksdb::DBCompressionType::Lz4);
+            // The databases in `DATABASES` are never closed, so a process can exit while RocksDB's
+            // timer thread is dumping stats, which reads C++ statics that exit has already destroyed.
+            // The first dump runs as the database opens, and a test process exits soon after that.
+            if matches!(storage, StorageMode::Test(_)) {
+                options.set_stats_dump_period_sec(0);
+            }
 
             // Register the prefix length.
             let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
             options.set_prefix_extractor(prefix_extractor);
 
-            let rocksdb = {
+            let rocksdb = if let Some(secondary_path) = &secondary_path {
+                // Keep all the files open, so that the ones removed by the primary's compactions
+                // remain readable until the next catch-up with the primary.
+                options.set_max_open_files(-1);
+
+                Arc::new(rocksdb::DB::open_as_secondary(&options, &primary_path, secondary_path)?)
+            } else {
                 options.increase_parallelism(2);
                 options.set_max_background_jobs(4);
                 options.create_if_missing(true);
                 options.set_max_open_files(8192);
 
-                Arc::new(rocksdb::DB::open(&options, &db_path)?)
+                Arc::new(rocksdb::DB::open(&options, &primary_path)?)
             };
 
             let db = RocksDB {
@@ -212,6 +229,7 @@ impl Database for RocksDB {
             database,
             context,
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             atomic_batch: Default::default(),
             checkpoints: Default::default(),
         })))
@@ -241,6 +259,7 @@ impl Database for RocksDB {
             database,
             context,
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             atomic_batch: Default::default(),
             checkpoints: Default::default(),
         })

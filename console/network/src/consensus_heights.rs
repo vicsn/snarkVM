@@ -178,8 +178,8 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V16, 19_860_000),
     (ConsensusVersion::V17, 19_860_001),
     (ConsensusVersion::V18, 20_794_000),
-    (ConsensusVersion::V19, u32::MAX),
-    (ConsensusVersion::V20, u32::MAX),
+    (ConsensusVersion::V19, 21_342_000),
+    (ConsensusVersion::V20, 22_175_000),
     (ConsensusVersion::V21, u32::MAX),
 ];
 
@@ -204,7 +204,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V17, 18_295_000),
     (ConsensusVersion::V18, 18_296_000),
     (ConsensusVersion::V19, 18_813_000),
-    (ConsensusVersion::V20, u32::MAX),
+    (ConsensusVersion::V20, 19_374_000),
     (ConsensusVersion::V21, u32::MAX),
 ];
 
@@ -236,6 +236,29 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V21, 24),
 ];
 
+/// Asserts that the given consensus version heights are well-formed.
+///
+/// A height of `u32::MAX` means the version is unscheduled. Scheduled heights strictly increase,
+/// and once a version is unscheduled every later version must also be unscheduled.
+#[cfg(any(test, feature = "test", feature = "test_consensus_heights", feature = "wasm"))]
+pub(crate) fn verify_consensus_heights(heights: &[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]) {
+    assert_eq!(heights[0].1, 0, "Genesis height must be 0.");
+    for window in heights.windows(2) {
+        let ((previous_version, previous_height), (version, height)) = (window[0], window[1]);
+        if previous_height == u32::MAX {
+            assert!(
+                height == u32::MAX,
+                "{previous_version:?} is unscheduled, so all later versions must be unscheduled, but {version:?} is at height {height}."
+            );
+        } else {
+            assert!(
+                height > previous_height,
+                "Scheduled heights must strictly increase, but {previous_version:?} is at height {previous_height} and {version:?} is at height {height}."
+            );
+        }
+    }
+}
+
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
 pub fn load_test_consensus_heights() -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
     // Attempt to read the test consensus heights from the environment variable.
@@ -246,18 +269,6 @@ pub fn load_test_consensus_heights() -> [(ConsensusVersion, u32); NUM_CONSENSUS_
 pub(crate) fn load_test_consensus_heights_inner(
     consensus_version_heights: Option<String>,
 ) -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
-    // Define a closure to verify the consensus heights.
-    let verify_consensus_heights = |heights: &[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]| {
-        // Assert that the genesis height is 0.
-        assert_eq!(heights[0].1, 0, "Genesis height must be 0.");
-        // Assert that the consensus heights are strictly increasing.
-        for window in heights.windows(2) {
-            if window[0] >= window[1] {
-                panic!("Heights must be strictly increasing, but found: {window:?}");
-            }
-        }
-    };
-
     // Define consensus version heights container used for testing.
     let mut test_consensus_heights = TEST_CONSENSUS_VERSION_HEIGHTS;
 
@@ -704,5 +715,58 @@ mod tests {
         // First boundary: V4
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V3), VarunaVersion::V1);
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V4), VarunaVersion::V2);
+    }
+
+    /// Ensure that every published consensus height table is well-formed.
+    #[test]
+    fn test_published_consensus_heights_are_valid() {
+        verify_consensus_heights(&CANARY_V0_CONSENSUS_VERSION_HEIGHTS);
+        verify_consensus_heights(&MAINNET_V0_CONSENSUS_VERSION_HEIGHTS);
+        verify_consensus_heights(&TESTNET_V0_CONSENSUS_VERSION_HEIGHTS);
+        verify_consensus_heights(&TEST_CONSENSUS_VERSION_HEIGHTS);
+    }
+
+    /// Renders the default test heights as a `CONSENSUS_VERSION_HEIGHTS` string, with the given overrides applied.
+    fn test_heights_string(overrides: &[(usize, u32)]) -> String {
+        let mut heights = TEST_CONSENSUS_VERSION_HEIGHTS.map(|(_, height)| height);
+        for (index, height) in overrides {
+            heights[*index] = *height;
+        }
+        heights.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+    }
+
+    /// Ensure that a decreasing height is rejected.
+    #[test]
+    #[should_panic(expected = "must strictly increase")]
+    fn test_consensus_heights_reject_decreasing() {
+        load_test_consensus_heights_inner(Some(test_heights_string(&[(2, 4)])));
+    }
+
+    /// Ensure that a duplicated height is rejected.
+    #[test]
+    #[should_panic(expected = "must strictly increase")]
+    fn test_consensus_heights_reject_duplicate() {
+        load_test_consensus_heights_inner(Some(test_heights_string(&[(2, 5)])));
+    }
+
+    /// Ensure that a scheduled version following an unscheduled one is rejected.
+    #[test]
+    #[should_panic(expected = "all later versions must be unscheduled")]
+    fn test_consensus_heights_reject_scheduled_after_unscheduled() {
+        load_test_consensus_heights_inner(Some(test_heights_string(&[(18, u32::MAX)])));
+    }
+
+    /// Ensure that a trailing run of unscheduled versions is accepted.
+    #[test]
+    fn test_consensus_heights_accept_trailing_unscheduled() {
+        let heights = load_test_consensus_heights_inner(Some(test_heights_string(&[
+            (18, u32::MAX),
+            (19, u32::MAX),
+            (20, u32::MAX),
+        ])));
+        assert_eq!(heights[17].1, 21);
+        assert_eq!(heights[18].1, u32::MAX);
+        assert_eq!(heights[19].1, u32::MAX);
+        assert_eq!(heights[20].1, u32::MAX);
     }
 }
