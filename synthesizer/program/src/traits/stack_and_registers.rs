@@ -246,6 +246,8 @@ pub fn types_equivalent<N: Network>(
     // struct shared by many members is compared at most once. Without this, a program in which every member of
     // each struct refers to the same earlier struct forms an acyclic graph with exponentially many paths, and the
     // walk below would make up to `MAX_STRUCT_ENTRIES ^ MAX_STRUCTS` recursive calls.
+    // `in_progress` holds the pairs currently on the recursion path, and re-entering one means the cross-program
+    // struct graph is cyclic.
     let mut confirmed = HashSet::new();
     let mut in_progress = HashSet::new();
     types_equivalent_inner(stack0, type0, stack1, type1, &mut confirmed, &mut in_progress)
@@ -314,6 +316,9 @@ fn types_equivalent_inner<N: Network>(
 
 /// Compares the struct named `name` in `stack0` against the one of that name in `stack1`, threading the
 /// memoization set from [`types_equivalent_inner`].
+///
+/// `in_progress` holds the pairs currently on the recursion path, and re-entering one means the cross-program
+/// struct graph is cyclic.
 ///
 /// The key is `(program0, program1, name)`, which uniquely identifies the pair being compared, since a name
 /// resolves to one struct per program.

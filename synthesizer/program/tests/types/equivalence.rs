@@ -281,9 +281,10 @@ constructor:
 
         let stack_a = process.get_stack(program_a.id())?;
         let node = PlaintextType::Struct("Node".try_into()?);
+        let equivalence = types_equivalent(&*stack_a, &node, &*stack_a, &node);
         assert!(
-            types_equivalent(&*stack_a, &node, &*stack_a, &node).is_err(),
-            "Cyclic struct equivalence must return an error"
+            equivalence.as_ref().is_err_and(|error| error.to_string().contains("Cyclic struct reference")),
+            "expected a cyclic struct reference error, got {equivalence:?}"
         );
         return Ok(());
     }
