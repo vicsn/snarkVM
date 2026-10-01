@@ -491,7 +491,7 @@ default-features = false
 version = "1.4"
 
 [workspace.dependencies.locktick]
-version = "0.5"
+version = "0.6"
 
 [workspace.dependencies.lru]
 version = "0.18"
