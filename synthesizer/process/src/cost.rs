@@ -44,8 +44,10 @@ pub fn deployment_cost<N: Network>(
     deployment: &Deployment<N>,
     consensus_version: ConsensusVersion,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
-    if consensus_version >= ConsensusVersion::V18 {
-        deployment_cost_v4(process, deployment, consensus_version)
+    if consensus_version >= ConsensusVersion::V21 {
+        deployment_cost_v5(process, deployment, consensus_version)
+    } else if consensus_version >= ConsensusVersion::V18 {
+        deployment_cost_v4(process, deployment)
     } else if consensus_version >= ConsensusVersion::V16 {
         deployment_cost_v3(process, deployment)
     } else if consensus_version >= ConsensusVersion::V10 {
@@ -233,6 +235,17 @@ pub fn transaction_compute_spend_in_microcredits<N: Network>(
     }
 }
 
+/// Returns the minimum cost in microcredits to publish the given deployment (V5).
+///
+/// Identical to V4 except in the cost of the rand.chacha command.
+pub fn deployment_cost_v5<N: Network>(
+    process: &Process<N>,
+    deployment: &Deployment<N>,
+    consensus_version: ConsensusVersion,
+) -> Result<(MinimumCost, DeployCostDetails)> {
+    inner_deployment_cost_v4_v5(process, deployment, Some(consensus_version))
+}
+
 /// Returns the minimum cost in microcredits to publish the given deployment (V4).
 ///
 /// Identical to V3 except in that it replaces the factor (`num_combined_variables` + `num_combined_constraints`)
@@ -240,7 +253,17 @@ pub fn transaction_compute_spend_in_microcredits<N: Network>(
 pub fn deployment_cost_v4<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
-    consensus_version: ConsensusVersion,
+) -> Result<(MinimumCost, DeployCostDetails)> {
+    inner_deployment_cost_v4_v5(process, deployment, None)
+}
+
+// Common computation for deployment costs V4 and V5. Their only difference is that the V5 version
+// needs the consensus version in order to pass it downstream until the inner cost_per_command. In
+// V4 and earlier, callees do not need it and `None` is passed throughout the entire call chain.
+fn inner_deployment_cost_v4_v5<N: Network>(
+    process: &Process<N>,
+    deployment: &Deployment<N>,
+    consensus_version: Option<ConsensusVersion>,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
     // Determine the number of bytes in the deployment.
     let size_in_bytes = deployment.size_in_bytes()?;
@@ -261,12 +284,12 @@ pub fn deployment_cost_v4<N: Network>(
     let stack = Stack::new(process, deployment.program())?;
 
     // Compute the constructor cost in microcredits.
-    let constructor_cost = constructor_cost_in_microcredits_v2(&stack, Some(consensus_version))?;
+    let constructor_cost = constructor_cost_in_microcredits_v2(&stack, consensus_version)?;
 
     // Check that the functions are valid.
     for function in deployment.program().functions().values() {
         // Get the finalize cost.
-        let finalize_cost = minimum_cost_in_microcredits_v3(&stack, function.name(), Some(consensus_version))?;
+        let finalize_cost = minimum_cost_in_microcredits_v3(&stack, function.name(), consensus_version)?;
         // Check that the finalize cost does not exceed the maximum.
         ensure!(
             finalize_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
@@ -278,8 +301,7 @@ pub fn deployment_cost_v4<N: Network>(
 
     // Bound each view function's worst-case compute.
     for view in deployment.program().views().values() {
-        let view_cost =
-            view_cost_for_single_view(&stack, view.name(), ConsensusFeeVersion::V3, Some(consensus_version))?;
+        let view_cost = view_cost_for_single_view(&stack, view.name(), ConsensusFeeVersion::V3, consensus_version)?;
         ensure!(
             view_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
             "View '{}' has a cost '{view_cost}' which exceeds the transaction spend limit '{}'",
@@ -1137,6 +1159,7 @@ pub fn cost_per_command<N: Network>(
             if consensus_version.is_some_and(|version| version >= ConsensusVersion::V21) {
                 let seed_component = {
                     let mut bhp_operands = command.operands().to_vec();
+                    // The always-present pre-seed is about 750 bits, which is roughly equivalent to 3 field elements.
                     for _ in 0..3 {
                         bhp_operands.push(Operand::Literal(Literal::Field(Field::one())));
                     }
@@ -1868,6 +1891,70 @@ function noop:",
         let v3_storage_above = deployment_storage_cost::<MainnetV0>(above).unwrap();
         assert!(v3_storage_above > v2_storage_above, "v3 storage must exceed v2 storage above the penalty threshold");
         assert_eq!(v3_storage_above, 2 * v2_storage_above);
+    }
+
+    #[test]
+    fn test_deployment_cost_v4_v5_dispatch_and_rand_chacha_constructor_cost() {
+        // Verify that `deployment_cost` dispatches to `deployment_cost_v4` for ConsensusVersion::V18
+        // through V20 and to `deployment_cost_v5` from V21 onwards, and that the two only differ
+        // in the constructor cost of `rand.chacha`.
+        let process = Process::<MainnetV0>::load().unwrap();
+        let rng = &mut TestRng::default();
+
+        // The constructor samples one non-group and one group value, so that both branches of the
+        // V21 `rand.chacha` cost are exercised.
+        let program = Program::from_str(
+            r"
+program dispatch_v5_test.aleo;
+
+constructor:
+    rand.chacha into r0 as u64;
+    rand.chacha into r1 as group;
+
+function noop:",
+        )
+        .unwrap();
+
+        let mut deployment = process.deploy::<AleoV0, _>(&program, rng).unwrap();
+        deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+        deployment.set_program_owner_raw(Some(Address::rand(rng)));
+
+        let v4_cost = deployment_cost_v4(&process, &deployment).unwrap();
+        let v5_cost = deployment_cost_v5(&process, &deployment, ConsensusVersion::V21).unwrap();
+
+        // `deployment_cost` must dispatch to v4 for ConsensusVersion::V18 to V20.
+        for consensus_version in [ConsensusVersion::V18, ConsensusVersion::V19, ConsensusVersion::V20] {
+            assert_eq!(deployment_cost(&process, &deployment, consensus_version).unwrap(), v4_cost);
+        }
+        // `deployment_cost` must dispatch to v5 for ConsensusVersion::V21 and the latest version.
+        // Change this if a future consensus version introduces a new deployment cost version.
+        for consensus_version in [ConsensusVersion::V21, ConsensusVersion::latest()] {
+            assert_eq!(deployment_cost(&process, &deployment, consensus_version).unwrap(), v5_cost);
+        }
+
+        let (v4_total, (v4_storage, v4_synthesis, v4_constructor, v4_namespace)) = v4_cost;
+        let (v5_total, (v5_storage, v5_synthesis, v5_constructor, v5_namespace)) = v5_cost;
+
+        // Only the constructor cost differs between v4 and v5.
+        assert_eq!(v4_storage, v5_storage);
+        assert_eq!(v4_synthesis, v5_synthesis);
+        assert_eq!(v4_namespace, v5_namespace);
+        assert_eq!(v4_total - v4_constructor, v5_total - v5_constructor);
+
+        // In v4, each `rand.chacha` has a flat cost of 25_000.
+        let v4_base_cost = 2 * 25_000;
+        // In v5, each `rand.chacha` costs the BHP hash of its seed (no operands plus three field
+        // elements of 32 bytes each), and the `group` destination adds a surcharge of 115_000.
+        let v5_seed_cost = HASH_BHP_BASE_COST + HASH_BHP_PER_BYTE_COST * (3 * 32);
+        let v5_base_cost = 2 * v5_seed_cost + 115_000;
+        assert_eq!(v5_base_cost, 272_600, "v5 rand.chacha cost derivation changed");
+
+        let scale = |base_cost: u64| {
+            base_cost * <MainnetV0 as Network>::CONSTRUCTOR_FEE_MULTIPLIER
+                / <MainnetV0 as Network>::ARC_0005_COMPUTE_DISCOUNT
+        };
+        assert_eq!(v4_constructor, scale(v4_base_cost));
+        assert_eq!(v5_constructor, scale(v5_base_cost));
     }
 
     // Test program with finalize blocks for cost comparison test
