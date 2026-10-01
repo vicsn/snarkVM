@@ -96,6 +96,12 @@ Pre-commit hook runs workspace-wide: `cargo clippy --workspace --all-targets --a
 - Stage with `git add` only if requested.
 - Run `cargo +nightly-2026-04-02 fmt --all` before staging.
 
+## Pull requests
+- Follow `.github/PULL_REQUEST_TEMPLATE.md`.
+- Write the PR README in Simplified Technical English. Use short sentences, the active voice, and one idea per sentence.
+- Keep the pull request description succinct and DRY.
+- Explain each commit in one line.
+
 ## Style
 - One blank line between functions.
 - No trailing whitespace.
