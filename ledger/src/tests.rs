@@ -149,6 +149,8 @@ fn test_load_dev_genesis_state_root() {
     assert_eq!(ledger.latest_height(), 0);
     assert_eq!(ledger.latest_block(), genesis);
     assert_eq!(ledger.get_state_root(0).unwrap().unwrap(), console::types::Field::<CurrentNetwork>::one().into());
+    // Block 1 speculation treats genesis as inserted when this lookup finds a height.
+    assert_eq!(ledger.find_block_height_from_state_root(ledger.latest_state_root()).unwrap(), Some(0));
     drop(ledger);
 
     // Load the same storage mode again while the chain is still at height 0.
