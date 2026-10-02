@@ -703,7 +703,16 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         let block_path = block_tree.prove(block.height() as usize, &block.hash().to_bits_le())?;
 
         // Ensure the global state root exists in storage.
-        if !self.reverse_state_root_map().contains_key_confirmed(&global_state_root.into())? {
+        // Height 0 stores `Field::one()` as its state root.
+        #[cfg(feature = "dev_genesis_state_root")]
+        let root_in_storage = if block.height() == 0 {
+            self.get_state_root(0)?.as_ref() == Some(&Field::<N>::one().into())
+        } else {
+            self.reverse_state_root_map().contains_key_confirmed(&global_state_root.into())?
+        };
+        #[cfg(not(feature = "dev_genesis_state_root"))]
+        let root_in_storage = self.reverse_state_root_map().contains_key_confirmed(&global_state_root.into())?;
+        if !root_in_storage {
             bail!("The global state root '{global_state_root}' for commitment '{commitment}' is missing in storage");
         }
 
@@ -1349,7 +1358,13 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Returns the current state root.
     pub fn current_state_root(&self) -> N::StateRoot {
-        (*self.tree.read().root()).into()
+        let tree = self.tree.read();
+        // Height 0 stores `Field::one()` as its state root.
+        #[cfg(feature = "dev_genesis_state_root")]
+        if tree.number_of_leaves() == 1 {
+            return Field::<N>::one().into();
+        }
+        (*tree.root()).into()
     }
 
     /// Returns the current block height.
