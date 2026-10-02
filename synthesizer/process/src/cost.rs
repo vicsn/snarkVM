@@ -237,13 +237,19 @@ pub fn transaction_compute_spend_in_microcredits<N: Network>(
 
 /// Returns the minimum cost in microcredits to publish the given deployment (V5).
 ///
-/// Identical to V4 except in the cost of the rand.chacha command.
+/// Identical to V3 except in the cost of the rand.chacha command.
+//
+// The only difference between deployment_cost_v3 and deployment_cost_v4 is the use of num_variables
+// + num_constraints in the former and density in the latter. deployment_cost_v5 returns to the
+// behaviour of the deployment_cost_v3 in this regard, in line with the return to
+// variable/constraint-based deployment (and not density-based) deployment limits at consensus
+// version V19.
 pub fn deployment_cost_v5<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
     consensus_version: ConsensusVersion,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
-    inner_deployment_cost_v4_v5(process, deployment, Some(consensus_version))
+    inner_deployment_cost_v3_v5(process, deployment, Some(consensus_version))
 }
 
 /// Returns the minimum cost in microcredits to publish the given deployment (V4).
@@ -253,17 +259,6 @@ pub fn deployment_cost_v5<N: Network>(
 pub fn deployment_cost_v4<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
-) -> Result<(MinimumCost, DeployCostDetails)> {
-    inner_deployment_cost_v4_v5(process, deployment, None)
-}
-
-// Common computation for deployment costs V4 and V5. Their only difference is that the V5 version
-// needs the consensus version in order to pass it downstream until the inner cost_per_command. In
-// V4 and earlier, callees do not need it and `None` is passed throughout the entire call chain.
-fn inner_deployment_cost_v4_v5<N: Network>(
-    process: &Process<N>,
-    deployment: &Deployment<N>,
-    consensus_version: Option<ConsensusVersion>,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
     // Determine the number of bytes in the deployment.
     let size_in_bytes = deployment.size_in_bytes()?;
@@ -277,8 +272,80 @@ fn inner_deployment_cost_v4_v5<N: Network>(
     // Compute the storage cost in microcredits, with a quadratic penalty above 512 kB.
     let storage_cost = deployment_storage_cost::<N>(size_in_bytes)?;
 
-    // Compute the synthesis cost in microcredits based on the combined density of the progrm.
+    // Compute the synthesis cost in microcredits based on the combined density of the program.
     let synthesis_cost = combined_density.saturating_mul(N::SYNTHESIS_FEE_MULTIPLIER) / N::ARC_0005_COMPUTE_DISCOUNT;
+
+    // Compute a Stack for the deployment.
+    let stack = Stack::new(process, deployment.program())?;
+
+    // Compute the constructor cost in microcredits.
+    let constructor_cost = constructor_cost_in_microcredits_v2(&stack, None)?;
+
+    // Check that the functions are valid.
+    for function in deployment.program().functions().values() {
+        // Get the finalize cost.
+        let finalize_cost = minimum_cost_in_microcredits_v3(&stack, function.name(), None)?;
+        // Check that the finalize cost does not exceed the maximum.
+        ensure!(
+            finalize_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
+            function.name(),
+            N::TRANSACTION_SPEND_LIMIT[1].1
+        );
+    }
+
+    // Bound each view function's worst-case compute.
+    for view in deployment.program().views().values() {
+        let view_cost = view_cost_for_single_view(&stack, view.name(), ConsensusFeeVersion::V3, None)?;
+        ensure!(
+            view_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "View '{}' has a cost '{view_cost}' which exceeds the transaction spend limit '{}'",
+            view.name(),
+            N::TRANSACTION_SPEND_LIMIT[1].1
+        );
+    }
+
+    // Compute the namespace cost in microcredits: 10^(10 - num_characters) * 1e6
+    let namespace_cost = 10u64
+        .checked_pow(10u32.saturating_sub(num_characters))
+        .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
+        .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
+
+    // Compute the minimum cost in microcredits.
+    let minimum_cost = storage_cost
+        .checked_add(synthesis_cost)
+        .and_then(|x| x.checked_add(constructor_cost))
+        .and_then(|x| x.checked_add(namespace_cost))
+        .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
+
+    Ok((minimum_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
+}
+
+// Common computation for deployment costs V3 and V5. Their only difference is that the V5 version
+// needs the consensus version in order to pass it downstream until the inner cost_per_command. In
+// V3 (and earlier), callees do not need it and `None` is passed throughout the entire call chain.
+fn inner_deployment_cost_v3_v5<N: Network>(
+    process: &Process<N>,
+    deployment: &Deployment<N>,
+    consensus_version: Option<ConsensusVersion>,
+) -> Result<(MinimumCost, DeployCostDetails)> {
+    // Determine the number of bytes in the deployment.
+    let size_in_bytes = deployment.size_in_bytes()?;
+    // Retrieve the program ID.
+    let program_id = deployment.program_id();
+    // Determine the number of characters in the program ID.
+    let num_characters = u32::try_from(program_id.name().to_string().len())?;
+    // Compute the number of combined variables in the program.
+    let num_combined_variables = deployment.num_combined_variables()?;
+    // Compute the number of combined constraints in the program.
+    let num_combined_constraints = deployment.num_combined_constraints()?;
+
+    // Compute the storage cost in microcredits, with a quadratic penalty above 512 kB.
+    let storage_cost = deployment_storage_cost::<N>(size_in_bytes)?;
+
+    // Compute the synthesis cost in microcredits.
+    let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER
+        / N::ARC_0005_COMPUTE_DISCOUNT;
 
     // Compute a Stack for the deployment.
     let stack = Stack::new(process, deployment.program())?;
@@ -1896,8 +1963,9 @@ function noop:",
     #[test]
     fn test_deployment_cost_v4_v5_dispatch_and_rand_chacha_constructor_cost() {
         // Verify that `deployment_cost` dispatches to `deployment_cost_v4` for ConsensusVersion::V18
-        // through V20 and to `deployment_cost_v5` from V21 onwards, and that the two only differ
-        // in the constructor cost of `rand.chacha`.
+        // through V20 and to `deployment_cost_v5` from V21 onwards. Also verify that v5 prices
+        // synthesis like v3 (by variables and constraints, not by density as in v4), and that v5
+        // only differs from v3 in the constructor cost of `rand.chacha`.
         let process = Process::<MainnetV0>::load().unwrap();
         let rng = &mut TestRng::default();
 
@@ -1919,6 +1987,7 @@ function noop:",
         deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
         deployment.set_program_owner_raw(Some(Address::rand(rng)));
 
+        let v3_cost = deployment_cost_v3(&process, &deployment).unwrap();
         let v4_cost = deployment_cost_v4(&process, &deployment).unwrap();
         let v5_cost = deployment_cost_v5(&process, &deployment, ConsensusVersion::V21).unwrap();
 
@@ -1932,29 +2001,87 @@ function noop:",
             assert_eq!(deployment_cost(&process, &deployment, consensus_version).unwrap(), v5_cost);
         }
 
-        let (v4_total, (v4_storage, v4_synthesis, v4_constructor, v4_namespace)) = v4_cost;
+        let (v3_total, (v3_storage, v3_synthesis, v3_constructor, v3_namespace)) = v3_cost;
+        let (_, (v4_storage, v4_synthesis, v4_constructor, v4_namespace)) = v4_cost;
         let (v5_total, (v5_storage, v5_synthesis, v5_constructor, v5_namespace)) = v5_cost;
 
-        // Only the constructor cost differs between v4 and v5.
-        assert_eq!(v4_storage, v5_storage);
-        assert_eq!(v4_synthesis, v5_synthesis);
-        assert_eq!(v4_namespace, v5_namespace);
-        assert_eq!(v4_total - v4_constructor, v5_total - v5_constructor);
+        // The storage and namespace costs are the same across v3, v4, and v5.
+        assert_eq!(v3_storage, v4_storage);
+        assert_eq!(v3_storage, v5_storage);
+        assert_eq!(v3_namespace, v4_namespace);
+        assert_eq!(v3_namespace, v5_namespace);
 
-        // In v4, each `rand.chacha` has a flat cost of 25_000.
-        let v4_base_cost = 2 * 25_000;
+        // v3 and v5 price synthesis by the combined number of variables and constraints, while v4
+        // prices it by the combined density.
+        let scale_synthesis = |factor: u64| {
+            factor * <MainnetV0 as Network>::SYNTHESIS_FEE_MULTIPLIER
+                / <MainnetV0 as Network>::ARC_0005_COMPUTE_DISCOUNT
+        };
+        let num_variables_and_constraints =
+            deployment.num_combined_variables().unwrap() + deployment.num_combined_constraints().unwrap();
+        assert_eq!(v3_synthesis, scale_synthesis(num_variables_and_constraints));
+        assert_eq!(v5_synthesis, scale_synthesis(num_variables_and_constraints));
+        assert_eq!(v4_synthesis, scale_synthesis(deployment.combined_density()));
+        assert_ne!(v4_synthesis, v5_synthesis, "the program must distinguish the two synthesis cost formulas");
+
+        // Only the constructor cost differs between v3 and v5.
+        assert_eq!(v3_total - v3_constructor, v5_total - v5_constructor);
+
+        // In v3 and v4, each `rand.chacha` has a flat cost of 25_000.
+        let legacy_base_cost = 2 * 25_000;
         // In v5, each `rand.chacha` costs the BHP hash of its seed (no operands plus three field
         // elements of 32 bytes each), and the `group` destination adds a surcharge of 115_000.
         let v5_seed_cost = HASH_BHP_BASE_COST + HASH_BHP_PER_BYTE_COST * (3 * 32);
         let v5_base_cost = 2 * v5_seed_cost + 115_000;
         assert_eq!(v5_base_cost, 272_600, "v5 rand.chacha cost derivation changed");
 
-        let scale = |base_cost: u64| {
+        let scale_constructor = |base_cost: u64| {
             base_cost * <MainnetV0 as Network>::CONSTRUCTOR_FEE_MULTIPLIER
                 / <MainnetV0 as Network>::ARC_0005_COMPUTE_DISCOUNT
         };
-        assert_eq!(v4_constructor, scale(v4_base_cost));
-        assert_eq!(v5_constructor, scale(v5_base_cost));
+        assert_eq!(v3_constructor, scale_constructor(legacy_base_cost));
+        assert_eq!(v4_constructor, scale_constructor(legacy_base_cost));
+        assert_eq!(v5_constructor, scale_constructor(v5_base_cost));
+    }
+
+    #[test]
+    fn test_deployment_cost_v5_matches_v3_without_rand_chacha() {
+        // Verify that, for a program which does not use `rand.chacha`, `deployment_cost_v5` returns
+        // exactly the same cost breakdown as `deployment_cost_v3`.
+        let process = Process::<MainnetV0>::load().unwrap();
+        let rng = &mut TestRng::default();
+
+        let program = Program::from_str(
+            r"
+program v5_matches_v3.aleo;
+
+constructor:
+    assert.eq edition 0u16;
+
+mapping data:
+    key as field.public;
+    value as field.public;
+
+function store:
+    input r0 as field.public;
+    async store r0 into r1;
+    output r1 as v5_matches_v3.aleo/store.future;
+
+finalize store:
+    input r0 as field.public;
+    hash.bhp256 r0 into r1 as field;
+    set r1 into data[r0];",
+        )
+        .unwrap();
+
+        let mut deployment = process.deploy::<AleoV0, _>(&program, rng).unwrap();
+        deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+        deployment.set_program_owner_raw(Some(Address::rand(rng)));
+
+        let v3_cost = deployment_cost_v3(&process, &deployment).unwrap();
+        for consensus_version in [ConsensusVersion::V21, ConsensusVersion::latest()] {
+            assert_eq!(deployment_cost_v5(&process, &deployment, consensus_version).unwrap(), v3_cost);
+        }
     }
 
     // Test program with finalize blocks for cost comparison test
