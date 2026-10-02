@@ -73,12 +73,13 @@ pub enum ConsensusVersion {
     ///      deployment variable and constraint limits. The first V19 block still
     ///      uses the block-wide synthesis limit.
     V19 = 19,
-    /// V20: Adds more accurate type checking for the root call, bounds the size of every
-    /// `PlaintextType` declared in a deployed program, and updates the number of validators.
+    /// V20: Adds more accurate type checking for the root call, and bounds the size of every
+    /// `PlaintextType` declared in a deployed program.
     V20 = 20,
     /// V21: Activates Varuna V3.
     V21 = 21,
-    /// V22: Increases the maximum number of mappings in a program to 128.
+    /// V22: Increases the maximum number of mappings in a program to 128, and lowers the maximum
+    /// committee size on testnet to 40.
     V22 = 22,
 }
 
@@ -210,7 +211,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V18, 18_296_000),
     (ConsensusVersion::V19, 18_813_000),
     (ConsensusVersion::V20, 19_374_000),
-    (ConsensusVersion::V21, u32::MAX),
+    (ConsensusVersion::V21, 20_234_000),
     (ConsensusVersion::V22, u32::MAX),
 ];
 
@@ -671,8 +672,8 @@ mod tests {
         consensus_config_returns_some::<CanaryV0>();
 
         max_certificates_increasing::<MainnetV0>(&[]);
-        // Testnet lowers the maximum committee size at `V20`.
-        max_certificates_increasing::<TestnetV0>(&[ConsensusVersion::V20]);
+        // Testnet lowers the maximum committee size at `V22`.
+        max_certificates_increasing::<TestnetV0>(&[ConsensusVersion::V22]);
         max_certificates_increasing::<CanaryV0>(&[]);
 
         max_array_elements_increasing::<MainnetV0>();
