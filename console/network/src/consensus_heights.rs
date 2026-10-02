@@ -211,7 +211,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V18, 18_296_000),
     (ConsensusVersion::V19, 18_813_000),
     (ConsensusVersion::V20, 19_374_000),
-    (ConsensusVersion::V21, u32::MAX),
+    (ConsensusVersion::V21, 20_234_000),
     (ConsensusVersion::V22, u32::MAX),
 ];
 
