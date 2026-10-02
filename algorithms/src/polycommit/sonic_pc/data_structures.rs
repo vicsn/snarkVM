@@ -274,12 +274,6 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
     }
 }
 
-impl<E: PairingEngine> CommitterKey<E> {
-    fn len(&self) -> usize {
-        self.shifted_powers_of_beta_g.as_ref().map_or(0, |powers| powers.len())
-    }
-}
-
 /// `CommitterUnionKey` is a union of `CommitterKey`s, useful for multi-circuit
 /// batch proofs.
 #[derive(Debug)]
@@ -360,11 +354,20 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
             enforced_degree_bounds: None,
         };
         let mut enforced_degree_bounds = vec![];
-        let mut biggest_ck: Option<&CommitterKey<E>> = None;
-        let mut shifted_powers_of_beta_times_gamma_g = BTreeMap::new();
+        // Every key's arrays are cut from one SRS, whose top degree is the constant
+        // `MAX_NUM_POWERS - 1`: its prefix and hiding powers from the start, its
+        // shifted powers from the end, and each bound's shifted hiding powers from
+        // that bound's shift. So the longest of each array, across keys, contains the
+        // others, and one key need not hold the longest of all of them.
+        let mut shifted_powers_of_beta_times_gamma_g: BTreeMap<usize, &'a Vec<E::G1Affine>> = BTreeMap::new();
         for ck in committer_keys {
-            if biggest_ck.is_none() || biggest_ck.unwrap().len() < ck.len() {
-                biggest_ck = Some(ck);
+            keep_longer(ck_union.powers_of_beta_g.get_or_insert(&ck.powers_of_beta_g), &ck.powers_of_beta_g);
+            keep_longer(
+                ck_union.powers_of_beta_times_gamma_g.get_or_insert(&ck.powers_of_beta_times_gamma_g),
+                &ck.powers_of_beta_times_gamma_g,
+            );
+            if let Some(shifted_powers) = ck.shifted_powers_of_beta_g.as_ref() {
+                keep_longer(ck_union.shifted_powers_of_beta_g.get_or_insert(shifted_powers), shifted_powers);
             }
             let lagrange_bases = &ck.lagrange_bases_at_beta_g;
             for (bound_base, bases) in lagrange_bases.iter() {
@@ -372,27 +375,36 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
             }
             if let Some(shifted_powers) = ck.shifted_powers_of_beta_times_gamma_g.as_ref() {
                 for (bound_power, powers) in shifted_powers.iter() {
-                    shifted_powers_of_beta_times_gamma_g.entry(*bound_power).or_insert(powers);
+                    keep_longer(shifted_powers_of_beta_times_gamma_g.entry(*bound_power).or_insert(powers), powers);
                 }
             }
             if let Some(degree_bounds) = &ck.enforced_degree_bounds {
-                enforced_degree_bounds.append(&mut degree_bounds.clone());
+                enforced_degree_bounds.extend_from_slice(degree_bounds);
             }
         }
-
-        let biggest_ck = biggest_ck.unwrap();
-        ck_union.powers_of_beta_g = Some(&biggest_ck.powers_of_beta_g);
-        ck_union.powers_of_beta_times_gamma_g = Some(&biggest_ck.powers_of_beta_times_gamma_g);
-        ck_union.shifted_powers_of_beta_g = biggest_ck.shifted_powers_of_beta_g.as_ref();
+        assert!(ck_union.powers_of_beta_g.is_some(), "a union needs at least one committer key");
 
         if !enforced_degree_bounds.is_empty() {
             enforced_degree_bounds.sort();
             enforced_degree_bounds.dedup();
+            // `shifted_powers_of_beta_g(bound)` slices from `max_bound - bound`, which
+            // is only right if the array starts at the largest bound's shift.
+            assert_eq!(
+                ck_union.shifted_powers_of_beta_g.map(Vec::len),
+                enforced_degree_bounds.last().map(|max_bound| max_bound + 1),
+                "the longest shifted powers do not start at the largest degree bound's shift"
+            );
             ck_union.enforced_degree_bounds = Some(enforced_degree_bounds);
             ck_union.shifted_powers_of_beta_times_gamma_g = Some(shifted_powers_of_beta_times_gamma_g);
         }
 
         ck_union
+    }
+}
+
+fn keep_longer<'a, T>(kept: &mut &'a Vec<T>, candidate: &'a Vec<T>) {
+    if kept.len() < candidate.len() {
+        *kept = candidate;
     }
 }
 

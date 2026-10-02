@@ -830,11 +830,12 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 mod tests {
     #![allow(non_camel_case_types)]
 
-    use super::{CommitterKey, SonicKZG10};
+    use super::{CommitterKey, CommitterUnionKey, SonicKZG10};
     use crate::{crypto_hash::PoseidonSponge, polycommit::test_templates::*};
     use snarkvm_curves::bls12_377::{Bls12_377, Fq};
     use snarkvm_utilities::{FromBytes, ToBytes, rand::TestRng};
 
+    use itertools::Itertools;
     use rand::distr::Distribution;
 
     type Sponge = PoseidonSponge<Fq, 2, 1>;
@@ -857,6 +858,35 @@ mod tests {
         let ck_recovered_bytes = ck_recovered.to_bytes_le().unwrap();
 
         assert_eq!(&ck_bytes, &ck_recovered_bytes);
+    }
+
+    #[test]
+    fn test_union_takes_each_array_from_the_key_where_it_is_longest() {
+        let pp = PC_Bls12_377::load_srs(32).unwrap();
+        // Each key holds the longest of a different array: the prefix, the shifted
+        // powers, and the hiding powers, including for the bound all three enforce.
+        let (long_prefix, _) = PC_Bls12_377::trim(&pp, 16, [], 0, Some(&[4])).unwrap();
+        let (long_suffix, _) = PC_Bls12_377::trim(&pp, 12, [], 0, Some(&[4, 10])).unwrap();
+        let (long_hiding, _) = PC_Bls12_377::trim(&pp, 8, [], 1, Some(&[4])).unwrap();
+        let shifted_hiding = |ck: &CommitterKey<Bls12_377>, bound| {
+            ck.shifted_powers_of_beta_times_gamma_g.as_ref().unwrap()[&bound].clone()
+        };
+
+        for keys in [&long_prefix, &long_suffix, &long_hiding].into_iter().permutations(3) {
+            let union = CommitterUnionKey::union(keys);
+            assert_eq!(union.powers().powers_of_beta_g, long_prefix.powers_of_beta_g);
+            assert_eq!(union.powers().powers_of_beta_times_gamma_g, long_hiding.powers_of_beta_times_gamma_g);
+            for (bound, hiding) in [(4, shifted_hiding(&long_hiding, 4)), (10, shifted_hiding(&long_suffix, 10))] {
+                let shifted = union.shifted_powers_of_beta_g(bound).unwrap();
+                let top = pp.max_degree();
+                assert_eq!(
+                    shifted.powers_of_beta_g,
+                    pp.powers_of_beta_g(top - bound, top + 1).unwrap(),
+                    "bound {bound}"
+                );
+                assert_eq!(shifted.powers_of_beta_times_gamma_g, hiding, "bound {bound}");
+            }
+        }
     }
 
     #[test]
