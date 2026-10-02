@@ -79,8 +79,6 @@ pub mod rocksdb {
     pub const FLUSH_WRITE_BYTES: &str = "snarkvm_rocksdb_flush_write_bytes_total";
     /// Number of snapshots currently held (non-zero blocks deletion of old SST files).
     pub const NUM_SNAPSHOTS: &str = "snarkvm_rocksdb_num_snapshots";
-    /// RocksDB reads, labeled by `query` (the map that was read).
-    pub const READS: &str = "snarkvm_rocksdb_reads_total";
     /// Number of SST files per LSM level (levels 0–6).
     pub const NUM_FILES_AT_LEVEL: [&str; 7] = [
         "snarkvm_rocksdb_num_files_at_level0",
@@ -122,25 +120,6 @@ pub fn counter<V: Into<u64>>(name: &'static str, value: V) {
 /// not decremented, and always starts out with an initial value of zero.
 pub fn increment_counter(name: &'static str) {
     let counter = ::metrics::counter!(name);
-    counter.increment(1);
-}
-
-/// Increments `rocksdb::READS{query}` by one.
-///
-/// `slot` selects a cached counter handle and must be the map id `query` names. The handle is
-/// captured on first use. A handle captured while no recorder is installed stays a no-op for the
-/// rest of the process.
-pub fn increment_rocksdb_read(query: &'static str, slot: u16) {
-    use std::sync::OnceLock;
-
-    const SLOTS: usize = 256;
-    static COUNTERS: [OnceLock<::metrics::Counter>; SLOTS] = [const { OnceLock::new() }; SLOTS];
-
-    let index = usize::from(slot);
-    if index >= SLOTS {
-        return;
-    }
-    let counter = COUNTERS[index].get_or_init(|| ::metrics::counter!(rocksdb::READS, "query" => query));
     counter.increment(1);
 }
 
