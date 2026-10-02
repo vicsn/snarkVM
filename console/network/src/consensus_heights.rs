@@ -78,7 +78,7 @@ pub enum ConsensusVersion {
     V20 = 20,
     /// V21: Activates Varuna V3.
     V21 = 21,
-    /// V22: TBD
+    /// V22: Increases the maximum number of mappings in a program to 128.
     V22 = 22,
 }
 
@@ -790,10 +790,12 @@ mod tests {
             (18, u32::MAX),
             (19, u32::MAX),
             (20, u32::MAX),
+            (21, u32::MAX),
         ])));
         assert_eq!(heights[17].1, 21);
         assert_eq!(heights[18].1, u32::MAX);
         assert_eq!(heights[19].1, u32::MAX);
         assert_eq!(heights[20].1, u32::MAX);
+        assert_eq!(heights[21].1, u32::MAX);
     }
 }
