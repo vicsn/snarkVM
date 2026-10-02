@@ -357,3 +357,182 @@ enum DataID {
     #[cfg(test)]
     Test5,
 }
+
+macro_rules! map_query_names {
+    ($enum:ident, $prefix:literal, $($variant:ident => $suffix:literal),+ $(,)?) => {
+        impl $enum {
+            const fn query_name(self) -> &'static str {
+                match self {
+                    $(Self::$variant => concat!($prefix, ".", $suffix),)+
+                }
+            }
+
+            fn query_name_for_id(id: u16) -> Option<&'static str> {
+                match id {
+                    $(id if id == Self::$variant as u16 => Some(Self::$variant.query_name()),)+
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+map_query_names!(
+    BFTMap,
+    "bft",
+    Transmissions => "transmissions",
+    AbortedTransmissionIDs => "aborted_transmission_ids",
+);
+map_query_names!(
+    BlockMap,
+    "block",
+    StateRoot => "state_root",
+    ReverseStateRoot => "reverse_state_root",
+    ID => "id",
+    ReverseID => "reverse_id",
+    Header => "header",
+    Authority => "authority",
+    Certificate => "certificate",
+    Ratifications => "ratifications",
+    Solutions => "solutions",
+    PuzzleCommitments => "puzzle_commitments",
+    AbortedSolutionIDs => "aborted_solution_ids",
+    AbortedSolutionHeights => "aborted_solution_heights",
+    Transactions => "transactions",
+    AbortedTransactionIDs => "aborted_transaction_ids",
+    RejectedOrAbortedTransactionID => "rejected_or_aborted_transaction_id",
+    ConfirmedTransactions => "confirmed_transactions",
+    RejectedDeploymentOrExecution => "rejected_deployment_or_execution",
+);
+map_query_names!(
+    CommitteeMap,
+    "committee",
+    CurrentRound => "current_round",
+    RoundToHeight => "round_to_height",
+    Committee => "committee",
+);
+map_query_names!(
+    DeploymentMap,
+    "deployment",
+    ID => "id",
+    IDEdition => "id_edition",
+    Edition => "edition",
+    ReverseID => "reverse_id",
+    Owner => "owner",
+    Program => "program",
+    Checksum => "checksum",
+    VerifyingKey => "verifying_key",
+    Certificate => "certificate",
+    AmendmentNextIndex => "amendment_next_index",
+    AmendmentID => "amendment_id",
+    ReverseAmendmentID => "reverse_amendment_id",
+    AmendmentVerifyingKey => "amendment_verifying_key",
+    AmendmentCertificate => "amendment_certificate",
+    AmendmentOwner => "amendment_owner",
+);
+map_query_names!(
+    ExecutionMap,
+    "execution",
+    ID => "id",
+    ReverseID => "reverse_id",
+    Inclusion => "inclusion",
+);
+map_query_names!(
+    FeeMap,
+    "fee",
+    Fee => "fee",
+    ReverseFee => "reverse_fee",
+);
+map_query_names!(
+    TransitionInputMap,
+    "transition_input",
+    ID => "id",
+    ReverseID => "reverse_id",
+    Constant => "constant",
+    Public => "public",
+    Private => "private",
+    Record => "record",
+    RecordTag => "record_tag",
+    ExternalRecord => "external_record",
+    DynamicRecord => "dynamic_record",
+    DynamicID => "dynamic_id",
+);
+map_query_names!(
+    TransitionOutputMap,
+    "transition_output",
+    ID => "id",
+    ReverseID => "reverse_id",
+    Constant => "constant",
+    Public => "public",
+    Private => "private",
+    Record => "record",
+    RecordNonce => "record_nonce",
+    RecordSender => "record_sender",
+    ExternalRecord => "external_record",
+    Future => "future",
+    DynamicRecord => "dynamic_record",
+    DynamicID => "dynamic_id",
+);
+map_query_names!(TransactionMap, "transaction", ID => "id");
+map_query_names!(
+    TransitionMap,
+    "transition",
+    Locator => "locator",
+    TPK => "tpk",
+    ReverseTPK => "reverse_tpk",
+    TCM => "tcm",
+    ReverseTCM => "reverse_tcm",
+    SCM => "scm",
+);
+map_query_names!(
+    ProgramMap,
+    "program",
+    ProgramID => "program_id",
+    KeyValueID => "key_value",
+    MappingUpdate => "mapping_update",
+    MappingUpdateHeights => "mapping_update_heights",
+    StakingRewards => "staking_rewards",
+    RejectedReason => "rejected_reason",
+);
+#[cfg(test)]
+map_query_names!(
+    TestMap,
+    "test",
+    Test => "test",
+    Test2 => "test_2",
+    Test3 => "test_3",
+    Test4 => "test_4",
+    Test5 => "test_5",
+);
+
+/// The `query` label for a RocksDB map id.
+pub fn query_name(map_id: u16) -> &'static str {
+    let name = BFTMap::query_name_for_id(map_id)
+        .or_else(|| BlockMap::query_name_for_id(map_id))
+        .or_else(|| CommitteeMap::query_name_for_id(map_id))
+        .or_else(|| DeploymentMap::query_name_for_id(map_id))
+        .or_else(|| ExecutionMap::query_name_for_id(map_id))
+        .or_else(|| FeeMap::query_name_for_id(map_id))
+        .or_else(|| TransitionInputMap::query_name_for_id(map_id))
+        .or_else(|| TransitionOutputMap::query_name_for_id(map_id))
+        .or_else(|| TransactionMap::query_name_for_id(map_id))
+        .or_else(|| TransitionMap::query_name_for_id(map_id))
+        .or_else(|| ProgramMap::query_name_for_id(map_id));
+    #[cfg(test)]
+    let name = name.or_else(|| TestMap::query_name_for_id(map_id));
+    name.unwrap_or("unknown")
+}
+
+#[cfg(test)]
+mod query_name_tests {
+    use super::*;
+
+    #[test]
+    fn query_name_labels_each_family() {
+        assert_eq!(query_name(BlockMap::Header as u16), "block.header");
+        assert_eq!(query_name(ProgramMap::KeyValueID as u16), "program.key_value");
+        assert_eq!(query_name(TransactionMap::ID as u16), "transaction.id");
+        assert_eq!(query_name(TestMap::Test as u16), "test.test");
+        assert_eq!(query_name(u16::MAX), "unknown");
+    }
+}

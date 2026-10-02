@@ -306,6 +306,7 @@ impl<
     /// Returns the number of confirmed entries in the map.
     ///
     fn len_confirmed(&self) -> usize {
+        record_rocksdb_read(&self.context);
         // A raw iterator doesn't allocate.
         let mut iter = self.database.raw_iterator();
         // Find the first key with the map prefix.
@@ -423,6 +424,7 @@ impl<
         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
     {
         let raw_key = self.create_prefixed_key(key)?;
+        record_rocksdb_read(&self.context);
 
         let mut iter = self.database.raw_iterator();
         iter.seek_for_prev(&raw_key);
@@ -458,6 +460,7 @@ impl<
     /// Returns an iterator visiting each key-value pair in the map.
     ///
     fn iter_confirmed(&'a self) -> Self::Iterator {
+        record_rocksdb_read(&self.context);
         Iter::new(self.database.prefix_iterator(&self.context))
     }
 
@@ -465,6 +468,7 @@ impl<
     /// Returns an iterator over each key in the map.
     ///
     fn keys_confirmed(&'a self) -> Self::Keys {
+        record_rocksdb_read(&self.context);
         Keys::new(self.database.prefix_iterator(&self.context))
     }
 
@@ -472,6 +476,7 @@ impl<
     /// Returns an iterator over each value in the map.
     ///
     fn values_confirmed(&'a self) -> Self::Values {
+        record_rocksdb_read(&self.context);
         Values::new(self.database.prefix_iterator(&self.context))
     }
 
@@ -485,6 +490,7 @@ impl<
         // Build the raw prefix: the map context (network ID + map ID) followed by the serialized prefix.
         let mut raw_prefix = self.context.clone();
         bincode::serialize_into(&mut raw_prefix, prefix)?;
+        record_rocksdb_read(&self.context);
 
         // Seek to the prefix and collect every key sharing it. The fixed-prefix extractor only spans
         // the map context, so the boundary of the longer prefix is checked explicitly.
@@ -644,6 +650,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         Q: Serialize + ?Sized,
     {
         let raw_key = self.create_prefixed_key(key)?;
+        record_rocksdb_read(&self.context);
         match self.database.get_pinned_opt(&raw_key, &self.database.default_readopts)? {
             Some(data) => Ok(Some(data)),
             None => Ok(None),

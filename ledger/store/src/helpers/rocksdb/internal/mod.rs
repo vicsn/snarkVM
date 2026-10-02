@@ -48,6 +48,20 @@ use std::{
 
 pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
 
+/// Counts one RocksDB read of the map stored in `context`.
+#[inline]
+pub(super) fn record_rocksdb_read(context: &[u8]) {
+    #[cfg(feature = "metrics")]
+    {
+        let map_id = context.get(2..4).map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]])).unwrap_or(u16::MAX);
+        snarkvm_metrics::increment_rocksdb_read(query_name(map_id), map_id);
+    }
+    #[cfg(not(feature = "metrics"))]
+    {
+        let _ = context;
+    }
+}
+
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
 // tests involving persistent storage, but it only ever has a single member outside of them.
 // TODO: remove the static in favor of improved `open` methods.

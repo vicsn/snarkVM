@@ -81,6 +81,7 @@ impl<M: Serialize + DeserializeOwned, K: Serialize + DeserializeOwned, V: Serial
     #[inline]
     fn get_map_key_raw(&self, map: &M, key: &K) -> Result<Option<rocksdb::DBPinnableSlice<'_>>> {
         let raw_map_key = self.create_prefixed_map_key(map, key)?;
+        record_rocksdb_read(&self.context);
         match self.database.get_pinned_opt(&raw_map_key, &self.database.default_readopts)? {
             Some(data) => Ok(Some(data)),
             None => Ok(None),
@@ -385,6 +386,7 @@ impl<
     /// Returns the number of confirmed entries in the map.
     ///
     fn len_map_confirmed(&self, map: &M) -> Result<usize> {
+        record_rocksdb_read(&self.context);
         // Obtain the nested map prefix and its final part.
         let prefix = self.create_prefixed_map(map)?;
         let serialized_map = &prefix[PREFIX_LEN + 4..];
@@ -460,6 +462,7 @@ impl<
     /// Returns the key-value pairs for the given map, if it exists.
     ///
     fn get_map_confirmed(&'a self, map: &M) -> Result<Vec<(K, V)>> {
+        record_rocksdb_read(&self.context);
         // Serialize the map.
         let serialized_map = bincode::serialize(map)?;
 
@@ -612,6 +615,7 @@ impl<
     /// Returns an iterator visiting each key-value pair in the map.
     ///
     fn iter_confirmed(&'a self) -> Self::Iterator {
+        record_rocksdb_read(&self.context);
         NestedIter::new(self.database.prefix_iterator(&self.context))
     }
 
@@ -619,6 +623,7 @@ impl<
     /// Returns an iterator over each key.
     ///
     fn keys_confirmed(&'a self) -> Self::Keys {
+        record_rocksdb_read(&self.context);
         NestedKeys::new(self.database.prefix_iterator(&self.context))
     }
 
@@ -626,6 +631,7 @@ impl<
     /// Returns an iterator over each value.
     ///
     fn values_confirmed(&'a self) -> Self::Values {
+        record_rocksdb_read(&self.context);
         NestedValues::new(self.database.prefix_iterator(&self.context))
     }
 }
