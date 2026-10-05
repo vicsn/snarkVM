@@ -183,13 +183,9 @@ impl Database for RocksDB {
 
                 Arc::new(rocksdb::DB::open(&options, &db_path)?)
             };
-            // Refuse a database written by a newer build before any map is opened.
-            // A secondary instance is read-only, so the primary is the one that stamps `V0`.
-            if secondary_path.is_some() {
-                schema::get_storage_version(&rocksdb, network_id)?;
-            } else {
-                schema::migrate_storage(&rocksdb, network_id)?;
-            }
+            // Record the schema version, and refuse a database written by a newer build, before
+            // any map is opened on this database.
+            schema::migrate_storage(&rocksdb, network_id)?;
 
             let db = RocksDB {
                 rocksdb,
