@@ -129,6 +129,26 @@ impl Deref for RocksDB {
     }
 }
 
+impl RocksDB {
+    /// Deletes the mapping-history prefixes written by the compile-time `history` features.
+    ///
+    /// The rest of the ledger is left in place. `snarkos clean --history` calls this.
+    pub fn delete_legacy_mapping_history(&self) -> Result<()> {
+        for map in [ProgramMap::MappingUpdate, ProgramMap::MappingUpdateHeights, ProgramMap::StakingRewards] {
+            let prefix = schema::map_prefix(self.network_id, MapID::Program(map));
+            // The first key after every key that starts with `prefix`.
+            let end = u32::from_be_bytes(prefix)
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("Map prefix {prefix:?} has no successor"))?
+                .to_be_bytes();
+            let mut batch = rocksdb::WriteBatch::default();
+            batch.delete_range(&prefix, &end);
+            self.rocksdb.write(batch)?;
+        }
+        Ok(())
+    }
+}
+
 impl Database for RocksDB {
     /// Opens the database.
     ///

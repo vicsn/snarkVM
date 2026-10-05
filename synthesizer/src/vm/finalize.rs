@@ -908,7 +908,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let post_ratifications = reward_ratifications.iter().chain(post_ratifications);
 
             // Process the post-ratifications.
-            match Self::atomic_post_ratify(&self.puzzle, store, state, post_ratifications, &solutions) {
+            match Self::atomic_post_ratify(&self.puzzle, store, state, post_ratifications, &solutions, false) {
                 // Store the finalize operations from the post-ratify.
                 Ok(operations) => ratified_finalize_operations.extend(operations),
                 // Note: This will abort the entire atomic batch.
@@ -1177,7 +1177,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Perform the ratifications after finalize. */
 
-            match Self::atomic_post_ratify(&self.puzzle, store, state, post_ratifications, solutions) {
+            match Self::atomic_post_ratify(
+                &self.puzzle,
+                store,
+                state,
+                post_ratifications,
+                solutions,
+                store.record_history(),
+            ) {
                 // Store the finalize operations from the post-ratify.
                 Ok(operations) => ratified_finalize_operations.extend(operations),
                 // Note: This will abort the entire atomic batch.
@@ -1790,6 +1797,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         state: FinalizeGlobalState,
         post_ratifications: impl Iterator<Item = &'a Ratify<N>>,
         solutions: &Solutions<N>,
+        write_history: bool,
     ) -> Result<Vec<FinalizeOperation<N>>> {
         // Construct the program ID.
         let program_id = ProgramID::from_str("credits.aleo")?;
@@ -1862,6 +1870,26 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                     // Insert the next committee into storage.
                     store.committee_store().insert(state.block_height(), next_committee)?;
+
+                    // Canonical finalize writes the credits.aleo snapshots for this block.
+                    if write_history {
+                        let history = History::new(N::ID, store.storage_mode());
+                        let height = state.block_height();
+                        history.store_mapping(height, MappingName::Delegated, &next_delegated_map)?;
+                        history.store_mapping(height, MappingName::Bonded, &next_bonded_map)?;
+                        let metadata_mapping = Identifier::from_str("metadata")?;
+                        let metadata_map = store.get_mapping_speculative(program_id, metadata_mapping)?;
+                        history.store_mapping(height, MappingName::Metadata, &metadata_map)?;
+                        let unbonding_mapping = Identifier::from_str("unbonding")?;
+                        let unbonding_map = store.get_mapping_speculative(program_id, unbonding_mapping)?;
+                        history.store_mapping(height, MappingName::Unbonding, &unbonding_map)?;
+                        let withdraw_mapping = Identifier::from_str("withdraw")?;
+                        let withdraw_map = store.get_mapping_speculative(program_id, withdraw_mapping)?;
+                        history.store_mapping(height, MappingName::Withdraw, &withdraw_map)?;
+                        let rewards =
+                            staking_rewards_historical_mapping(&current_stakers, &current_committee, *block_reward);
+                        history.store_mapping(height, MappingName::StakingRewards, &rewards)?;
+                    }
 
                     // Store the finalize operations for updating the committee and bonded mapping.
                     finalize_operations.extend(&[

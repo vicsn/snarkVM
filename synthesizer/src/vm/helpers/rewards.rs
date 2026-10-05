@@ -171,6 +171,25 @@ pub fn staking_rewards<N: Network>(
     staking_rewards
 }
 
+/// Returns each staker's reward at this block, as `(staker, (validator, reward))`.
+///
+/// A staker who receives nothing is stored with reward `0`. The amounts are the stake increases
+/// produced by [`staking_rewards`].
+pub fn staking_rewards_historical_mapping<N: Network>(
+    stakers: &IndexMap<Address<N>, (Address<N>, u64)>,
+    committee: &Committee<N>,
+    block_reward: u64,
+) -> IndexMap<Address<N>, (Address<N>, u64)> {
+    let next_stakers = staking_rewards(stakers, committee, block_reward);
+    stakers
+        .iter()
+        .map(|(staker, (validator, stake))| {
+            let reward = next_stakers.get(staker).map(|(_, new_stake)| new_stake.saturating_sub(*stake)).unwrap_or(0);
+            (*staker, (*validator, reward))
+        })
+        .collect()
+}
+
 /// Returns the proving rewards for a given coinbase reward and list of prover solutions.
 /// The prover reward is defined as: `puzzle_reward * (proof_target / combined_proof_target)`.
 pub fn proving_rewards<N: Network>(

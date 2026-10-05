@@ -32,9 +32,12 @@ use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use indexmap::IndexSet;
-use std::sync::{Arc, atomic::AtomicU32};
 #[cfg(feature = "history")]
-use std::{borrow::Cow, sync::atomic::Ordering};
+use std::borrow::Cow;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU32, Ordering},
+};
 
 /// The block height component of a [`FinalizeStorage::MappingUpdateMap`] key, stored as 4 raw bytes.
 ///
@@ -690,6 +693,8 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     /// Tracks the current block height.
     /// Updated by the VM at the start of each canonical finalize
     block_height: Arc<AtomicU32>,
+    /// When set, canonical finalize writes credits.aleo history as JSON.
+    record_history: Arc<AtomicBool>,
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
@@ -701,7 +706,22 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Initializes a finalize store from storage.
     pub fn from(storage: P) -> Result<Self> {
         // Return the finalize store.
-        Ok(Self { storage, _phantom: PhantomData, block_height: Arc::new(AtomicU32::new(0)) })
+        Ok(Self {
+            storage,
+            _phantom: PhantomData,
+            block_height: Arc::new(AtomicU32::new(0)),
+            record_history: Arc::new(AtomicBool::new(false)),
+        })
+    }
+
+    /// Enables or disables JSON history for later canonical finalizes.
+    pub fn set_record_history(&self, enabled: bool) {
+        self.record_history.store(enabled, Ordering::SeqCst);
+    }
+
+    /// Returns whether canonical finalize writes JSON history.
+    pub fn record_history(&self) -> bool {
+        self.record_history.load(Ordering::SeqCst)
     }
 
     /// Starts an atomic batch write operation.
