@@ -149,6 +149,8 @@ impl RocksDB {
             let mut batch = rocksdb::WriteBatch::default();
             batch.delete_range(&prefix, &end);
             self.rocksdb.write(batch)?;
+            // `delete_range` hides the keys. Compaction drops the files that held them.
+            self.rocksdb.compact_range(Some(&prefix), Some(&end));
         }
         Ok(())
     }
@@ -209,9 +211,13 @@ impl Database for RocksDB {
 
                 Arc::new(rocksdb::DB::open(&options, &primary_path)?)
             };
-            // Record the schema version, and refuse a database written by a newer build, before
-            // any map is opened on this database.
-            schema::migrate_storage(&rocksdb, network_id)?;
+            // Refuse a database written by a newer build before any map is opened.
+            // A secondary instance is read-only, so the primary is the one that stamps `V0`.
+            if secondary_path.is_some() {
+                schema::get_storage_version(&rocksdb, network_id)?;
+            } else {
+                schema::migrate_storage(&rocksdb, network_id)?;
+            }
 
             let db = RocksDB {
                 rocksdb,

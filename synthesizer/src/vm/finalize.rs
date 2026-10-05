@@ -1872,23 +1872,30 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     store.committee_store().insert(state.block_height(), next_committee)?;
 
                     // Canonical finalize writes the credits.aleo snapshots for this block.
+                    // A failed write is reported and the block continues. A later finalize of this
+                    // height overwrites any files left by an attempt that did not become canonical.
                     if write_history {
-                        let history = History::new(N::ID, store.storage_mode());
                         let height = state.block_height();
-                        history.store_mapping(height, MappingName::Delegated, &next_delegated_map)?;
-                        history.store_mapping(height, MappingName::Bonded, &next_bonded_map)?;
-                        let metadata_mapping = Identifier::from_str("metadata")?;
-                        let metadata_map = store.get_mapping_speculative(program_id, metadata_mapping)?;
-                        history.store_mapping(height, MappingName::Metadata, &metadata_map)?;
-                        let unbonding_mapping = Identifier::from_str("unbonding")?;
-                        let unbonding_map = store.get_mapping_speculative(program_id, unbonding_mapping)?;
-                        history.store_mapping(height, MappingName::Unbonding, &unbonding_map)?;
-                        let withdraw_mapping = Identifier::from_str("withdraw")?;
-                        let withdraw_map = store.get_mapping_speculative(program_id, withdraw_mapping)?;
-                        history.store_mapping(height, MappingName::Withdraw, &withdraw_map)?;
-                        let rewards =
-                            staking_rewards_historical_mapping(&current_stakers, &current_committee, *block_reward);
-                        history.store_mapping(height, MappingName::StakingRewards, &rewards)?;
+                        let written = (|| -> Result<()> {
+                            let history = History::new(N::ID, store.storage_mode());
+                            history.store_mapping(height, MappingName::Delegated, &next_delegated_map)?;
+                            history.store_mapping(height, MappingName::Bonded, &next_bonded_map)?;
+                            let metadata_mapping = Identifier::from_str("metadata")?;
+                            let metadata_map = store.get_mapping_speculative(program_id, metadata_mapping)?;
+                            history.store_mapping(height, MappingName::Metadata, &metadata_map)?;
+                            let unbonding_mapping = Identifier::from_str("unbonding")?;
+                            let unbonding_map = store.get_mapping_speculative(program_id, unbonding_mapping)?;
+                            history.store_mapping(height, MappingName::Unbonding, &unbonding_map)?;
+                            let withdraw_mapping = Identifier::from_str("withdraw")?;
+                            let withdraw_map = store.get_mapping_speculative(program_id, withdraw_mapping)?;
+                            history.store_mapping(height, MappingName::Withdraw, &withdraw_map)?;
+                            let rewards = staking_rewards_historical_mapping(&current_stakers, &next_stakers);
+                            history.store_mapping(height, MappingName::StakingRewards, &rewards)?;
+                            Ok(())
+                        })();
+                        if let Err(error) = written {
+                            warn!("Failed to write JSON history for block {height}: {error}");
+                        }
                     }
 
                     // Store the finalize operations for updating the committee and bonded mapping.
