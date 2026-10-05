@@ -44,7 +44,7 @@ pub fn deployment_cost<N: Network>(
     deployment: &Deployment<N>,
     consensus_version: ConsensusVersion,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
-    if consensus_version >= ConsensusVersion::V21 {
+    if consensus_version >= ConsensusVersion::V22 {
         deployment_cost_v5(process, deployment, consensus_version)
     } else if consensus_version >= ConsensusVersion::V18 {
         deployment_cost_v4(process, deployment)
@@ -1160,7 +1160,7 @@ pub fn cost_per_command<N: Network>(
             cost_in_size(stack, finalize_types, [command.key_operand()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
         Command::RandChaCha(command) => {
-            if consensus_version.is_some_and(|version| version >= ConsensusVersion::V21) {
+            if consensus_version.is_some_and(|version| version >= ConsensusVersion::V22) {
                 let seed_component = {
                     let mut bhp_operands = command.operands().to_vec();
                     // The always-present pre-seed is about 750 bits, which is roughly equivalent to 3 field elements.
@@ -1181,7 +1181,7 @@ pub fn cost_per_command<N: Network>(
 
                 seed_component.map(|cost| cost.saturating_add(output_component))
             } else {
-                // Pre-V21 fixed cost.
+                // Pre-V22 fixed cost.
                 Ok(25_000)
             }
         }
@@ -1900,14 +1900,14 @@ function noop:",
     #[test]
     fn test_deployment_cost_v4_v5_dispatch_and_rand_chacha_constructor_cost() {
         // Verify that `deployment_cost` dispatches to `deployment_cost_v4` for ConsensusVersion::V18
-        // through V20 and to `deployment_cost_v5` from V21 onwards. Also verify that v5 prices
+        // through V21 and to `deployment_cost_v5` from V22 onwards. Also verify that v5 prices
         // synthesis like v3 (by variables and constraints, not by density as in v4), and that v5
         // only differs from v3 in the constructor cost of `rand.chacha`.
         let process = Process::<MainnetV0>::load().unwrap();
         let rng = &mut TestRng::default();
 
         // The constructor samples one non-group and one group value, so that both branches of the
-        // V21 `rand.chacha` cost are exercised.
+        // V22 `rand.chacha` cost are exercised.
         let program = Program::from_str(
             r"
 program dispatch_v5_test.aleo;
@@ -1926,15 +1926,17 @@ function noop:",
 
         let v3_cost = deployment_cost_v3(&process, &deployment).unwrap();
         let v4_cost = deployment_cost_v4(&process, &deployment).unwrap();
-        let v5_cost = deployment_cost_v5(&process, &deployment, ConsensusVersion::V21).unwrap();
+        let v5_cost = deployment_cost_v5(&process, &deployment, ConsensusVersion::V22).unwrap();
 
-        // `deployment_cost` must dispatch to v4 for ConsensusVersion::V18 to V20.
-        for consensus_version in [ConsensusVersion::V18, ConsensusVersion::V19, ConsensusVersion::V20] {
+        // `deployment_cost` must dispatch to v4 for ConsensusVersion::V18 to V21.
+        for consensus_version in
+            [ConsensusVersion::V18, ConsensusVersion::V19, ConsensusVersion::V20, ConsensusVersion::V21]
+        {
             assert_eq!(deployment_cost(&process, &deployment, consensus_version).unwrap(), v4_cost);
         }
-        // `deployment_cost` must dispatch to v5 for ConsensusVersion::V21 and the latest version.
+        // `deployment_cost` must dispatch to v5 for ConsensusVersion::V22 and the latest version.
         // Change this if a future consensus version introduces a new deployment cost version.
-        for consensus_version in [ConsensusVersion::V21, ConsensusVersion::latest()] {
+        for consensus_version in [ConsensusVersion::V22, ConsensusVersion::latest()] {
             assert_eq!(deployment_cost(&process, &deployment, consensus_version).unwrap(), v5_cost);
         }
 
@@ -2016,7 +2018,7 @@ finalize store:
         deployment.set_program_owner_raw(Some(Address::rand(rng)));
 
         let v3_cost = deployment_cost_v3(&process, &deployment).unwrap();
-        for consensus_version in [ConsensusVersion::V21, ConsensusVersion::latest()] {
+        for consensus_version in [ConsensusVersion::V22, ConsensusVersion::latest()] {
             assert_eq!(deployment_cost_v5(&process, &deployment, consensus_version).unwrap(), v3_cost);
         }
     }
