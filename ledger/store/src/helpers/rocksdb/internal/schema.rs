@@ -129,7 +129,7 @@ pub(crate) fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helpers::rocksdb::{Database, RocksDB};
+    use crate::helpers::rocksdb::{Database, ProgramMap, RocksDB};
 
     use aleo_std::StorageMode;
 
@@ -151,6 +151,27 @@ mod tests {
         // `from_bytes` rejects the unknown version, so the raw record is what remains.
         let raw = db.get(metadata_key(NETWORK_ID, MetadataKey::StorageVersion)).unwrap().unwrap();
         assert_eq!(raw, 1u32.to_le_bytes());
+    }
+
+    #[test]
+    fn test_delete_legacy_mapping_history_keeps_other_prefixes() {
+        let db = RocksDB::open(NETWORK_ID, StorageMode::new_test(None)).unwrap();
+        let legacy =
+            [ProgramMap::MappingUpdate, ProgramMap::MappingUpdateHeights, ProgramMap::StakingRewards].map(|map| {
+                let mut key = map_prefix(NETWORK_ID, MapID::Program(map)).to_vec();
+                key.push(1);
+                db.put(&key, b"old").unwrap();
+                key
+            });
+        let mut kept = map_prefix(NETWORK_ID, MapID::Program(ProgramMap::ProgramID)).to_vec();
+        kept.push(1);
+        db.put(&kept, b"program").unwrap();
+
+        db.delete_legacy_mapping_history().unwrap();
+        for key in &legacy {
+            assert!(db.get(key).unwrap().is_none(), "{key:?}");
+        }
+        assert_eq!(db.get(&kept).unwrap().unwrap(), b"program");
     }
 
     #[test]

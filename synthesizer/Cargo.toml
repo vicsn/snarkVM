@@ -134,6 +134,7 @@ workspace = true
 
 [dependencies.aleo-std]
 workspace = true
+features = [ "storage" ]
 
 [dependencies.anyhow]
 workspace = true
@@ -161,6 +162,10 @@ workspace = true
 
 [dependencies.rayon]
 workspace = true
+
+[dependencies.serde]
+workspace = true
+features = [ "derive" ]
 
 [dependencies.serde_json]
 workspace = true
