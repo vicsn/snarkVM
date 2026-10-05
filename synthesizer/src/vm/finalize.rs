@@ -263,7 +263,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Committee lookback for `block.round()` semantics matching `Ledger::get_committee_lookback_for_round`.
     #[cfg(any(test, feature = "test"))]
     fn committee_lookback_for_round(&self, round: u64) -> Result<Option<Committee<N>>> {
-        let previous_round = match round % 2 == 0 {
+        let previous_round = match round.is_multiple_of(2) {
             true => round.saturating_sub(1),
             false => round.saturating_sub(2),
         };
@@ -311,7 +311,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
             (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
         } else {
-            (None, None)
+            Authority::<N>::beacon_limits(block.height())
         };
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
@@ -659,15 +659,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // per-certificate basis whether or not transactions
                         // exceed it.
                         if consensus_version >= ConsensusVersion::V16 {
-                            if let Some(block_spend_limit) = block_spend_limit {
-                                if block_spend.saturating_add(compute_spend) > block_spend_limit {
-                                    aborted.push((
-                                        transaction.clone(),
-                                        format!("Exceeds the block spend limit with compute_spend: '{compute_spend}'"),
-                                    ));
-                                    // Continue to the next transaction.
-                                    continue 'outer;
-                                }
+                            if let Some(block_spend_limit) = block_spend_limit
+                                && block_spend.saturating_add(compute_spend) > block_spend_limit
+                            {
+                                aborted.push((
+                                    transaction.clone(),
+                                    format!("Exceeds the block spend limit with compute_spend: '{compute_spend}'"),
+                                ));
+                                // Continue to the next transaction.
+                                continue 'outer;
                             }
                             // Track the compute_spend used so far.
                             block_spend = block_spend.saturating_add(compute_spend);
@@ -908,7 +908,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let post_ratifications = reward_ratifications.iter().chain(post_ratifications);
 
             // Process the post-ratifications.
-            match Self::atomic_post_ratify::<false>(&self.puzzle, store, state, post_ratifications, &solutions) {
+            match Self::atomic_post_ratify(&self.puzzle, store, state, post_ratifications, &solutions) {
                 // Store the finalize operations from the post-ratify.
                 Ok(operations) => ratified_finalize_operations.extend(operations),
                 // Note: This will abort the entire atomic batch.
@@ -956,11 +956,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .current_block_height()
             .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
-        // Signal to Slipstream plugins that canonical finalize is starting.
-        #[cfg(feature = "slipstream-plugins")]
-        {
-            self.store.finalize_store().is_finalize_mode().store(true, std::sync::atomic::Ordering::SeqCst);
-        }
         self.store.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
         // Perform the finalize operation on the preset finalize mode.
@@ -1182,7 +1177,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Perform the ratifications after finalize. */
 
-            match Self::atomic_post_ratify::<true>(&self.puzzle, store, state, post_ratifications, solutions) {
+            match Self::atomic_post_ratify(&self.puzzle, store, state, post_ratifications, solutions) {
                 // Store the finalize operations from the post-ratify.
                 Ok(operations) => ratified_finalize_operations.extend(operations),
                 // Note: This will abort the entire atomic batch.
@@ -1198,12 +1193,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             Ok(ratified_finalize_operations)
         });
-
-        // Reset the canonical finalize flag regardless of whether finalize succeeded or failed.
-        #[cfg(feature = "slipstream-plugins")]
-        {
-            self.store.finalize_store().is_finalize_mode().store(false, std::sync::atomic::Ordering::SeqCst);
-        }
 
         finalize_result
     }
@@ -1375,12 +1364,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // If the transaction is a deployment, ensure that it is not another deployment in the block from the same public fee payer.
         if let Transaction::Deploy(_, _, _, _, fee) = transaction {
             // If any public deployment payer has already deployed in this block, abort the transaction.
-            if let Some(payer) = fee.payer() {
-                if candidate_transaction_details.deployment_payers.contains(&payer) {
-                    return ShouldAbortResult::Abort(format!(
-                        "Another deployment in the block from the same public fee payer {payer}"
-                    ));
-                }
+            if let Some(payer) = fee.payer()
+                && candidate_transaction_details.deployment_payers.contains(&payer)
+            {
+                return ShouldAbortResult::Abort(format!(
+                    "Another deployment in the block from the same public fee payer {payer}"
+                ));
             }
         }
 
@@ -1795,7 +1784,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Performs the post-ratifications after finalizing transactions.
     #[inline]
-    fn atomic_post_ratify<'a, const IS_FINALIZE: bool>(
+    fn atomic_post_ratify<'a>(
         puzzle: &Puzzle<N>,
         store: &FinalizeStore<N, C::FinalizeStorage>,
         state: FinalizeGlobalState,
@@ -1858,23 +1847,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         {
                             let reward = new_stake - curr_stake;
                             store.staking_rewards_map().insert((*staker, height), (*validator, reward, *new_stake))?;
-                            // Notify Slipstream plugins of the staking reward, if in canonical finalize mode.
-                            #[cfg(feature = "slipstream-plugins")]
-                            if IS_FINALIZE {
-                                store.notify_staking_reward(staker, validator, reward, *new_stake, height);
-                            }
-                        }
-                    }
-
-                    // When history-staking-rewards is disabled, notify Slipstream plugins directly.
-                    #[cfg(all(feature = "slipstream-plugins", not(feature = "history-staking-rewards")))]
-                    if IS_FINALIZE {
-                        let height = state.block_height();
-                        for (curr_stake, (staker, (validator, new_stake))) in
-                            current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
-                        {
-                            let reward = new_stake - curr_stake;
-                            store.notify_staking_reward(staker, validator, reward, *new_stake, height);
                         }
                     }
 
@@ -3963,7 +3935,7 @@ finalize compute:
 
         // Generate the next block.
         let next_block =
-            sample_next_block(&vm, validators.keys().next().unwrap(), &vec![transaction], &block, &mut vec![], rng)
+            sample_next_block(&vm, validators.keys().next().unwrap(), &[transaction], &block, &mut vec![], rng)
                 .unwrap();
 
         // Add the next block.
@@ -4001,15 +3973,9 @@ finalize compute:
             .unwrap();
 
         // Generate the next block.
-        let next_block = sample_next_block(
-            &vm,
-            validators.keys().next().unwrap(),
-            &vec![transaction],
-            &next_block,
-            &mut vec![],
-            rng,
-        )
-        .unwrap();
+        let next_block =
+            sample_next_block(&vm, validators.keys().next().unwrap(), &[transaction], &next_block, &mut vec![], rng)
+                .unwrap();
 
         // Add the next block.
         vm.add_next_block(&next_block).unwrap();

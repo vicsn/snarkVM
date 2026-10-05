@@ -22,7 +22,7 @@ categories = [
 include = [ "Cargo.toml", "vm", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
 edition = "2024"
-rust-version = "1.88.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
+rust-version = "1.96.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
 
 [workspace]
 members = [
@@ -87,9 +87,7 @@ members = [
   "synthesizer/snark",
   "utilities",
   "utilities/derives",
-  "wasm",
-  "plugins/slipstream_plugin_interface",
-  "plugins/slipstream_plugin_manager"
+  "wasm"
 ]
 
 [lib]
@@ -131,7 +129,6 @@ async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 history = [ "snarkvm-synthesizer/history" ]
 history-staking-rewards = [ "snarkvm-synthesizer/history-staking-rewards" ]
-slipstream-plugins = [ "snarkvm-synthesizer/slipstream-plugins", "dep:snarkvm-slipstream-plugin-interface", "dep:snarkvm-slipstream-plugin-manager" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
 no-embedded-srs = [ "snarkvm-parameters/no-embedded-srs" ]
 locktick = [
@@ -141,6 +138,7 @@ locktick = [
   "snarkvm-parameters?/locktick",
   "snarkvm-synthesizer?/locktick"
 ]
+# No-op: Cargo features are not evaluated in `[target.<cfg>]` selectors.
 noconfig = [ ]
 prop-tests = [ "snarkvm-ledger?/prop-tests" ]
 rocks = [ "snarkvm-ledger/rocks", "snarkvm-synthesizer/rocks" ]
@@ -396,14 +394,6 @@ default-features = false
 path = "ledger/store"
 version = "=4.11.0"
 
-[workspace.dependencies.snarkvm-slipstream-plugin-interface]
-path = "plugins/slipstream_plugin_interface"
-version = "=4.11.0"
-
-[workspace.dependencies.snarkvm-slipstream-plugin-manager]
-path = "plugins/slipstream_plugin_manager"
-version = "=4.11.0"
-
 [workspace.dependencies.snarkvm-ledger-test-helpers]
 path = "ledger/test-helpers"
 version = "=4.11.0"
@@ -449,11 +439,11 @@ path = "wasm"
 version = "=4.11.0"
 
 [workspace.dependencies.aleo-std]
-version = "1.0.1"
+version = "=1.0.4"
 
 [workspace.dependencies.aleo-std-storage]
 default-features=false
-version = "1.0.1"
+version = "=1.0.4"
 
 [workspace.dependencies.anyhow]
 version = "1.0.73"
@@ -501,7 +491,7 @@ default-features = false
 version = "1.4"
 
 [workspace.dependencies.locktick]
-version = "0.5"
+version = "0.6"
 
 [workspace.dependencies.lru]
 version = "0.18"
@@ -563,7 +553,7 @@ version = "0.1"
 version = "0.2.5"
 
 [workspace.dependencies.ureq]
-version = "3"
+version = "3.4"
 default-features = false
 
 [workspace.dependencies.zeroize]
@@ -599,14 +589,6 @@ workspace = true
 optional = true
 
 [dependencies.snarkvm-parameters]
-workspace = true
-optional = true
-
-[dependencies.snarkvm-slipstream-plugin-interface]
-workspace = true
-optional = true
-
-[dependencies.snarkvm-slipstream-plugin-manager]
 workspace = true
 optional = true
 
@@ -655,30 +637,14 @@ version = "0.11.2"
 [dev-dependencies.tempfile]
 workspace = true
 
-[build-dependencies.walkdir]
+[dev-dependencies.walkdir]
 version = "2"
 
 [profile.release]
-opt-level = 3
 lto = "thin"
-incremental = true
-
-[profile.bench]
-opt-level = 3
-debug = false
-rpath = false
-lto = "thin"
-incremental = true
-debug-assertions = false
 
 [profile.dev]
-opt-level = 3
-lto = "off"
-incremental = true
+debug = "line-tables-only"
 
 [profile.test]
 opt-level = 2
-lto = "off"
-incremental = true
-debug = true
-debug-assertions = true
