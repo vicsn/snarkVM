@@ -52,7 +52,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         if eta_b.is_some() || eta_c.is_some() {
             return Err(AHPError::AnyhowError(anyhow::anyhow!(
-                "Did not expect eta_b,c in SecondMessage in VarunaVersion::V2"
+                "Did not expect eta_b,c in SecondMessage in VarunaVersion::V2 or V3"
             )));
         }
 
