@@ -20,7 +20,7 @@ use crate::{
 };
 use console::{
     network::prelude::*,
-    program::{Identifier, Plaintext, ProgramID, Value},
+    program::{Identifier, Literal, Plaintext, ProgramID, Value},
     types::{Address, Field},
 };
 use snarkvm_ledger_block::RejectedReason;
@@ -29,12 +29,16 @@ use snarkvm_synthesizer_program::{FinalizeOperation, FinalizeStoreTrait};
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
 use std::{
     borrow::Cow,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicU8, AtomicU32, Ordering},
     },
 };
 
@@ -57,10 +61,108 @@ pub enum HistoricalMappingValue<N: Network> {
     Absent,
 }
 
+/// Where a finalize store writes the history of mapping updates and staking rewards.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum HistoryRecording {
+    /// Nothing is recorded.
+    Off = 0,
+    /// Records go to the tables that serve historical reads.
+    Tables = 1,
+    /// Records go to the per-block event log, for another store to import.
+    Events = 2,
+}
+
+impl HistoryRecording {
+    /// Reads the mode stored in `value`.
+    fn load(value: &AtomicU8) -> Self {
+        match value.load(Ordering::SeqCst) {
+            1 => Self::Tables,
+            2 => Self::Events,
+            _ => Self::Off,
+        }
+    }
+}
+
+/// A table that serves historical reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HistoryTable {
+    /// The map of `(program ID, mapping name, key, height)` to [`HistoricalMappingValue`].
+    MappingUpdates,
+    /// The map of `(staker address, height)` to `(validator address, block reward, new stake)`.
+    StakingRewards,
+}
+
+/// A history-table record: the table, and a key and value serialized as that table's map
+/// serializes them.
+pub type HistoryRow = (HistoryTable, Vec<u8>, Vec<u8>);
+
+/// A staking reward: the validator the staker was bonded to, the reward, and the stake after it,
+/// both in microcredits.
+pub type StakingReward<N> = (Address<N>, u64, u64);
+
+/// The programs, and single mappings, whose mapping history a store records.
+///
+/// Each program is recorded from a start height. Staking rewards are recorded whatever the scope
+/// holds.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HistoryScope<N: Network> {
+    /// Programs whose every mapping is recorded, from the block height stored with the program.
+    pub programs: IndexMap<ProgramID<N>, u32>,
+    /// Single mappings that are recorded, as `(program ID, mapping name)`.
+    pub mappings: IndexSet<(ProgramID<N>, Identifier<N>)>,
+}
+
+impl<N: Network> HistoryScope<N> {
+    /// Returns a scope of whole programs, each recorded from its start height.
+    pub fn programs(programs: IndexMap<ProgramID<N>, u32>) -> Self {
+        Self { programs, mappings: IndexSet::new() }
+    }
+
+    /// Returns whether every mapping of `program_id` is recorded.
+    pub fn covers_program(&self, program_id: &ProgramID<N>) -> bool {
+        self.programs.contains_key(program_id)
+    }
+
+    /// Returns the block height from which every mapping of `program_id` is recorded.
+    pub fn program_start_height(&self, program_id: &ProgramID<N>) -> Option<u32> {
+        self.programs.get(program_id).copied()
+    }
+
+    /// Returns whether `program_id/mapping_name` is recorded.
+    pub fn covers_mapping(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> bool {
+        self.covers_program(program_id) || self.mappings.contains(&(*program_id, *mapping_name))
+    }
+
+    /// Returns whether `program_id/mapping_name` is recorded at `height`.
+    ///
+    /// A program in [`Self::programs`] is recorded from its start height. A single mapping is
+    /// recorded at every height when its program is not listed there.
+    pub fn covers_mapping_at(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>, height: u32) -> bool {
+        match self.programs.get(program_id) {
+            Some(start) => height >= *start,
+            None => self.mappings.contains(&(*program_id, *mapping_name)),
+        }
+    }
+}
+
+impl<N: Network> Display for HistoryScope<N> {
+    /// Lists each program as `(program, start height)`, then each single mapping as `program/mapping`.
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let programs = self.programs.iter().map(|(program_id, start_height)| format!("({program_id}, {start_height})"));
+        let mappings = self.mappings.iter().map(|(program_id, mapping_name)| format!("{program_id}/{mapping_name}"));
+        write!(f, "[{}]", programs.chain(mappings).collect::<Vec<_>>().join(", "))
+    }
+}
+
 /// One history record written while a block was finalized.
 ///
 /// Records for a single height are stored under `(height, sequence)` so a later pass can copy
 /// that block's history without scanning every key.
+///
+/// Recording writes [`Self::Indexed`] and [`Self::Row`]. Event logs written by earlier builds
+/// may also hold [`Self::Mapping`] and [`Self::Staking`]; the variant order must stay fixed so
+/// those logs still decode.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound(serialize = "N: Network", deserialize = "N: Network"))]
 pub enum HistoryEvent<N: Network> {
@@ -75,6 +177,8 @@ pub enum HistoryEvent<N: Network> {
         /// Value at this height, or a deletion.
         value: Box<HistoricalMappingValue<N>>,
     },
+    /// The block's history was committed. Present even when the block changed no mappings.
+    Indexed,
     /// A staking reward paid at this height.
     Staking {
         /// Account that received the reward.
@@ -86,6 +190,43 @@ pub enum HistoryEvent<N: Network> {
         /// Stake after the reward was applied, in microcredits.
         new_stake: u64,
     },
+    /// A record for a history table, as that table's serialized key and value.
+    ///
+    /// Copying it into the table needs no decoding of the addresses it holds.
+    Row {
+        /// The table the record belongs to.
+        table: HistoryTable,
+        /// The serialized key.
+        key: Vec<u8>,
+        /// The serialized value.
+        value: Vec<u8>,
+    },
+}
+
+impl<N: Network> HistoryEvent<N> {
+    /// Returns the history-table record this event writes at `height`, as a serialized key and
+    /// value, or `None` for [`Self::Indexed`].
+    fn into_row(self, height: u32) -> Result<Option<HistoryRow>> {
+        Ok(match self {
+            Self::Indexed => None,
+            Self::Mapping { program_id, mapping_name, key, value } => Some((
+                HistoryTable::MappingUpdates,
+                bincode::serialize(&(program_id, mapping_name, key, height.to_be_bytes()))?,
+                bincode::serialize(&*value)?,
+            )),
+            Self::Staking { staker, validator, reward, new_stake } => Some((
+                HistoryTable::StakingRewards,
+                bincode::serialize(&(staker, height.to_be_bytes()))?,
+                bincode::serialize(&(validator, reward, new_stake))?,
+            )),
+            Self::Row { table, key, value } => Some((table, key, value)),
+        })
+    }
+}
+
+/// Returns whether `program_id/mapping_name` is `credits.aleo/bonded`.
+fn is_credits_bonded<N: Network>(program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<bool> {
+    Ok(*program_id == ProgramID::from_str("credits.aleo")? && *mapping_name == Identifier::from_str("bonded")?)
 }
 
 /// TODO (howardwu): Remove this.
@@ -141,7 +282,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// The height is big-endian so a floor seek returns the latest record at or before a height.
     type MappingUpdateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), HistoricalMappingValue<N>>;
     /// The mapping of `(staker address, height)` to `(validator address, block reward, new stake)`.
-    type StakingRewardsMap: for<'a> Map<'a, (Address<N>, u32), (Address<N>, u64, u64)>;
+    ///
+    /// The height is big-endian so a floor seek returns the latest reward at or before a height.
+    type StakingRewardsMap: for<'a> Map<'a, (Address<N>, HeightBytes), (Address<N>, u64, u64)>;
     /// The mapping of `(height, sequence)` to the history record written at that position.
     type HistoryEventMap: for<'a> Map<'a, (HeightBytes, HeightBytes), HistoryEvent<N>>;
 
@@ -166,8 +309,34 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode;
 
-    /// Returns whether mapping updates and staking rewards are written to the history tables.
-    fn record_history(&self) -> &AtomicBool;
+    /// Returns where mapping updates and staking rewards are recorded, as a [`HistoryRecording`]
+    /// discriminant.
+    fn history_recording(&self) -> &AtomicU8;
+
+    /// Returns the scope of recorded mapping history, or `None` for every mapping.
+    ///
+    /// Staking rewards are recorded whatever this holds.
+    fn history_scope(&self) -> &RwLock<Option<HistoryScope<N>>>;
+
+    /// Returns the scope stored with this store's history, if one was stored.
+    fn stored_history_scope(&self) -> Result<Option<HistoryScope<N>>>;
+
+    /// Stores the scope this store's history is recorded for.
+    fn store_history_scope(&self, scope: &HistoryScope<N>) -> Result<()>;
+
+    /// Deletes the history tables, the event log, and the stored scope, and sets the history
+    /// cursor to 0. The deletion is outside any atomic batch.
+    fn reset_history(&self) -> Result<()>;
+
+    /// Returns whether every mapping of `program_id` has its history recorded.
+    fn records_history_of(&self, program_id: &ProgramID<N>) -> bool {
+        self.history_scope().read().as_ref().is_none_or(|scope| scope.covers_program(program_id))
+    }
+
+    /// Returns whether `program_id/mapping_name` has its history recorded.
+    fn records_mapping_history_of(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> bool {
+        self.history_scope().read().as_ref().is_none_or(|scope| scope.covers_mapping(program_id, mapping_name))
+    }
 
     /// Returns the next block height history indexing will process.
     ///
@@ -181,6 +350,14 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
     /// Sequence number of the next history event in the block currently being finalized.
     fn history_event_seq(&self) -> &AtomicU32;
+
+    /// Deletes the history events of every height below `height`.
+    ///
+    /// The deletion is outside any atomic batch; call it while no batch on this store is open.
+    fn prune_history_events_below(&self, height: u32) -> Result<()>;
+
+    /// Writes serialized history-table records, in one write outside any atomic batch.
+    fn put_history_rows(&self, rows: Vec<HistoryRow>) -> Result<()>;
 
     /// Starts an atomic batch write operation.
     fn start_atomic(&self) {
@@ -263,7 +440,33 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Returns the current block height.
     fn current_block_height(&self) -> &AtomicU32;
 
-    /// Records one mapping history entry when [`Self::record_history`] is set.
+    /// Appends `event` to the event log at the current block height.
+    fn record_history_event(&self, event: HistoryEvent<N>) -> Result<()> {
+        let height = self.current_block_height().load(Ordering::SeqCst);
+        let seq = self.history_event_seq().fetch_add(1, Ordering::SeqCst);
+        self.history_event_map().insert((height.to_be_bytes(), seq.to_be_bytes()), event)
+    }
+
+    /// Returns whether an update of `program_id/mapping_name` is recorded at the current height.
+    fn records_mapping_history(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> bool {
+        HistoryRecording::load(self.history_recording()) != HistoryRecording::Off
+            && self.covers_mapping_history_now(program_id, mapping_name)
+    }
+
+    /// Returns whether `program_id/mapping_name` is in scope at the current block height.
+    ///
+    /// A scope of `None` records every mapping. A listed program is recorded from its start height.
+    fn covers_mapping_history_now(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> bool {
+        let scope = self.history_scope().read();
+        let Some(scope) = scope.as_ref() else {
+            return true;
+        };
+        let height = self.current_block_height().load(Ordering::SeqCst);
+        scope.covers_mapping_at(program_id, mapping_name, height)
+    }
+
+    /// Records one mapping history entry, as selected by [`Self::history_recording`] and
+    /// [`Self::history_scope`].
     ///
     /// The write joins the caller's atomic batch, so a speculative finalize that aborts does not
     /// keep it.
@@ -274,25 +477,29 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         key: Plaintext<N>,
         value: HistoricalMappingValue<N>,
     ) -> Result<()> {
-        if !self.record_history().load(Ordering::SeqCst) {
+        if !self.covers_mapping_history_now(&program_id, &mapping_name) {
             return Ok(());
         }
-        let height = self.current_block_height().load(Ordering::SeqCst);
-        let seq = self.history_event_seq().fetch_add(1, Ordering::SeqCst);
-        self.mapping_update_map()
-            .insert((program_id, mapping_name, key.clone(), height.to_be_bytes()), value.clone())?;
-        self.history_event_map().insert((height.to_be_bytes(), seq.to_be_bytes()), HistoryEvent::Mapping {
-            program_id,
-            mapping_name,
-            key,
-            value: Box::new(value),
-        })?;
-        Ok(())
+        match HistoryRecording::load(self.history_recording()) {
+            HistoryRecording::Off => Ok(()),
+            HistoryRecording::Tables => {
+                let height = self.current_block_height().load(Ordering::SeqCst);
+                self.mapping_update_map().insert((program_id, mapping_name, key, height.to_be_bytes()), value)
+            }
+            HistoryRecording::Events => {
+                let height = self.current_block_height().load(Ordering::SeqCst);
+                self.record_history_event(HistoryEvent::Row {
+                    table: HistoryTable::MappingUpdates,
+                    key: bincode::serialize(&(program_id, mapping_name, key, height.to_be_bytes()))?,
+                    value: bincode::serialize(&value)?,
+                })
+            }
+        }
     }
 
     /// Records a deletion for every key currently in `mapping_name`.
     fn record_mapping_absences(&self, program_id: ProgramID<N>, mapping_name: Identifier<N>) -> Result<()> {
-        if !self.record_history().load(Ordering::SeqCst) {
+        if !self.records_mapping_history(&program_id, &mapping_name) {
             return Ok(());
         }
         let entries = self.key_value_map().get_map_speculative(&(program_id, mapping_name))?;
@@ -302,7 +509,17 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         Ok(())
     }
 
-    /// Records one staking reward when [`Self::record_history`] is set.
+    /// Writes the marker that this block's history was committed, when recording to the event log.
+    ///
+    /// The marker is the first event at the block height, inside the caller's atomic batch.
+    fn record_history_block(&self) -> Result<()> {
+        match HistoryRecording::load(self.history_recording()) {
+            HistoryRecording::Events => self.record_history_event(HistoryEvent::Indexed),
+            HistoryRecording::Off | HistoryRecording::Tables => Ok(()),
+        }
+    }
+
+    /// Records one staking reward, as selected by [`Self::history_recording`].
     fn record_staking_reward(
         &self,
         staker: Address<N>,
@@ -310,19 +527,21 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         reward: u64,
         new_stake: u64,
     ) -> Result<()> {
-        if !self.record_history().load(Ordering::SeqCst) {
-            return Ok(());
+        match HistoryRecording::load(self.history_recording()) {
+            HistoryRecording::Off => Ok(()),
+            HistoryRecording::Tables => {
+                let height = self.current_block_height().load(Ordering::SeqCst);
+                self.staking_rewards_map().insert((staker, height.to_be_bytes()), (validator, reward, new_stake))
+            }
+            HistoryRecording::Events => {
+                let height = self.current_block_height().load(Ordering::SeqCst);
+                self.record_history_event(HistoryEvent::Row {
+                    table: HistoryTable::StakingRewards,
+                    key: bincode::serialize(&(staker, height.to_be_bytes()))?,
+                    value: bincode::serialize(&(validator, reward, new_stake))?,
+                })
+            }
         }
-        let height = self.current_block_height().load(Ordering::SeqCst);
-        let seq = self.history_event_seq().fetch_add(1, Ordering::SeqCst);
-        self.staking_rewards_map().insert((staker, height), (validator, reward, new_stake))?;
-        self.history_event_map().insert((height.to_be_bytes(), seq.to_be_bytes()), HistoryEvent::Staking {
-            staker,
-            validator,
-            reward,
-            new_stake,
-        })?;
-        Ok(())
     }
 
     /// Initializes the given `program ID` and `mapping name` in storage.
@@ -478,36 +697,53 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         mapping_name: Identifier<N>,
         entries: Vec<(Plaintext<N>, Value<N>)>,
     ) -> Result<FinalizeOperation<N>> {
+        self.replace_mapping_recording(program_id, mapping_name, entries, true)
+    }
+
+    /// Replaces the mapping like [`Self::replace_mapping`], and records the replacement's history
+    /// only when `record_history` is set.
+    fn replace_mapping_recording(
+        &self,
+        program_id: ProgramID<N>,
+        mapping_name: Identifier<N>,
+        entries: Vec<(Plaintext<N>, Value<N>)>,
+        record_history: bool,
+    ) -> Result<FinalizeOperation<N>> {
         // Ensure the mapping name exists.
         if !self.contains_mapping_speculative(&program_id, &mapping_name)? {
             bail!("Illegal operation: '{program_id}/{mapping_name}' is not initialized - cannot replace mapping.")
         }
 
+        let record = record_history && self.records_mapping_history(&program_id, &mapping_name);
         atomic_batch_scope!(self, {
-            let old_entries = self.key_value_map().get_map_speculative(&(program_id, mapping_name))?;
-            let new_keys: IndexSet<Plaintext<N>> = entries.iter().map(|(key, _)| key.clone()).collect();
+            // Values before the replacement, read only when the replacement is recorded.
+            let mut old_entries: IndexMap<Plaintext<N>, Value<N>> = match record {
+                true => self.key_value_map().get_map_speculative(&(program_id, mapping_name))?.into_iter().collect(),
+                false => IndexMap::new(),
+            };
 
             // Remove the existing key-value entries.
             self.key_value_map().remove_map(&(program_id, mapping_name))?;
 
-            // Keys dropped by the replacement stay absent at this height.
-            for (key, _) in old_entries {
-                if !new_keys.contains(&key) {
-                    self.record_historical(program_id, mapping_name, key, HistoricalMappingValue::Absent)?;
-                }
-            }
-
             // Insert the new key-value entries.
             for (key, value) in entries {
-                self.record_historical(
-                    program_id,
-                    mapping_name,
-                    key.clone(),
-                    HistoricalMappingValue::Present(value.clone()),
-                )?;
+                // A value that did not change keeps its earlier record, which floor reads return.
+                if record && old_entries.swap_remove(&key).as_ref() != Some(&value) {
+                    self.record_historical(
+                        program_id,
+                        mapping_name,
+                        key.clone(),
+                        HistoricalMappingValue::Present(value.clone()),
+                    )?;
+                }
 
                 // Insert the key-value entry.
                 self.key_value_map().insert((program_id, mapping_name), key, value)?;
+            }
+
+            // Keys dropped by the replacement stay absent at this height.
+            for key in old_entries.into_keys() {
+                self.record_historical(program_id, mapping_name, key, HistoricalMappingValue::Absent)?;
             }
 
             Ok(())
@@ -802,17 +1038,27 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         self.storage.current_block_height()
     }
 
-    /// Enables or disables history recording for mapping updates and staking rewards.
-    ///
-    /// Recording is off unless a caller turns it on. Canonical finalize and speculative finalize
-    /// share this flag; speculative batches abort, so only a committed block keeps the records.
+    /// Enables or disables history recording into this store's history tables.
     pub fn set_record_history(&self, enabled: bool) {
-        self.storage.record_history().store(enabled, Ordering::SeqCst);
+        self.set_history_recording(if enabled { HistoryRecording::Tables } else { HistoryRecording::Off });
     }
 
-    /// Returns whether history recording is enabled.
+    /// Sets where mapping updates and staking rewards are recorded.
+    ///
+    /// Recording is off unless a caller turns it on. Canonical finalize and speculative finalize
+    /// share this setting; speculative batches abort, so only a committed block keeps the records.
+    pub fn set_history_recording(&self, recording: HistoryRecording) {
+        self.storage.history_recording().store(recording as u8, Ordering::SeqCst);
+    }
+
+    /// Returns where mapping updates and staking rewards are recorded.
+    pub fn history_recording(&self) -> HistoryRecording {
+        HistoryRecording::load(self.storage.history_recording())
+    }
+
+    /// Returns whether history is recorded into this store's history tables.
     pub fn record_history(&self) -> bool {
-        self.storage.record_history().load(Ordering::SeqCst)
+        self.history_recording() == HistoryRecording::Tables
     }
 
     /// Returns the next block height history indexing will process.
@@ -828,6 +1074,11 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Resets the per-block history event sequence to zero.
     pub fn reset_history_event_seq(&self) {
         self.storage.history_event_seq().store(0, Ordering::SeqCst);
+    }
+
+    /// Writes the marker that this block's history was committed, when recording to the event log.
+    pub fn record_history_block(&self) -> Result<()> {
+        self.storage.record_history_block()
     }
 
     /// Records a staking reward when history recording is enabled.
@@ -846,11 +1097,54 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         &self.block_height
     }
 
+    /// Returns the scope of recorded mapping history, or `None` for every mapping.
+    pub fn history_scope(&self) -> Option<HistoryScope<N>> {
+        self.storage.history_scope().read().clone()
+    }
+
+    /// Sets the scope of recorded mapping history, or `None` for every mapping.
+    ///
+    /// Staking rewards are recorded whatever this holds.
+    pub fn set_history_scope(&self, scope: Option<HistoryScope<N>>) {
+        *self.storage.history_scope().write() = scope;
+    }
+
+    /// Returns whether every mapping of `program_id` has its history recorded.
+    pub fn records_history_of(&self, program_id: &ProgramID<N>) -> bool {
+        self.storage.records_history_of(program_id)
+    }
+
+    /// Returns whether `program_id/mapping_name` has its history recorded.
+    pub fn records_mapping_history_of(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> bool {
+        self.storage.records_mapping_history_of(program_id, mapping_name)
+    }
+
+    /// Returns the scope stored with this store's history, if one was stored.
+    pub fn stored_history_scope(&self) -> Result<Option<HistoryScope<N>>> {
+        self.storage.stored_history_scope()
+    }
+
+    /// Stores the scope this store's history is recorded for.
+    pub fn store_history_scope(&self, scope: &HistoryScope<N>) -> Result<()> {
+        self.storage.store_history_scope(scope)
+    }
+
+    /// Deletes the history tables, the event log, and the stored scope, and sets the history
+    /// cursor to 0.
+    pub fn reset_history(&self) -> Result<()> {
+        self.storage.reset_history()
+    }
+
     /// Returns the historical value of a mapping at or before the given block height.
     ///
     /// The lookup is a floor seek on `mapping_update_map`. A deletion (`Absent`) at or before
-    /// `height` means the key has no value. Heights above [`Self::current_block_height`] return
-    /// `None`, because a later block can still change the key.
+    /// `height` means the key has no value. `height` must be strictly below
+    /// [`Self::history_synced_height`]; a later height is not indexed yet. The program's mapping
+    /// history must be recorded.
+    ///
+    /// Block rewards rewrite every entry of `credits.aleo/bonded` without a mapping record, so a
+    /// staker's latest staking reward at or before `height` supplies its bond when it is newer
+    /// than the staker's latest mapping record.
     pub fn get_historical_mapping_value(
         &self,
         program_id: ProgramID<N>,
@@ -858,26 +1152,68 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         mapping_key: Plaintext<N>,
         height: u32,
     ) -> Result<Option<Cow<'_, Value<N>>>, Error> {
-        // Return nothing for future heights, as the mapping value might change by then.
-        if height > self.current_block_height().load(Ordering::SeqCst) {
-            return Ok(None);
+        let synced = self.history_synced_height();
+        if height >= synced {
+            bail!("Block {height} is not in the history index (history is indexed before height {synced})");
+        }
+        ensure!(
+            self.records_mapping_history_of(&program_id, &mapping_name),
+            "Mapping history is not recorded for '{program_id}/{mapping_name}'"
+        );
+        if let Some(start) = self.history_scope().as_ref().and_then(|scope| scope.program_start_height(&program_id))
+            && height < start
+        {
+            bail!("Mapping history for '{program_id}' is indexed from block {start}");
         }
 
         let seek_key = (program_id, mapping_name, mapping_key.clone(), height.to_be_bytes());
-        match self.storage.mapping_update_map().get_floor_confirmed(&seek_key)? {
+        let update = match self.storage.mapping_update_map().get_floor_confirmed(&seek_key)? {
             Some((found_key, found_value)) => {
-                let (p, m, k, _h) = found_key.into_owned();
-                if p == program_id && m == mapping_name && k == mapping_key {
-                    match found_value.into_owned() {
-                        HistoricalMappingValue::Present(value) => Ok(Some(Cow::Owned(value))),
-                        HistoricalMappingValue::Absent => Ok(None),
-                    }
-                } else {
-                    Ok(None)
+                let (p, m, k, h) = found_key.into_owned();
+                match p == program_id && m == mapping_name && k == mapping_key {
+                    true => Some((u32::from_be_bytes(h), found_value.into_owned())),
+                    false => None,
                 }
             }
-            None => Ok(None),
+            None => None,
+        };
+
+        if is_credits_bonded(&program_id, &mapping_name)?
+            && let Plaintext::Literal(Literal::Address(staker), _) = &mapping_key
+            && let Some((reward_height, (validator, _, new_stake))) = self.latest_staking_reward(*staker, height)?
+            && update.as_ref().is_none_or(|(update_height, _)| reward_height >= *update_height)
+        {
+            // Block rewards are applied after the block's transactions, so a reward at the same
+            // height as a mapping record holds the later bond.
+            let bond = Value::from_str(&format!("{{ validator: {validator}, microcredits: {new_stake}u64 }}"))?;
+            return Ok(Some(Cow::Owned(bond)));
         }
+
+        Ok(match update {
+            Some((_, HistoricalMappingValue::Present(value))) => Some(Cow::Owned(value)),
+            Some((_, HistoricalMappingValue::Absent)) | None => None,
+        })
+    }
+
+    /// Returns the staking reward `staker` received at `height`. `height` must be strictly below
+    /// [`Self::history_synced_height`].
+    pub fn get_staking_reward(&self, staker: Address<N>, height: u32) -> Result<Option<StakingReward<N>>> {
+        let synced = self.history_synced_height();
+        if height >= synced {
+            bail!("Block {height} is not in the history index (history is indexed before height {synced})");
+        }
+        Ok(self.storage.staking_rewards_map().get_confirmed(&(staker, height.to_be_bytes()))?.map(Cow::into_owned))
+    }
+
+    /// Returns the latest staking reward of `staker` at or before `height`, with its height.
+    fn latest_staking_reward(&self, staker: Address<N>, height: u32) -> Result<Option<(u32, StakingReward<N>)>> {
+        Ok(match self.storage.staking_rewards_map().get_floor_confirmed(&(staker, height.to_be_bytes()))? {
+            Some((found_key, reward)) => {
+                let (found_staker, found_height) = found_key.into_owned();
+                (found_staker == staker).then(|| (u32::from_be_bytes(found_height), reward.into_owned()))
+            }
+            None => None,
+        })
     }
 
     /// Returns the heights at which past mapping updates occurred, in ascending order.
@@ -924,24 +1260,26 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         Ok(events)
     }
 
-    /// Writes history events for `height` into this store.
+    /// Writes the history events of each given height into this store's history tables, in one
+    /// write outside any atomic batch.
     ///
-    /// Used to copy one block's history from the replay ledger into the ledger that serves reads.
-    /// Existing records at the same keys are overwritten.
-    pub fn import_history_events(&self, height: u32, events: &[HistoryEvent<N>]) -> Result<()> {
-        for event in events {
-            match event {
-                HistoryEvent::Mapping { program_id, mapping_name, key, value } => {
-                    self.storage
-                        .mapping_update_map()
-                        .insert((*program_id, *mapping_name, key.clone(), height.to_be_bytes()), *value.clone())?;
-                }
-                HistoryEvent::Staking { staker, validator, reward, new_stake } => {
-                    self.storage.staking_rewards_map().insert((*staker, height), (*validator, *reward, *new_stake))?;
-                }
+    /// Used to copy blocks' history from the replay into the ledger that serves reads. Existing
+    /// records at the same keys are overwritten.
+    pub fn import_history_events(&self, blocks: Vec<(u32, Vec<HistoryEvent<N>>)>) -> Result<()> {
+        let mut rows = Vec::with_capacity(blocks.iter().map(|(_, events)| events.len()).sum());
+        for (height, events) in blocks {
+            for event in events {
+                rows.extend(event.into_row(height)?);
             }
         }
-        Ok(())
+        self.storage.put_history_rows(rows)
+    }
+
+    /// Deletes the history events of every height below `height`.
+    ///
+    /// The deletion is outside any atomic batch; call it while no batch on this store is open.
+    pub fn prune_history_events_below(&self, height: u32) -> Result<()> {
+        self.storage.prune_history_events_below(height)
     }
 
     /// Returns the historical staking rewards map.
@@ -1046,6 +1384,19 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         entries: Vec<(Plaintext<N>, Value<N>)>,
     ) -> Result<FinalizeOperation<N>> {
         self.storage.replace_mapping(program_id, mapping_name, entries)
+    }
+
+    /// Replaces the mapping like [`Self::replace_mapping`], without recording its history.
+    ///
+    /// For the `credits.aleo/bonded` rewrite after block rewards: each staker's staking reward at
+    /// that height already holds its new bond.
+    pub fn replace_mapping_without_history(
+        &self,
+        program_id: ProgramID<N>,
+        mapping_name: Identifier<N>,
+        entries: Vec<(Plaintext<N>, Value<N>)>,
+    ) -> Result<FinalizeOperation<N>> {
+        self.storage.replace_mapping_recording(program_id, mapping_name, entries, false)
     }
 
     /// Removes the mapping for the given `program ID` and `mapping name` from storage,
@@ -1799,8 +2150,9 @@ mod tests {
         let program_memory = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
         let finalize_store = FinalizeStore::from(program_memory).unwrap();
 
-        // Initialize program and mapping.
+        // Initialize program and mapping. The cursor covers every height this test queries.
         finalize_store.set_record_history(true);
+        finalize_store.set_history_synced_height(201).unwrap();
         finalize_store.initialize_mapping(program_id, mapping_name).unwrap();
 
         // Insert at block height 10.
@@ -1891,5 +2243,370 @@ mod tests {
         let heights =
             finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
         assert_eq!(&*heights, &[10, 20, 50, 100, 120]);
+    }
+
+    /// Writes events at heights 1 to 3, then checks that pruning below 3 keeps only height 3 and
+    /// leaves the history tables alone.
+    fn check_prune_history_events_below<P: FinalizeStorage<CurrentNetwork>>(
+        finalize_store: FinalizeStore<CurrentNetwork, P>,
+    ) {
+        use std::sync::atomic::Ordering;
+
+        let staker = Address::<CurrentNetwork>::zero();
+        finalize_store.set_record_history(true);
+        finalize_store.current_block_height().store(1, Ordering::SeqCst);
+        finalize_store.record_staking_reward(staker, staker, 9, 9).unwrap();
+
+        finalize_store.set_history_recording(HistoryRecording::Events);
+        for height in 1..=3u32 {
+            finalize_store.current_block_height().store(height, Ordering::SeqCst);
+            finalize_store.reset_history_event_seq();
+            finalize_store.record_history_block().unwrap();
+            finalize_store.record_staking_reward(staker, staker, u64::from(height), 0).unwrap();
+        }
+        let height_3 = vec![
+            HistoryEvent::Indexed,
+            as_row(HistoryEvent::Staking { staker, validator: staker, reward: 3, new_stake: 0 }, 3),
+        ];
+
+        finalize_store.prune_history_events_below(0).unwrap();
+        assert_eq!(finalize_store.history_events(1).unwrap().len(), 2);
+
+        finalize_store.prune_history_events_below(3).unwrap();
+        assert!(finalize_store.history_events(1).unwrap().is_empty());
+        assert!(finalize_store.history_events(2).unwrap().is_empty());
+        assert_eq!(finalize_store.history_events(3).unwrap(), height_3);
+        assert!(finalize_store.staking_rewards_map().get_confirmed(&(staker, 1u32.to_be_bytes())).unwrap().is_some());
+    }
+
+    #[test]
+    fn test_prune_history_events_below() {
+        check_prune_history_events_below(
+            FinalizeStore::from(FinalizeMemory::open(StorageMode::Test(None)).unwrap()).unwrap(),
+        );
+    }
+
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_prune_history_events_below_rocks() {
+        check_prune_history_events_below(
+            FinalizeStore::<CurrentNetwork, crate::helpers::rocksdb::FinalizeDB<CurrentNetwork>>::open(
+                StorageMode::new_test(None),
+            )
+            .unwrap(),
+        );
+    }
+
+    /// Verifies `replace_mapping` records only changed and removed keys, and only where recording
+    /// is directed.
+    #[test]
+    fn test_replace_mapping_records_changes_only() {
+        use std::sync::atomic::Ordering;
+
+        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let [k1, k2, k3] = ["1field", "2field", "3field"].map(|key| Plaintext::from_str(key).unwrap());
+        let value = |value: &str| Value::from_str(value).unwrap();
+
+        let finalize_store = FinalizeStore::from(FinalizeMemory::open(StorageMode::Test(None)).unwrap()).unwrap();
+        finalize_store.set_record_history(true);
+        finalize_store.set_history_synced_height(10).unwrap();
+        finalize_store.initialize_mapping(program_id, mapping_name).unwrap();
+        let replace_at = |height: u32, entries: Vec<(Plaintext<CurrentNetwork>, Value<CurrentNetwork>)>| {
+            finalize_store.storage.current_block_height().store(height, Ordering::SeqCst);
+            finalize_store.replace_mapping(program_id, mapping_name, entries).unwrap();
+        };
+        let heights = |key: &Plaintext<CurrentNetwork>| {
+            finalize_store
+                .get_mapping_update_heights(program_id, mapping_name, key.clone())
+                .unwrap()
+                .map(|heights| heights.into_owned())
+        };
+        let at = |key: &Plaintext<CurrentNetwork>, height: u32| {
+            finalize_store
+                .get_historical_mapping_value(program_id, mapping_name, key.clone(), height)
+                .unwrap()
+                .map(|value| value.into_owned())
+        };
+
+        replace_at(1, vec![(k1.clone(), value("1u64")), (k2.clone(), value("2u64"))]);
+        replace_at(2, vec![(k1.clone(), value("1u64")), (k2.clone(), value("3u64")), (k3.clone(), value("4u64"))]);
+        replace_at(3, vec![(k2.clone(), value("3u64"))]);
+
+        // An unchanged value keeps its earlier record. A key left out of the replacement is absent.
+        assert_eq!(heights(&k1), Some(vec![1, 3]));
+        assert_eq!(heights(&k2), Some(vec![1, 2]));
+        assert_eq!(heights(&k3), Some(vec![2, 3]));
+        assert_eq!(at(&k1, 2), Some(value("1u64")));
+        assert_eq!(at(&k1, 3), None);
+        assert_eq!(at(&k2, 3), Some(value("3u64")));
+        assert_eq!(at(&k3, 2), Some(value("4u64")));
+
+        // With recording off, a replacement writes no history.
+        finalize_store.set_record_history(false);
+        replace_at(4, vec![(k2.clone(), value("5u64"))]);
+        assert_eq!(heights(&k2), Some(vec![1, 2]));
+
+        // Recording to the event log leaves the history tables unchanged.
+        let staker = Address::<CurrentNetwork>::zero();
+        finalize_store.set_history_recording(HistoryRecording::Events);
+        finalize_store.reset_history_event_seq();
+        replace_at(5, vec![(k2.clone(), value("6u64"))]);
+        finalize_store.record_staking_reward(staker, staker, 7, 8).unwrap();
+        assert_eq!(heights(&k2), Some(vec![1, 2]));
+        assert!(finalize_store.staking_rewards_map().get_confirmed(&(staker, 5u32.to_be_bytes())).unwrap().is_none());
+        assert_eq!(finalize_store.history_events(5).unwrap(), vec![
+            as_row(
+                HistoryEvent::Mapping {
+                    program_id,
+                    mapping_name,
+                    key: k2.clone(),
+                    value: Box::new(HistoricalMappingValue::Present(value("6u64"))),
+                },
+                5,
+            ),
+            as_row(HistoryEvent::Staking { staker, validator: staker, reward: 7, new_stake: 8 }, 5),
+        ]);
+    }
+
+    /// Returns `event` as the [`HistoryEvent::Row`] it writes at `height`.
+    fn as_row(event: HistoryEvent<CurrentNetwork>, height: u32) -> HistoryEvent<CurrentNetwork> {
+        let (table, key, value) = event.into_row(height).unwrap().unwrap();
+        HistoryEvent::Row { table, key, value }
+    }
+
+    /// Checks that importing recorded rows, or typed events from an earlier build's log, writes
+    /// the records that recording into the tables writes. `open` returns a new, empty store.
+    fn check_import_history_events<P: FinalizeStorage<CurrentNetwork>>(
+        open: impl Fn() -> FinalizeStore<CurrentNetwork, P>,
+    ) {
+        use std::sync::atomic::Ordering;
+
+        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let key =
+            Plaintext::<CurrentNetwork>::from_str("aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc")
+                .unwrap();
+        let value = Value::<CurrentNetwork>::from_str("6u64").unwrap();
+        let staker = Address::<CurrentNetwork>::zero();
+        let height = 5u32;
+
+        let record = |recording: HistoryRecording| {
+            let store = open();
+            store.set_history_synced_height(height + 1).unwrap();
+            store.initialize_mapping(program_id, mapping_name).unwrap();
+            store.set_history_recording(recording);
+            store.current_block_height().store(height, Ordering::SeqCst);
+            store.reset_history_event_seq();
+            store.update_key_value(program_id, mapping_name, key.clone(), value.clone()).unwrap();
+            store.record_staking_reward(staker, staker, 7, 8).unwrap();
+            store
+        };
+        let recorded = |store: &FinalizeStore<CurrentNetwork, P>| {
+            (
+                store
+                    .get_historical_mapping_value(program_id, mapping_name, key.clone(), height)
+                    .unwrap()
+                    .map(Cow::into_owned),
+                store
+                    .staking_rewards_map()
+                    .get_confirmed(&(staker, height.to_be_bytes()))
+                    .unwrap()
+                    .map(Cow::into_owned),
+            )
+        };
+        let expected = recorded(&record(HistoryRecording::Tables));
+        assert_eq!(expected, (Some(value.clone()), Some((staker, 7, 8))));
+
+        let rows = record(HistoryRecording::Events).history_events(height).unwrap();
+        assert!(rows.iter().all(|event| matches!(event, HistoryEvent::Row { .. })));
+        let typed = vec![
+            HistoryEvent::Mapping {
+                program_id,
+                mapping_name,
+                key: key.clone(),
+                value: Box::new(HistoricalMappingValue::Present(value.clone())),
+            },
+            HistoryEvent::Staking { staker, validator: staker, reward: 7, new_stake: 8 },
+        ];
+        for events in [rows, typed] {
+            let store = open();
+            store.set_history_synced_height(height + 1).unwrap();
+            store.import_history_events(vec![(height, events)]).unwrap();
+            assert_eq!(recorded(&store), expected);
+        }
+    }
+
+    #[test]
+    fn test_import_history_events() {
+        check_import_history_events(|| {
+            FinalizeStore::from(FinalizeMemory::open(StorageMode::Test(None)).unwrap()).unwrap()
+        });
+    }
+
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_import_history_events_rocks() {
+        check_import_history_events(|| {
+            FinalizeStore::<CurrentNetwork, crate::helpers::rocksdb::FinalizeDB<CurrentNetwork>>::open(
+                StorageMode::new_test(None),
+            )
+            .unwrap()
+        });
+    }
+
+    /// Verifies that only the listed programs' mappings are recorded, and that staking rewards
+    /// are recorded regardless.
+    #[test]
+    fn test_history_scope_filters_mapping_history() {
+        use std::sync::atomic::Ordering;
+
+        let recorded = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
+        let skipped = ProgramID::<CurrentNetwork>::from_str("other.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let key = Plaintext::<CurrentNetwork>::from_str("1field").unwrap();
+        let value = Value::<CurrentNetwork>::from_str("1u64").unwrap();
+        let staker = Address::<CurrentNetwork>::zero();
+
+        let single = Identifier::<CurrentNetwork>::from_str("single").unwrap();
+        let store = FinalizeStore::from(FinalizeMemory::open(StorageMode::Test(None)).unwrap()).unwrap();
+        store.set_history_synced_height(2).unwrap();
+        for (program_id, mapping_name) in [(recorded, mapping_name), (skipped, mapping_name), (skipped, single)] {
+            store.initialize_mapping(program_id, mapping_name).unwrap();
+        }
+        // Every mapping of `hello.aleo` from block 2, and only `other.aleo/single` at every height.
+        let scope =
+            HistoryScope { programs: IndexMap::from([(recorded, 2)]), mappings: IndexSet::from([(skipped, single)]) };
+        assert_eq!(scope.to_string(), "[(hello.aleo, 2), other.aleo/single]");
+        store.set_history_synced_height(3).unwrap();
+        store.set_history_scope(Some(scope));
+        store.set_record_history(true);
+        store.current_block_height().store(1, Ordering::SeqCst);
+        for (program_id, mapping_name) in [(recorded, mapping_name), (skipped, mapping_name), (skipped, single)] {
+            store.update_key_value(program_id, mapping_name, key.clone(), value.clone()).unwrap();
+            store.replace_mapping(program_id, mapping_name, vec![(key.clone(), value.clone())]).unwrap();
+        }
+        store.record_staking_reward(staker, staker, 3, 4).unwrap();
+        // `hello.aleo` is below its start height, so the update is not indexed.
+        assert!(store.get_mapping_update_heights(recorded, mapping_name, key.clone()).unwrap().is_none());
+        let before_start =
+            store.get_historical_mapping_value(recorded, mapping_name, key.clone(), 1).unwrap_err().to_string();
+        assert!(before_start.contains("indexed from block 2"), "{before_start}");
+        let at_1 = store.get_historical_mapping_value(skipped, single, key.clone(), 1).unwrap();
+        assert_eq!(at_1.map(Cow::into_owned), Some(value.clone()));
+
+        store.current_block_height().store(2, Ordering::SeqCst);
+        store.update_key_value(recorded, mapping_name, key.clone(), value.clone()).unwrap();
+        let at_2 = store.get_historical_mapping_value(recorded, mapping_name, key.clone(), 2).unwrap();
+        assert_eq!(at_2.map(Cow::into_owned), Some(value.clone()));
+        assert!(store.records_history_of(&recorded));
+        assert!(!store.records_history_of(&skipped));
+        assert!(store.get_mapping_update_heights(skipped, mapping_name, key.clone()).unwrap().is_none());
+        let error = store.get_historical_mapping_value(skipped, mapping_name, key, 1).unwrap_err().to_string();
+        assert!(error.contains("Mapping history is not recorded for 'other.aleo/account'"), "{error}");
+        assert_eq!(store.get_staking_reward(staker, 1).unwrap(), Some((staker, 3, 4)));
+    }
+
+    /// Verifies that `credits.aleo/bonded` history takes the later of the staker's mapping record
+    /// and its staking reward.
+    #[test]
+    fn test_bonded_history_uses_staking_rewards() {
+        use std::sync::atomic::Ordering;
+
+        let credits = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let bonded = Identifier::from_str("bonded").unwrap();
+        let [staker, validator] = [
+            "aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc",
+            "aleo1rhgdu77hgyqd3xjj8ucu3jj9r2krwz6mnzyd80gncr5fxcwlh5rsvzp9px",
+        ]
+        .map(|address| Address::<CurrentNetwork>::from_str(address).unwrap());
+        let key = Plaintext::from(Literal::Address(staker));
+        let bond = |microcredits: u64| {
+            Value::<CurrentNetwork>::from_str(&format!("{{ validator: {validator}, microcredits: {microcredits}u64 }}"))
+                .unwrap()
+        };
+
+        let store = FinalizeStore::from(FinalizeMemory::open(StorageMode::Test(None)).unwrap()).unwrap();
+        store.set_history_synced_height(10).unwrap();
+        store.initialize_mapping(credits, bonded).unwrap();
+        store.set_history_scope(Some(HistoryScope::programs(IndexMap::from([(credits, 0)]))));
+        store.set_record_history(true);
+        let at_height = |height: u32| store.current_block_height().store(height, Ordering::SeqCst);
+
+        // Height 2: a bond. Height 3: a reward. Height 5: a bond, then that block's reward.
+        // Height 6: the staker unbonds.
+        at_height(2);
+        store.update_key_value(credits, bonded, key.clone(), bond(10)).unwrap();
+        at_height(3);
+        store.record_staking_reward(staker, validator, 1, 11).unwrap();
+        store.replace_mapping_without_history(credits, bonded, vec![(key.clone(), bond(11))]).unwrap();
+        at_height(5);
+        store.update_key_value(credits, bonded, key.clone(), bond(20)).unwrap();
+        store.record_staking_reward(staker, validator, 1, 21).unwrap();
+        at_height(6);
+        store.remove_key_value(credits, bonded, &key).unwrap();
+
+        let at = |height: u32| {
+            store.get_historical_mapping_value(credits, bonded, key.clone(), height).unwrap().map(Cow::into_owned)
+        };
+        assert_eq!(at(1), None);
+        assert_eq!(at(2), Some(bond(10)));
+        assert_eq!(at(3), Some(bond(11)));
+        assert_eq!(at(4), Some(bond(11)));
+        assert_eq!(at(5), Some(bond(21)));
+        assert_eq!(at(6), None);
+        // The rewrite after the reward at height 3 left no mapping record.
+        let heights = store.get_mapping_update_heights(credits, bonded, key.clone()).unwrap().unwrap();
+        assert_eq!(&*heights, &[2, 5, 6]);
+    }
+
+    /// Checks that the stored program list persists, and that a reset deletes it with the history.
+    fn check_stored_history_scope_and_reset<P: FinalizeStorage<CurrentNetwork>>(
+        store: FinalizeStore<CurrentNetwork, P>,
+    ) {
+        use std::sync::atomic::Ordering;
+
+        let credits = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let scope = HistoryScope {
+            programs: IndexMap::from([(ProgramID::from_str("hello.aleo").unwrap(), 0)]),
+            mappings: IndexSet::from([(credits, Identifier::from_str("bonded").unwrap())]),
+        };
+        let staker = Address::<CurrentNetwork>::zero();
+        assert_eq!(store.stored_history_scope().unwrap(), None);
+        store.store_history_scope(&scope).unwrap();
+        assert_eq!(store.stored_history_scope().unwrap(), Some(scope));
+
+        store.set_history_synced_height(3).unwrap();
+        store.set_record_history(true);
+        store.current_block_height().store(1, Ordering::SeqCst);
+        store.record_staking_reward(staker, staker, 1, 1).unwrap();
+        store.set_history_recording(HistoryRecording::Events);
+        store.reset_history_event_seq();
+        store.record_history_block().unwrap();
+        assert!(store.get_staking_reward(staker, 1).unwrap().is_some());
+
+        store.reset_history().unwrap();
+        assert_eq!(store.stored_history_scope().unwrap(), None);
+        assert_eq!(store.history_synced_height(), 0);
+        assert!(store.staking_rewards_map().get_confirmed(&(staker, 1u32.to_be_bytes())).unwrap().is_none());
+        assert!(store.history_events(1).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_stored_history_scope_and_reset() {
+        check_stored_history_scope_and_reset(
+            FinalizeStore::from(FinalizeMemory::open(StorageMode::Test(None)).unwrap()).unwrap(),
+        );
+    }
+
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_stored_history_scope_and_reset_rocks() {
+        check_stored_history_scope_and_reset(
+            FinalizeStore::<CurrentNetwork, crate::helpers::rocksdb::FinalizeDB<CurrentNetwork>>::open(
+                StorageMode::new_test(None),
+            )
+            .unwrap(),
+        );
     }
 }

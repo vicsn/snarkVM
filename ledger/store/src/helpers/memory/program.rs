@@ -22,7 +22,15 @@ use crate::{
     HeightBytes,
     HistoricalMappingValue,
     HistoryEvent,
-    helpers::memory::{MemoryMap, NestedMemoryMap},
+    HistoryRecording,
+    HistoryRow,
+    HistoryScope,
+    HistoryTable,
+    helpers::{
+        Map,
+        MapRead,
+        memory::{MemoryMap, NestedMemoryMap},
+    },
 };
 use console::{
     prelude::*,
@@ -31,12 +39,17 @@ use console::{
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_ledger_committee::Committee;
+use snarkvm_utilities::bytes::unchecked_deserialize;
 
 use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU32, Ordering},
+    atomic::{AtomicU8, AtomicU32, Ordering},
 };
 
 /// An in-memory finalize storage.
@@ -52,14 +65,18 @@ pub struct FinalizeMemory<N: Network> {
     rejected_reason_map: MemoryMap<Field<N>, RejectedReason<N>>,
     /// The historical mapping value map (keyed by big-endian block height).
     mapping_update_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), HistoricalMappingValue<N>>,
-    /// The historical staking rewards map.
-    staking_rewards_map: MemoryMap<(Address<N>, u32), (Address<N>, u64, u64)>,
+    /// The historical staking rewards map (keyed by big-endian block height).
+    staking_rewards_map: MemoryMap<(Address<N>, HeightBytes), (Address<N>, u64, u64)>,
     /// The per-block history event log.
     history_event_map: MemoryMap<(HeightBytes, HeightBytes), HistoryEvent<N>>,
     /// The current block height.
     block_height: Arc<AtomicU32>,
-    /// Whether mapping updates and staking rewards are written to the history tables.
-    record_history: Arc<AtomicBool>,
+    /// Where mapping updates and staking rewards are recorded.
+    history_recording: Arc<AtomicU8>,
+    /// The scope of recorded mapping history, or `None` for every mapping.
+    history_scope: Arc<RwLock<Option<HistoryScope<N>>>>,
+    /// The scope stored with this store's history.
+    stored_history_scope: Arc<RwLock<Option<HistoryScope<N>>>>,
     /// Sequence number of the next history event in the current block.
     history_event_seq: Arc<AtomicU32>,
     /// The next block height history indexing will process.
@@ -76,7 +93,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type RejectedReasonMap = MemoryMap<Field<N>, RejectedReason<N>>;
     type MappingUpdateMap =
         MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), HistoricalMappingValue<N>>;
-    type StakingRewardsMap = MemoryMap<(Address<N>, u32), (Address<N>, u64, u64)>;
+    type StakingRewardsMap = MemoryMap<(Address<N>, HeightBytes), (Address<N>, u64, u64)>;
     type HistoryEventMap = MemoryMap<(HeightBytes, HeightBytes), HistoryEvent<N>>;
 
     /// Initializes the finalize storage.
@@ -97,7 +114,9 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             staking_rewards_map: MemoryMap::default(),
             history_event_map: MemoryMap::default(),
             block_height: Arc::new(AtomicU32::new(initial_height)),
-            record_history: Arc::new(AtomicBool::new(false)),
+            history_recording: Arc::new(AtomicU8::new(HistoryRecording::Off as u8)),
+            history_scope: Default::default(),
+            stored_history_scope: Default::default(),
             history_event_seq: Arc::new(AtomicU32::new(0)),
             history_synced_height: Arc::new(AtomicU32::new(0)),
             storage_mode: storage,
@@ -144,14 +163,69 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
         &self.storage_mode
     }
 
-    /// Returns whether history recording is enabled.
-    fn record_history(&self) -> &AtomicBool {
-        &self.record_history
+    /// Returns where history is recorded.
+    fn history_recording(&self) -> &AtomicU8 {
+        &self.history_recording
+    }
+
+    /// Returns the scope of recorded mapping history.
+    fn history_scope(&self) -> &RwLock<Option<HistoryScope<N>>> {
+        &self.history_scope
+    }
+
+    /// Returns the scope stored with this store's history.
+    fn stored_history_scope(&self) -> Result<Option<HistoryScope<N>>> {
+        Ok(self.stored_history_scope.read().clone())
+    }
+
+    /// Stores the scope this store's history is recorded for.
+    fn store_history_scope(&self, scope: &HistoryScope<N>) -> Result<()> {
+        *self.stored_history_scope.write() = Some(scope.clone());
+        Ok(())
+    }
+
+    /// Deletes the history tables, the event log, and the stored scope, and sets the history
+    /// cursor to 0.
+    fn reset_history(&self) -> Result<()> {
+        let updates = self.mapping_update_map.keys_confirmed().map(|key| key.into_owned()).collect::<Vec<_>>();
+        updates.iter().try_for_each(|key| self.mapping_update_map.remove(key))?;
+        let rewards = self.staking_rewards_map.keys_confirmed().map(|key| key.into_owned()).collect::<Vec<_>>();
+        rewards.iter().try_for_each(|key| self.staking_rewards_map.remove(key))?;
+        let events = self.history_event_map.keys_confirmed().map(|key| key.into_owned()).collect::<Vec<_>>();
+        events.iter().try_for_each(|key| self.history_event_map.remove(key))?;
+        *self.stored_history_scope.write() = None;
+        self.set_history_synced_height(0)
     }
 
     /// Returns the per-block history event sequence.
     fn history_event_seq(&self) -> &AtomicU32 {
         &self.history_event_seq
+    }
+
+    /// Deletes the history events of every height below `height`.
+    fn prune_history_events_below(&self, height: u32) -> Result<()> {
+        let keys = self
+            .history_event_map
+            .keys_confirmed()
+            .filter(|key| u32::from_be_bytes(key.0) < height)
+            .map(|key| key.into_owned())
+            .collect::<Vec<_>>();
+        keys.iter().try_for_each(|key| self.history_event_map.remove(key))
+    }
+
+    /// Writes serialized history-table records.
+    fn put_history_rows(&self, rows: Vec<HistoryRow>) -> Result<()> {
+        for (table, key, value) in rows {
+            match table {
+                HistoryTable::MappingUpdates => {
+                    self.mapping_update_map.insert(unchecked_deserialize(&key)?, unchecked_deserialize(&value)?)?
+                }
+                HistoryTable::StakingRewards => {
+                    self.staking_rewards_map.insert(unchecked_deserialize(&key)?, unchecked_deserialize(&value)?)?
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Returns the next block height history indexing will process.

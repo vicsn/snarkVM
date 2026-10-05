@@ -53,6 +53,12 @@ pub(crate) enum MetadataKey {
     /// A height `h` is indexed when `h` is strictly less than this value. `0` means no height is
     /// indexed.
     HistorySyncedHeight = 1,
+    /// The programs whose every mapping has its history recorded, as `(program ID, start height)`
+    /// pairs, serialized by the finalize store. Absent when no history scope was stored.
+    HistoryPrograms = 2,
+    /// The single mappings whose history is recorded, serialized by the finalize store. Absent
+    /// when the stored scope names no single mapping.
+    HistoryMappings = 3,
 }
 
 impl StorageVersion {
@@ -122,6 +128,21 @@ pub(crate) fn read_history_synced_height(database: &rocksdb::DB, network_id: u16
 /// Writes the next history height. The write is not part of a finalize atomic batch.
 pub(crate) fn set_history_synced_height(database: &rocksdb::DB, network_id: u16, height: u32) -> Result<()> {
     Ok(database.put(metadata_key(network_id, MetadataKey::HistorySyncedHeight), height.to_le_bytes())?)
+}
+
+/// Reads a metadata entry's raw bytes.
+pub(crate) fn read_metadata(database: &rocksdb::DB, network_id: u16, key: MetadataKey) -> Result<Option<Vec<u8>>> {
+    Ok(database.get(metadata_key(network_id, key))?)
+}
+
+/// Writes a metadata entry's raw bytes. The write is not part of an atomic batch.
+pub(crate) fn set_metadata(database: &rocksdb::DB, network_id: u16, key: MetadataKey, value: &[u8]) -> Result<()> {
+    Ok(database.put(metadata_key(network_id, key), value)?)
+}
+
+/// Deletes a metadata entry. The deletion is not part of an atomic batch.
+pub(crate) fn delete_metadata(database: &rocksdb::DB, network_id: u16, key: MetadataKey) -> Result<()> {
+    Ok(database.delete(metadata_key(network_id, key))?)
 }
 
 /// Mapping-history prefixes written by storage schema v0. This build does not read them.

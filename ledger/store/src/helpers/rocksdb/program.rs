@@ -22,7 +22,11 @@ use crate::{
     HeightBytes,
     HistoricalMappingValue,
     HistoryEvent,
-    helpers::rocksdb::{self, CommitteeMap, DataMap, Database, MapID, NestedDataMap, ProgramMap},
+    HistoryRecording,
+    HistoryRow,
+    HistoryScope,
+    HistoryTable,
+    helpers::rocksdb::{self, CommitteeMap, DataMap, Database, MapID, MetadataKey, NestedDataMap, ProgramMap},
 };
 use console::{
     prelude::*,
@@ -34,9 +38,14 @@ use snarkvm_ledger_committee::Committee;
 
 use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
+use snarkvm_utilities::bytes::unchecked_deserialize;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU32, Ordering},
+    atomic::{AtomicU8, AtomicU32, Ordering},
 };
 
 /// A RocksDB finalize storage.
@@ -52,14 +61,16 @@ pub struct FinalizeDB<N: Network> {
     rejected_reason_map: DataMap<Field<N>, RejectedReason<N>>,
     /// The historical mapping value map (keyed by big-endian block height).
     mapping_update_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), HistoricalMappingValue<N>>,
-    /// The historical staking rewards map.
-    staking_rewards_map: DataMap<(Address<N>, u32), (Address<N>, u64, u64)>,
+    /// The historical staking rewards map (keyed by big-endian block height).
+    staking_rewards_map: DataMap<(Address<N>, HeightBytes), (Address<N>, u64, u64)>,
     /// The per-block history event log.
     history_event_map: DataMap<(HeightBytes, HeightBytes), HistoryEvent<N>>,
     /// The current block height.
     block_height: Arc<AtomicU32>,
-    /// Whether mapping updates and staking rewards are written to the history tables.
-    record_history: Arc<AtomicBool>,
+    /// Where mapping updates and staking rewards are recorded.
+    history_recording: Arc<AtomicU8>,
+    /// The scope of recorded mapping history, or `None` for every mapping.
+    history_scope: Arc<RwLock<Option<HistoryScope<N>>>>,
     /// Sequence number of the next history event in the current block.
     history_event_seq: Arc<AtomicU32>,
     /// The next block height history indexing will process.
@@ -78,7 +89,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     type RejectedReasonMap = DataMap<Field<N>, RejectedReason<N>>;
     type MappingUpdateMap =
         DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), HistoricalMappingValue<N>>;
-    type StakingRewardsMap = DataMap<(Address<N>, u32), (Address<N>, u64, u64)>;
+    type StakingRewardsMap = DataMap<(Address<N>, HeightBytes), (Address<N>, u64, u64)>;
     type HistoryEventMap = DataMap<(HeightBytes, HeightBytes), HistoryEvent<N>>;
 
     /// Initializes the finalize storage.
@@ -104,7 +115,8 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
             staking_rewards_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::StakingRewards))?,
             history_event_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::HistoryEvent))?,
             block_height: Arc::new(AtomicU32::new(initial_height)),
-            record_history: Arc::new(AtomicBool::new(false)),
+            history_recording: Arc::new(AtomicU8::new(HistoryRecording::Off as u8)),
+            history_scope: Default::default(),
             history_event_seq: Arc::new(AtomicU32::new(0)),
             history_synced_height,
             database,
@@ -152,14 +164,73 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         &self.storage_mode
     }
 
-    /// Returns whether history recording is enabled.
-    fn record_history(&self) -> &AtomicBool {
-        &self.record_history
+    /// Returns where history is recorded.
+    fn history_recording(&self) -> &AtomicU8 {
+        &self.history_recording
+    }
+
+    /// Returns the scope of recorded mapping history.
+    fn history_scope(&self) -> &RwLock<Option<HistoryScope<N>>> {
+        &self.history_scope
+    }
+
+    /// Returns the scope stored with this store's history.
+    ///
+    /// The scope is present when its program list is. Its single mappings default to none.
+    fn stored_history_scope(&self) -> Result<Option<HistoryScope<N>>> {
+        let Some(programs) = self.database.metadata(MetadataKey::HistoryPrograms)? else {
+            return Ok(None);
+        };
+        let mappings = match self.database.metadata(MetadataKey::HistoryMappings)? {
+            Some(mappings) => unchecked_deserialize(&mappings)?,
+            None => IndexSet::new(),
+        };
+        Ok(Some(HistoryScope { programs: unchecked_deserialize(&programs)?, mappings }))
+    }
+
+    /// Stores the scope this store's history is recorded for.
+    fn store_history_scope(&self, scope: &HistoryScope<N>) -> Result<()> {
+        self.database.set_metadata(MetadataKey::HistoryMappings, &bincode::serialize(&scope.mappings)?)?;
+        self.database.set_metadata(MetadataKey::HistoryPrograms, &bincode::serialize(&scope.programs)?)
+    }
+
+    /// Deletes the history tables, the v0 mapping-update height prefix, the event log, and the
+    /// stored scope, and sets the history cursor to 0.
+    fn reset_history(&self) -> Result<()> {
+        for map in [
+            ProgramMap::MappingUpdate,
+            ProgramMap::MappingUpdateHeights,
+            ProgramMap::StakingRewards,
+            ProgramMap::HistoryEvent,
+        ] {
+            self.database.delete_map(MapID::Program(map))?;
+        }
+        self.database.delete_metadata(MetadataKey::HistoryPrograms)?;
+        self.database.delete_metadata(MetadataKey::HistoryMappings)?;
+        self.set_history_synced_height(0)
     }
 
     /// Returns the per-block history event sequence.
     fn history_event_seq(&self) -> &AtomicU32 {
         &self.history_event_seq
+    }
+
+    /// Deletes the history events of every height below `height`, with one range deletion.
+    fn prune_history_events_below(&self, height: u32) -> Result<()> {
+        // Event keys serialize as the big-endian height followed by the big-endian sequence.
+        let end = [height.to_be_bytes(), [0u8; 4]].concat();
+        self.database.delete_map_range(MapID::Program(ProgramMap::HistoryEvent), &[], &end)
+    }
+
+    /// Writes serialized history-table records in one write batch.
+    fn put_history_rows(&self, rows: Vec<HistoryRow>) -> Result<()> {
+        self.database.put_map_rows(rows.into_iter().map(|(table, key, value)| {
+            let map = match table {
+                HistoryTable::MappingUpdates => ProgramMap::MappingUpdate,
+                HistoryTable::StakingRewards => ProgramMap::StakingRewards,
+            };
+            (MapID::Program(map), key, value)
+        }))
     }
 
     /// Returns the next block height history indexing will process.
