@@ -121,6 +121,18 @@ impl Clone for RocksDB {
     }
 }
 
+impl RocksDB {
+    /// Returns the next block height history indexing will process.
+    pub(crate) fn history_synced_height(&self) -> Result<u32> {
+        schema::read_history_synced_height(self, self.network_id)
+    }
+
+    /// Stores the next block height history indexing will process.
+    pub(crate) fn set_history_synced_height(&self, height: u32) -> Result<()> {
+        schema::set_history_synced_height(self, self.network_id, height)
+    }
+}
+
 impl Deref for RocksDB {
     type Target = Arc<rocksdb::DB>;
 
@@ -129,14 +141,20 @@ impl Deref for RocksDB {
     }
 }
 
-impl Database for RocksDB {
+impl RocksDB {
+    /// Opens the database and deletes v0 mapping-history prefixes before migration can refuse them.
+    ///
+    /// A normal [`Database::open`] leaves those prefixes in place and returns an error that names
+    /// `snarkos clean --history`.
+    pub fn open_dropping_legacy_mapping_history<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self> {
+        Self::open_with(network_id, storage, true)
+    }
+
     /// Opens the database.
     ///
-    /// In production mode, the database opens directory `~/.aleo/storage/ledger-{network}`.
-    /// In development mode, the database opens directory `/path/to/repo/.ledger-{network}-{id}`.
-    /// In tests, the database opens an ephemeral directory in the OS temporary folder.
-    /// The default storage location can be changed by using `StorageMode::Custom`.
-    fn open<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self> {
+    /// When `drop_legacy_mapping_history` is set, v0 mapping-history prefixes are deleted during
+    /// migration instead of refusing the open.
+    fn open_with<S: Into<StorageMode>>(network_id: u16, storage: S, drop_legacy_mapping_history: bool) -> Result<Self> {
         let storage = storage.into();
 
         // Retrieve the database.
@@ -163,7 +181,10 @@ impl Database for RocksDB {
             };
             // Record the schema version, and refuse a database written by a newer build, before
             // any map is opened on this database.
-            schema::migrate_storage(&rocksdb, network_id)?;
+            match drop_legacy_mapping_history {
+                true => schema::migrate_storage_dropping_legacy_mapping_history(&rocksdb, network_id)?,
+                false => schema::migrate_storage(&rocksdb, network_id)?,
+            }
 
             let db = RocksDB {
                 rocksdb,
@@ -193,6 +214,18 @@ impl Database for RocksDB {
             true => Ok(database),
             false => bail!("Mismatching network ID or storage mode in the database"),
         }
+    }
+}
+
+impl Database for RocksDB {
+    /// Opens the database.
+    ///
+    /// In production mode, the database opens directory `~/.aleo/storage/ledger-{network}`.
+    /// In development mode, the database opens directory `/path/to/repo/.ledger-{network}-{id}`.
+    /// In tests, the database opens an ephemeral directory in the OS temporary folder.
+    /// The default storage location can be changed by using `StorageMode::Custom`.
+    fn open<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self> {
+        Self::open_with(network_id, storage, false)
     }
 
     /// Opens the map with the given `network_id`, `storage mode`, and `map_id` from storage.
