@@ -681,10 +681,12 @@ fn plaintext_size_in_bytes<N: Network>(stack: &Stack<N>, plaintext_type: &Plaint
             let size_of_name = struct_.name().to_bytes_le()?.len() as u64;
             // Retrieve the size of all the members of the struct.
             let size_of_members = struct_.members().iter().try_fold(0u64, |acc, (_, member_type)| {
-                acc.checked_add(plaintext_size_in_bytes(stack, member_type)?).ok_or(anyhow!(
-                    "Overflowed while computing the size of the struct '{}/{struct_name}' - {member_type}",
-                    stack.program_id()
-                ))
+                acc.checked_add(plaintext_size_in_bytes(stack, member_type)?).ok_or_else(|| {
+                    anyhow!(
+                        "Overflowed while computing the size of the struct '{}/{struct_name}' - {member_type}",
+                        stack.program_id()
+                    )
+                })
             })?;
             // Return the size of the struct.
             Ok(size_of_name.saturating_add(size_of_members))
@@ -725,10 +727,9 @@ fn cost_in_size<'a, N: Network>(
             }
         };
         // Safely add the size to the accumulator.
-        acc.checked_add(operand_size).ok_or(anyhow!(
-            "Overflowed while computing the size of the operand '{operand}' in '{}'",
-            stack.program_id(),
-        ))
+        acc.checked_add(operand_size).ok_or_else(|| {
+            anyhow!("Overflowed while computing the size of the operand '{operand}' in '{}'", stack.program_id(),)
+        })
     })?;
     // Return the cost.
     Ok(base_cost.saturating_add(byte_multiplier.saturating_mul(size_of_operands)))
@@ -1282,7 +1283,7 @@ fn finalize_cost_for_single_function_raw<N: Network>(
     for command in finalize.commands() {
         finalize_cost = finalize_cost
             .checked_add(cost_per_command(stack, &finalize_types, command, consensus_fee_version, consensus_version)?)
-            .ok_or(anyhow!("Finalize cost overflowed"))?;
+            .ok_or_else(|| anyhow!("Finalize cost overflowed"))?;
     }
 
     Ok(finalize_cost)
@@ -1290,9 +1291,8 @@ fn finalize_cost_for_single_function_raw<N: Network>(
 
 /// Returns the maximum compute cost (in microcredits) of a single view function's body.
 ///
-/// Views do not run as part of consensus, so this cost is not paid by anyone — it is only
-/// used as a deploy-time sanity bound (mirrors the per-function `TRANSACTION_SPEND_LIMIT`
-/// check) to prevent deploying views whose worst-case compute is unreasonable.
+/// This raw cost contributes to finalize commands that call the view and to deployment
+/// spend-limit checks. The caller applies any compute discount after summing costs.
 fn view_cost_for_single_view<N: Network>(
     stack: &Stack<N>,
     view_name: &Identifier<N>,
@@ -1307,7 +1307,7 @@ fn view_cost_for_single_view<N: Network>(
     for command in view.commands() {
         view_cost = view_cost
             .checked_add(cost_per_command(stack, &view_types, command, consensus_fee_version, consensus_version)?)
-            .ok_or(anyhow!("View cost overflowed"))?;
+            .ok_or_else(|| anyhow!("View cost overflowed"))?;
     }
     Ok(view_cost)
 }
@@ -1344,7 +1344,7 @@ pub(crate) fn execution_finalize_cost<N: Network>(
             consensus_version,
         )?;
         // Add to the total.
-        total_cost = total_cost.checked_add(cost).ok_or(anyhow!("Execution finalize cost overflowed"))?;
+        total_cost = total_cost.checked_add(cost).ok_or_else(|| anyhow!("Execution finalize cost overflowed"))?;
     }
 
     // Apply the quotient divisor at the end (matching behavior of minimum_cost_in_microcredits).
@@ -1427,7 +1427,7 @@ fn minimum_cost_in_microcredits<N: Network>(
                         consensus_fee_version,
                         consensus_version,
                     )?)
-                    .ok_or(anyhow!("Finalize cost overflowed"))?;
+                    .ok_or_else(|| anyhow!("Finalize cost overflowed"))?;
             }
         }
     }
