@@ -694,7 +694,7 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     /// Updated by the VM at the start of each canonical finalize
     block_height: Arc<AtomicU32>,
     /// When set, canonical finalize writes credits.aleo history as JSON.
-    record_history: Arc<AtomicBool>,
+    record_history_json: Arc<AtomicBool>,
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
@@ -710,18 +710,18 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             storage,
             _phantom: PhantomData,
             block_height: Arc::new(AtomicU32::new(0)),
-            record_history: Arc::new(AtomicBool::new(false)),
+            record_history_json: Arc::new(AtomicBool::new(false)),
         })
     }
 
     /// Enables or disables JSON history for later canonical finalizes.
-    pub fn set_record_history(&self, enabled: bool) {
-        self.record_history.store(enabled, Ordering::SeqCst);
+    pub fn set_record_history_json(&self, enabled: bool) {
+        self.record_history_json.store(enabled, Ordering::SeqCst);
     }
 
     /// Returns whether canonical finalize writes JSON history.
-    pub fn record_history(&self) -> bool {
-        self.record_history.load(Ordering::SeqCst)
+    pub fn record_history_json(&self) -> bool {
+        self.record_history_json.load(Ordering::SeqCst)
     }
 
     /// Starts an atomic batch write operation.
