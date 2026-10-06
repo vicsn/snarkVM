@@ -1183,7 +1183,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 state,
                 post_ratifications,
                 solutions,
-                store.record_history(),
+                store.record_history_json(),
             ) {
                 // Store the finalize operations from the post-ratify.
                 Ok(operations) => ratified_finalize_operations.extend(operations),
@@ -1797,7 +1797,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         state: FinalizeGlobalState,
         post_ratifications: impl Iterator<Item = &'a Ratify<N>>,
         solutions: &Solutions<N>,
-        write_history: bool,
+        write_history_json: bool,
     ) -> Result<Vec<FinalizeOperation<N>>> {
         // Construct the program ID.
         let program_id = ProgramID::from_str("credits.aleo")?;
@@ -1874,7 +1874,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Canonical finalize writes the credits.aleo snapshots for this block.
                     // A failed write is reported and the block continues. A later finalize of this
                     // height overwrites any files left by an attempt that did not become canonical.
-                    if write_history {
+                    if write_history_json {
                         let height = state.block_height();
                         let written = (|| -> Result<()> {
                             let history = History::new(N::ID, store.storage_mode());
