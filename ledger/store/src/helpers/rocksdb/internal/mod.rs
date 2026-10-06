@@ -22,6 +22,9 @@ pub use map::*;
 mod nested_map;
 pub use nested_map::*;
 
+mod schema;
+pub use schema::{STORAGE_VERSION, StorageVersion};
+
 #[cfg(test)]
 mod tests;
 
@@ -131,6 +134,28 @@ impl Deref for RocksDB {
     }
 }
 
+impl RocksDB {
+    /// Deletes the mapping-history prefixes written by the compile-time `history` features.
+    ///
+    /// The rest of the ledger is left in place. `snarkos clean --history` calls this.
+    pub fn delete_legacy_mapping_history(&self) -> Result<()> {
+        for map in [ProgramMap::MappingUpdate, ProgramMap::MappingUpdateHeights, ProgramMap::StakingRewards] {
+            let prefix = schema::map_prefix(self.network_id, MapID::Program(map));
+            // The first key after every key that starts with `prefix`.
+            let end = u32::from_be_bytes(prefix)
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("Map prefix {prefix:?} has no successor"))?
+                .to_be_bytes();
+            let mut batch = rocksdb::WriteBatch::default();
+            batch.delete_range(&prefix, &end);
+            self.rocksdb.write(batch)?;
+            // `delete_range` hides the keys. Compaction drops the files that held them.
+            self.rocksdb.compact_range(Some(&prefix), Some(&end));
+        }
+        Ok(())
+    }
+}
+
 impl Database for RocksDB {
     /// Opens the database.
     ///
@@ -186,6 +211,13 @@ impl Database for RocksDB {
 
                 Arc::new(rocksdb::DB::open(&options, &primary_path)?)
             };
+            // Refuse a database written by a newer build before any map is opened.
+            // A secondary instance is read-only, so the primary is the one that stamps `V0`.
+            if secondary_path.is_some() {
+                schema::get_storage_version(&rocksdb, network_id)?;
+            } else {
+                schema::migrate_storage(&rocksdb, network_id)?;
+            }
 
             let db = RocksDB {
                 rocksdb,

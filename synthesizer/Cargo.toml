@@ -34,8 +34,6 @@ locktick = [
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 profiler = [ "snarkvm-algorithms/profiler" ]
-history = [ "snarkvm-ledger-store/history", "snarkvm-synthesizer-process/history" ]
-history-staking-rewards = [ "snarkvm-ledger-store/history-staking-rewards" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
   "snarkvm-console/serial",
@@ -134,6 +132,7 @@ workspace = true
 
 [dependencies.aleo-std]
 workspace = true
+features = [ "storage" ]
 
 [dependencies.anyhow]
 workspace = true
@@ -161,6 +160,10 @@ workspace = true
 
 [dependencies.rayon]
 workspace = true
+
+[dependencies.serde]
+workspace = true
+features = [ "derive" ]
 
 [dependencies.serde_json]
 workspace = true

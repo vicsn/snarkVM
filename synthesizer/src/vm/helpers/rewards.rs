@@ -171,6 +171,23 @@ pub fn staking_rewards<N: Network>(
     staking_rewards
 }
 
+/// Returns each staker's reward at this block, as `(staker, (validator, reward))`.
+///
+/// `next_stakers` is the map already produced by [`staking_rewards`]. A staker who receives
+/// nothing, or who is absent from `next_stakers`, is stored with reward `0`.
+pub fn staking_rewards_historical_mapping<N: Network>(
+    stakers: &IndexMap<Address<N>, (Address<N>, u64)>,
+    next_stakers: &IndexMap<Address<N>, (Address<N>, u64)>,
+) -> IndexMap<Address<N>, (Address<N>, u64)> {
+    stakers
+        .iter()
+        .map(|(staker, (validator, stake))| {
+            let reward = next_stakers.get(staker).map(|(_, new_stake)| new_stake.saturating_sub(*stake)).unwrap_or(0);
+            (*staker, (*validator, reward))
+        })
+        .collect()
+}
+
 /// Returns the proving rewards for a given coinbase reward and list of prover solutions.
 /// The prover reward is defined as: `puzzle_reward * (proof_target / combined_proof_target)`.
 pub fn proving_rewards<N: Network>(
@@ -511,5 +528,19 @@ mod tests {
         // Ensure a 0 coinbase reward case is empty.
         let rewards = proving_rewards::<CurrentNetwork>(vec![(address, 2)], 0);
         assert!(rewards.is_empty());
+    }
+
+    #[test]
+    fn test_historical_mapping_uses_the_supplied_next_stake() {
+        let rng = &mut TestRng::default();
+        let staker = Address::<CurrentNetwork>::rand(rng);
+        let missing = Address::<CurrentNetwork>::rand(rng);
+        let validator = Address::<CurrentNetwork>::rand(rng);
+        let current = indexmap! { staker => (validator, 10u64), missing => (validator, 4) };
+        // The next stake is supplied by the caller. This function does not recompute it.
+        let next = indexmap! { staker => (validator, 15u64) };
+        let rewards = staking_rewards_historical_mapping(&current, &next);
+        assert_eq!(rewards[&staker], (validator, 5));
+        assert_eq!(rewards[&missing], (validator, 0));
     }
 }
