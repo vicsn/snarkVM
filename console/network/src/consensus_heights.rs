@@ -76,10 +76,11 @@ pub enum ConsensusVersion {
     /// V20: Adds more accurate type checking for the root call, and bounds the size of every
     /// `PlaintextType` declared in a deployed program.
     V20 = 20,
-    /// V21: Activates Varuna V3.
+    /// V21:  Activates Varuna V3.
     V21 = 21,
-    /// V22: Increases the maximum number of mappings in a program to 128, and lowers the maximum
-    /// committee size on testnet to 40.
+    /// V22: Increases the maximum number of mappings in a program to 128.
+    ///      Lowers the maximum committee size on testnet to 40.
+    ///      Modifies the cost of the rand.chacha opcode to a more accurate value.
     V22 = 22,
 }
 

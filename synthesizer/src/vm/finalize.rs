@@ -2484,11 +2484,10 @@ finalize transfer_public:
         let rng = &mut TestRng::default();
 
         // TODO: Fix this test by adding additional constraints to `Committee::new_genesis`
-        // Initialize the validators with the maximum number of validators before consensus v3.
-        let validators = sample_validators::<CurrentNetwork>(
-            consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, 0).unwrap() as usize + 5,
-            rng,
-        );
+        // Initialize more validators than the maximum committee size. `Committee::new_genesis`
+        // bounds the committee by `LATEST_MAX_CERTIFICATES`, not by the limit at height 0.
+        let validators =
+            sample_validators::<CurrentNetwork>(Committee::<CurrentNetwork>::max_committee_size() as usize + 1, rng);
 
         // Construct the committee.
         // Track the allocated amount.
