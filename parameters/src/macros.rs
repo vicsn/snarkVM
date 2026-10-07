@@ -60,11 +60,39 @@ macro_rules! impl_store_and_remote_fetch {
             // Ensure the folders up to the file path all exist.
             let mut directory_path = file_path.to_path_buf();
             directory_path.pop();
-            let _ = std::fs::create_dir_all(directory_path)?;
+            let _ = std::fs::create_dir_all(&directory_path)?;
 
-            // Attempt to write the parameter buffer to a file.
-            match std::fs::File::create(file_path) {
-                Ok(mut file) => file.write_all(&buffer)?,
+            // Write to `<file name>.param.<process id>.<thread id>.tmp`, then rename it into place,
+            // so a concurrent reader sees either no file or the complete file.
+            let mut temp_prefix = file_path.file_name().unwrap_or_default().to_owned();
+            temp_prefix.push(".param.");
+            let mut temp_path = file_path.as_os_str().to_owned();
+            temp_path.push(format!(".param.{}.{:?}.tmp", std::process::id(), std::thread::current().id()));
+            match std::fs::File::create(&temp_path) {
+                Ok(mut file) => {
+                    // Sync before the rename, so a crash cannot leave a truncated file under the final name.
+                    let written = file.write_all(buffer).and_then(|()| file.sync_all());
+                    drop(file);
+                    if let Err(error) = written.and_then(|()| std::fs::rename(&temp_path, file_path)) {
+                        let _ = std::fs::remove_file(&temp_path);
+                        // A concurrent writer stored this file first and removed this temporary file in its cleanup.
+                        if file_path.exists() {
+                            return Ok(());
+                        }
+                        return Err(error.into());
+                    }
+                    // Remove temporary files that writers of this file left behind when they died before the rename.
+                    // A writer that dies after this pass leaves its temporary file, and nothing removes it.
+                    if let Ok(entries) = std::fs::read_dir(&directory_path) {
+                        for entry in entries.flatten() {
+                            let name = entry.file_name();
+                            let name = name.as_encoded_bytes();
+                            if name.starts_with(temp_prefix.as_encoded_bytes()) && name.ends_with(b".tmp") {
+                                let _ = std::fs::remove_file(entry.path());
+                            }
+                        }
+                    }
+                }
                 Err(error) => eprintln!("{}", error),
             }
             Ok(())
