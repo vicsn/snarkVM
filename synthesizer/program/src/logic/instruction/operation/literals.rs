@@ -89,8 +89,8 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
         let inputs: Vec<_> =
             self.operands.iter().map(|operand| registers.load_literal(stack, operand)).try_collect()?;
         // Compute the operands register types.
-        let input_types: Vec<_> =
-            inputs.iter().map(|input| RegisterType::Plaintext(PlaintextType::from(input.to_type()))).collect();
+        let input_types: [_; NUM_OPERANDS] =
+            std::array::from_fn(|i| RegisterType::Plaintext(PlaintextType::from(inputs[i].to_type())));
 
         // Prepare the inputs.
         let inputs: [Literal<N>; NUM_OPERANDS] =
