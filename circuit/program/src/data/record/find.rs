@@ -18,6 +18,13 @@ use super::*;
 impl<A: Aleo> Record<A, Plaintext<A>> {
     /// Returns the entry from the given path.
     pub fn find<A0: Into<Access<A>> + Clone + Debug>(&self, path: &[A0]) -> Result<Entry<A, Plaintext<A>>> {
+        // Check the nonce before the `owner`: comparing `Access` values ejects them, and ejecting `_nonce` halts.
+        if let [access] = path
+            && let Access::Member(identifier) = access.clone().into()
+            && identifier == Identifier::constant(console::Identifier::record_nonce()?)
+        {
+            return Ok(Entry::Private(Plaintext::from(Literal::Group(self.nonce.clone()))));
+        }
         // If the path is of length one, check if the path is requesting the `owner`.
         if path.len() == 1 && path[0].clone().into() == Access::Member(Identifier::from_str("owner")?) {
             return Ok(self.owner.to_entry());
@@ -42,5 +49,43 @@ impl<A: Aleo> Record<A, Plaintext<A>> {
         } else {
             bail!("Attempted to find record entry with an empty path.")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Circuit;
+
+    type CurrentNetwork = <Circuit as Environment>::Network;
+
+    #[test]
+    fn test_find_nonce_and_owner() -> Result<()> {
+        let console_record = console::Record::<CurrentNetwork, console::Plaintext<CurrentNetwork>>::from_str(
+            r"{
+    owner: aleo14tlamssdmg3d0p5zmljma573jghe2q9n6wz29qf36re2glcedcpqfg4add.private,
+    amount: 5u64.private,
+    _nonce: 2293253577170800572742339369209137467208538700597121244293392265726446806023group.public
+}",
+        )?;
+        let record = Record::<Circuit, Plaintext<Circuit>>::new(Mode::Private, console_record.clone());
+
+        let nonce = record.find(&[Access::constant(console::Access::Member(console::Identifier::record_nonce()?))])?;
+        match nonce {
+            Entry::Private(Plaintext::Literal(Literal::Group(nonce), _)) => {
+                assert_eq!(*console_record.nonce(), nonce.eject_value())
+            }
+            _ => bail!("Expected the record nonce to be a private group entry"),
+        }
+
+        let owner =
+            record.find(&[Access::constant(console::Access::Member(console::Identifier::from_str("owner")?))])?;
+        match owner {
+            Entry::Private(Plaintext::Literal(Literal::Address(owner), _)) => {
+                assert_eq!(**console_record.owner(), owner.eject_value())
+            }
+            _ => bail!("Expected the record owner to be a private address entry"),
+        }
+        Ok(())
     }
 }

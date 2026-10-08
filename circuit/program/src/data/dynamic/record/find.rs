@@ -18,11 +18,20 @@ use super::*;
 impl<A: Aleo> DynamicRecord<A> {
     /// Returns the entry from the given path.
     pub fn find<A0: Into<Access<A>> + Clone + Debug>(&self, path: &[A0]) -> Result<Value<A>> {
+        // Check the nonce before the `owner`: comparing `Access` values ejects them, and ejecting `_nonce` halts.
+        if let [access] = path
+            && let Access::Member(identifier) = access.clone().into()
+            && identifier == Identifier::constant(console::Identifier::record_nonce()?)
+        {
+            Ok(Value::Plaintext(Plaintext::from(Literal::Group(self.nonce.clone()))))
+        }
         // If the path is of length one, check if the path is requesting the `owner`.
-        if path.len() == 1 && path[0].clone().into() == Access::Member(Identifier::from_str("owner")?) {
+        else if path.len() == 1 && path[0].clone().into() == Access::Member(Identifier::from_str("owner")?) {
             Ok(Value::Plaintext(Plaintext::from(Literal::Address(self.owner.clone()))))
         } else {
-            bail!("Only the 'owner' of a dynamic record can be accessed directly, use 'get.record.dynamic' instead.")
+            bail!(
+                "Only the 'owner' or '_nonce' of a dynamic record can be accessed directly, use 'get.record.dynamic' for other entries."
+            )
         }
     }
 }

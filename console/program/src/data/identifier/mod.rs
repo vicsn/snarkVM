@@ -38,6 +38,23 @@ use snarkvm_console_types::{Field, prelude::*};
 #[derive(Copy, Clone)]
 pub struct Identifier<N: Network>(Field<N>, u8); // Number of bytes in the identifier.
 
+impl<N: Network> Identifier<N> {
+    /// The member that reads a record's nonce, as in `r0._nonce`.
+    const RECORD_NONCE: &'static str = "_nonce";
+
+    /// Returns the `_nonce` member of a record access.
+    /// `_nonce` fails `Identifier::from_str`, so programs cannot declare it as a name.
+    pub fn record_nonce() -> Result<Self> {
+        let field = Field::<N>::from_bits_le(&Self::RECORD_NONCE.as_bytes().to_bits_le())?;
+        Ok(Self(field, u8::try_from(Self::RECORD_NONCE.len())?))
+    }
+
+    /// Returns `true` when this identifier is the `_nonce` member of a record access.
+    pub fn is_record_nonce(&self) -> bool {
+        self.to_string() == Self::RECORD_NONCE
+    }
+}
+
 impl<N: Network> From<&Identifier<N>> for Identifier<N> {
     /// Returns a copy of the identifier.
     fn from(identifier: &Identifier<N>) -> Self {
