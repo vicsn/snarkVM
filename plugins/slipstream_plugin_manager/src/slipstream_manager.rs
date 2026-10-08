@@ -22,9 +22,152 @@ use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::{
 use libloading::Library;
 use std::{
     ops::{Deref, DerefMut},
+    panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf},
+    sync::{
+        Arc,
+        RwLock,
+        RwLockWriteGuard,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc,
+    },
+    thread,
 };
 use tracing::{info, warn};
+
+/// Events that can wait for plugin callbacks.
+///
+/// `broadcast` drops the newest event when this many events are already queued.
+const BROADCAST_QUEUE_CAPACITY: usize = 16_384;
+
+/// Owned copy of a [`BroadcastEvent`], so the caller can return while a worker delivers it.
+enum OwnedBroadcastEvent {
+    MappingUpdate { program_id: Vec<u8>, mapping_name: Vec<u8>, key: Vec<u8>, value: Vec<u8>, block_height: u32 },
+    StakingReward { staker: Vec<u8>, validator: Vec<u8>, reward: u64, new_stake: u64, block_height: u32 },
+    Block { block: Vec<u8>, block_height: u32 },
+}
+
+impl From<BroadcastEvent<'_>> for OwnedBroadcastEvent {
+    fn from(event: BroadcastEvent<'_>) -> Self {
+        match event {
+            BroadcastEvent::MappingUpdate { program_id, mapping_name, key, value, block_height } => {
+                Self::MappingUpdate {
+                    program_id: program_id.to_vec(),
+                    mapping_name: mapping_name.to_vec(),
+                    key: key.to_vec(),
+                    value: value.to_vec(),
+                    block_height,
+                }
+            }
+            BroadcastEvent::StakingReward { staker, validator, reward, new_stake, block_height } => {
+                Self::StakingReward {
+                    staker: staker.to_vec(),
+                    validator: validator.to_vec(),
+                    reward,
+                    new_stake,
+                    block_height,
+                }
+            }
+            BroadcastEvent::Block { block, block_height } => Self::Block { block: block.to_vec(), block_height },
+        }
+    }
+}
+
+impl OwnedBroadcastEvent {
+    fn kind(&self) -> BroadcastEventKind {
+        match self {
+            Self::MappingUpdate { .. } => BroadcastEventKind::MappingUpdate,
+            Self::StakingReward { .. } => BroadcastEventKind::StakingReward,
+            Self::Block { .. } => BroadcastEventKind::Block,
+        }
+    }
+
+    fn with_borrowed(&self, deliver: impl FnOnce(BroadcastEvent<'_>)) {
+        match self {
+            Self::MappingUpdate { program_id, mapping_name, key, value, block_height } => {
+                deliver(BroadcastEvent::MappingUpdate {
+                    program_id,
+                    mapping_name,
+                    key,
+                    value,
+                    block_height: *block_height,
+                });
+            }
+            Self::StakingReward { staker, validator, reward, new_stake, block_height } => {
+                deliver(BroadcastEvent::StakingReward {
+                    staker,
+                    validator,
+                    reward: *reward,
+                    new_stake: *new_stake,
+                    block_height: *block_height,
+                });
+            }
+            Self::Block { block, block_height } => {
+                deliver(BroadcastEvent::Block { block, block_height: *block_height });
+            }
+        }
+    }
+}
+
+enum WorkerMessage {
+    Event(OwnedBroadcastEvent),
+    Flush(mpsc::Sender<()>),
+    Shutdown,
+}
+
+/// Subscriber flags read by the finalizer without taking the plugin lock.
+#[derive(Debug, Default)]
+struct SubscriberFlags {
+    mapping_update: AtomicBool,
+    staking_reward: AtomicBool,
+    block: AtomicBool,
+}
+
+fn plugin_subscribes(plugins: &[LoadedPlugin], kind: BroadcastEventKind) -> bool {
+    plugins.iter().any(|entry| entry.plugin.subscribed_events().contains(&kind))
+}
+
+fn store_subscribers(flags: &SubscriberFlags, plugins: &[LoadedPlugin]) {
+    flags.mapping_update.store(plugin_subscribes(plugins, BroadcastEventKind::MappingUpdate), Ordering::SeqCst);
+    flags.staking_reward.store(plugin_subscribes(plugins, BroadcastEventKind::StakingReward), Ordering::SeqCst);
+    flags.block.store(plugin_subscribes(plugins, BroadcastEventKind::Block), Ordering::SeqCst);
+}
+
+fn write_plugins(plugins: &Arc<RwLock<Vec<LoadedPlugin>>>) -> RwLockWriteGuard<'_, Vec<LoadedPlugin>> {
+    plugins.write().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn broadcast_worker(plugins: Arc<RwLock<Vec<LoadedPlugin>>>, rx: mpsc::Receiver<WorkerMessage>) {
+    while let Ok(message) = rx.recv() {
+        match message {
+            WorkerMessage::Event(event) => dispatch_event(&plugins, &event),
+            WorkerMessage::Flush(ack) => {
+                let _ = ack.send(());
+            }
+            WorkerMessage::Shutdown => break,
+        }
+    }
+}
+
+fn dispatch_event(plugins: &RwLock<Vec<LoadedPlugin>>, event: &OwnedBroadcastEvent) {
+    let guard = plugins.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let kind = event.kind();
+    event.with_borrowed(|borrowed| {
+        for entry in guard.iter() {
+            if !entry.plugin.subscribed_events().contains(&kind) {
+                continue;
+            }
+            // A panic in one plugin stays on this thread. The finalizer keeps running, and this
+            // worker continues with the remaining plugins and events.
+            let result = catch_unwind(AssertUnwindSafe(|| entry.plugin.on_broadcast(borrowed)));
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => warn!("Slipstream plugin '{}' on_broadcast error: {error}", entry.plugin.name()),
+                Err(_) => warn!("Slipstream plugin '{}' panicked in on_broadcast", entry.plugin.name()),
+            }
+        }
+    });
+}
 
 /// A type alias for the result of plugin manager operations.
 type JsonRpcResult<T> = Result<T, SlipstreamPluginManagerError>;
@@ -82,14 +225,40 @@ impl Drop for LoadedPlugin {
 }
 
 // The Plugin Manager itself
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct SlipstreamPluginManager {
-    plugins: Vec<LoadedPlugin>,
+    plugins: Arc<RwLock<Vec<LoadedPlugin>>>,
+    subscribers: SubscriberFlags,
+    tx: mpsc::SyncSender<WorkerMessage>,
+    worker: Option<thread::JoinHandle<()>>,
+    dropped: AtomicU64,
+    worker_stopped: AtomicBool,
+}
+
+impl Default for SlipstreamPluginManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SlipstreamPluginManager {
     pub fn new() -> Self {
-        SlipstreamPluginManager { plugins: Vec::default() }
+        let plugins = Arc::new(RwLock::new(Vec::new()));
+        let (tx, rx) = mpsc::sync_channel(BROADCAST_QUEUE_CAPACITY);
+        let plugins_for_worker = Arc::clone(&plugins);
+        // `spawn` fails only when the OS cannot allocate a thread.
+        let worker = thread::Builder::new()
+            .name("slipstream-broadcast".to_owned())
+            .spawn(move || broadcast_worker(plugins_for_worker, rx))
+            .expect("OS refused to spawn the slipstream broadcast thread");
+        Self {
+            plugins,
+            subscribers: SubscriberFlags::default(),
+            tx,
+            worker: Some(worker),
+            dropped: AtomicU64::new(0),
+            worker_stopped: AtomicBool::new(false),
+        }
     }
 
     /// Initializes a manager by loading one plugin per config file.
@@ -106,8 +275,14 @@ impl SlipstreamPluginManager {
 
     /// Unload all plugins and loaded plugin libraries, making sure to fire
     /// their `on_unload()` methods so they can do any necessary cleanup.
+    ///
+    /// Queued events are delivered before the plugins are dropped.
     pub fn unload(&mut self) {
-        self.plugins.clear(); // Drop impl fires on_unload and enforces plugin-before-lib drop order.
+        self.flush();
+        let plugins = Arc::clone(&self.plugins);
+        let mut guard = write_plugins(&plugins);
+        guard.clear(); // Drop impl fires on_unload and enforces plugin-before-lib drop order.
+        store_subscribers(&self.subscribers, &guard);
     }
 
     /// Registers an in-process plugin.
@@ -116,16 +291,19 @@ impl SlipstreamPluginManager {
     pub fn install(&mut self, plugin: impl SlipstreamPlugin + 'static) -> JsonRpcResult<String> {
         let lib = in_process_library()?;
         let mut loaded = LoadedSlipstreamPlugin::new(Box::new(plugin), None);
-        if self.plugins.iter().any(|entry| entry.plugin.name() == loaded.name()) {
+        let plugins = Arc::clone(&self.plugins);
+        let already_loaded = {
+            let guard = write_plugins(&plugins);
+            guard.iter().any(|entry| entry.plugin.name() == loaded.name())
+        };
+        if already_loaded {
             return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(loaded.name().to_string()));
         }
         loaded.on_load("", false).map_err(|error| SlipstreamPluginManagerError::PluginStartError(error.to_string()))?;
         let name = loaded.name().to_string();
-        self.plugins.push(LoadedPlugin {
-            plugin: loaded,
-            _lib: lib,
-            libpath: PathBuf::from(format!("in-process:{name}")),
-        });
+        let mut guard = write_plugins(&plugins);
+        guard.push(LoadedPlugin { plugin: loaded, _lib: lib, libpath: PathBuf::from(format!("in-process:{name}")) });
+        store_subscribers(&self.subscribers, &guard);
         info!("Loaded plugin: {name}");
         Ok(name)
     }
@@ -135,25 +313,51 @@ impl SlipstreamPluginManager {
     /// Used as a pre-serialization guard: callers skip expensive byte serialization
     /// when no plugin would receive the resulting event.
     pub fn has_subscribers(&self, kind: BroadcastEventKind) -> bool {
-        self.plugins.iter().any(|p| p.plugin.subscribed_events().contains(&kind))
+        match kind {
+            BroadcastEventKind::MappingUpdate => self.subscribers.mapping_update.load(Ordering::SeqCst),
+            BroadcastEventKind::StakingReward => self.subscribers.staking_reward.load(Ordering::SeqCst),
+            BroadcastEventKind::Block => self.subscribers.block.load(Ordering::SeqCst),
+        }
     }
 
-    /// Dispatches an event to every plugin subscribed to its kind.
-    /// Errors are logged as warnings but never propagated.
+    /// Queues an event for every plugin subscribed to its kind.
+    ///
+    /// The call returns once the queue accepts the event. Callbacks run on the slipstream
+    /// broadcast thread. A full queue drops the event. Callback errors are logged and are not
+    /// returned. A plugin callback must not call [`Self::flush`] or drop this manager: the worker
+    /// would wait for itself.
     pub fn broadcast(&self, event: BroadcastEvent<'_>) {
-        let kind = event.kind();
-        for entry in &self.plugins {
-            if entry.plugin.subscribed_events().contains(&kind)
-                && let Err(e) = entry.plugin.on_broadcast(event)
-            {
-                warn!("Slipstream plugin '{}' on_broadcast error: {e}", entry.plugin.name());
+        match self.tx.try_send(WorkerMessage::Event(OwnedBroadcastEvent::from(event))) {
+            Ok(()) => {}
+            Err(mpsc::TrySendError::Full(_)) => {
+                let dropped = self.dropped.fetch_add(1, Ordering::Relaxed) + 1;
+                if dropped.is_power_of_two() {
+                    warn!("Slipstream broadcast queue is full; dropped {dropped} events");
+                }
             }
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                if !self.worker_stopped.swap(true, Ordering::Relaxed) {
+                    warn!("Slipstream broadcast worker is stopped; dropping events");
+                }
+            }
+        }
+    }
+
+    /// Blocks until every event queued before this call has been delivered.
+    ///
+    /// A plugin callback must not call this method: the worker would wait for itself.
+    pub fn flush(&self) {
+        let (ack_tx, ack_rx) = mpsc::channel();
+        if self.tx.send(WorkerMessage::Flush(ack_tx)).is_ok() {
+            let _ = ack_rx.recv();
         }
     }
 
     /// Returns the names of all loaded plugins.
     pub fn list_plugins(&self) -> JsonRpcResult<Vec<String>> {
-        Ok(self.plugins.iter().map(|p| p.plugin.name().to_owned()).collect())
+        let plugins = Arc::clone(&self.plugins);
+        let guard = plugins.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+        Ok(guard.iter().map(|p| p.plugin.name().to_owned()).collect())
     }
 
     /// Loads a plugin from the given config file.
@@ -169,16 +373,25 @@ impl SlipstreamPluginManager {
         // .init_array startup code, corrupting global state in the running plugin instance.
         let resolved_libpath = resolve_libpath_from_config(slipstream_plugin_config_file.as_ref())?;
 
+        let plugins = Arc::clone(&self.plugins);
         // Check for duplicate library path first (catches same .so before dlopen).
-        if let Some(entry) = self.plugins.iter().find(|p| p.libpath == resolved_libpath) {
-            return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(entry.plugin.name().to_string()));
+        let duplicate = {
+            let guard = write_plugins(&plugins);
+            guard.iter().find(|entry| entry.libpath == resolved_libpath).map(|entry| entry.plugin.name().to_string())
+        };
+        if let Some(name) = duplicate {
+            return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(name));
         }
 
         let (new_lib, mut new_plugin, new_config_file) =
             load_plugin_from_config(slipstream_plugin_config_file.as_ref())?;
 
         // Also guard against a different .so that happens to expose the same plugin name.
-        if self.plugins.iter().any(|entry| entry.plugin.name().eq(new_plugin.name())) {
+        let duplicate_name = {
+            let guard = write_plugins(&plugins);
+            guard.iter().any(|entry| entry.plugin.name().eq(new_plugin.name()))
+        };
+        if duplicate_name {
             return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(new_plugin.name().to_string()));
         }
 
@@ -188,7 +401,9 @@ impl SlipstreamPluginManager {
             .map_err(|e| SlipstreamPluginManagerError::PluginStartError(e.to_string()))?;
         let name = new_plugin.name().to_string();
 
-        self.plugins.push(LoadedPlugin { plugin: new_plugin, _lib: new_lib, libpath: resolved_libpath });
+        let mut guard = write_plugins(&plugins);
+        guard.push(LoadedPlugin { plugin: new_plugin, _lib: new_lib, libpath: resolved_libpath });
+        store_subscribers(&self.subscribers, &guard);
 
         info!("Loaded plugin: {}", name);
 
@@ -197,11 +412,15 @@ impl SlipstreamPluginManager {
 
     /// Unloads the plugin with the given name.
     pub fn unload_plugin(&mut self, name: &str) -> JsonRpcResult<()> {
-        let Some(idx) = self.plugins.iter().position(|entry| entry.plugin.name().eq(name)) else {
+        self.flush();
+        let plugins = Arc::clone(&self.plugins);
+        let mut guard = write_plugins(&plugins);
+        let Some(idx) = guard.iter().position(|entry| entry.plugin.name().eq(name)) else {
             return Err(SlipstreamPluginManagerError::PluginNotLoaded(name.to_string()));
         };
 
-        self._drop_plugin(idx);
+        guard.remove(idx); // Drop impl fires on_unload and enforces plugin-before-lib drop order.
+        store_subscribers(&self.subscribers, &guard);
         Ok(())
     }
 
@@ -216,9 +435,16 @@ impl SlipstreamPluginManager {
     pub fn reload_plugin(&mut self, _name: &str, _config_file: &str) -> JsonRpcResult<()> {
         Err(SlipstreamPluginManagerError::PluginLoadError("Plugin reload is not currently implemented.".to_string()))
     }
+}
 
-    fn _drop_plugin(&mut self, idx: usize) {
-        self.plugins.remove(idx); // Drop impl fires on_unload and enforces plugin-before-lib drop order.
+impl Drop for SlipstreamPluginManager {
+    fn drop(&mut self) {
+        // Queued events run before `Shutdown`. Joining the worker finishes those callbacks before
+        // the loaded libraries are dropped.
+        let _ = self.tx.send(WorkerMessage::Shutdown);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 
@@ -421,6 +647,7 @@ pub(crate) fn load_plugin_from_config(
 #[cfg(test)]
 mod tests {
     use crate::slipstream_manager::{
+        BROADCAST_QUEUE_CAPACITY,
         LoadedPlugin,
         LoadedSlipstreamPlugin,
         SlipstreamPluginManager,
@@ -474,16 +701,24 @@ mod tests {
     fn test_plugin_list() {
         // Initialize empty manager.
         let plugin_manager = Arc::new(RwLock::new(SlipstreamPluginManager::new()));
-        let mut plugin_manager_lock = plugin_manager.write().unwrap();
+        let plugin_manager_lock = plugin_manager.write().unwrap();
 
         // Load two plugins.
         let (_lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin, TESTPLUGIN_CONFIG);
         plugin.on_load(config, false).unwrap();
-        plugin_manager_lock.plugins.push(LoadedPlugin { plugin, _lib, libpath: PathBuf::from(config) });
+        plugin_manager_lock.plugins.write().unwrap().push(LoadedPlugin {
+            plugin,
+            _lib,
+            libpath: PathBuf::from(config),
+        });
 
         let (_lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin2, TESTPLUGIN2_CONFIG);
         plugin.on_load(config, false).unwrap();
-        plugin_manager_lock.plugins.push(LoadedPlugin { plugin, _lib, libpath: PathBuf::from(config) });
+        plugin_manager_lock.plugins.write().unwrap().push(LoadedPlugin {
+            plugin,
+            _lib,
+            libpath: PathBuf::from(config),
+        });
 
         // Check that both plugins are returned in the list.
         let plugins = plugin_manager_lock.list_plugins().unwrap();
@@ -500,17 +735,17 @@ mod tests {
         // Load rpc call.
         let load_result = plugin_manager_lock.load_plugin(TESTPLUGIN_CONFIG);
         assert!(load_result.is_ok());
-        assert_eq!(plugin_manager_lock.plugins.len(), 1);
+        assert_eq!(plugin_manager_lock.plugins.read().unwrap().len(), 1);
 
         // Unload rpc call.
         let unload_result = plugin_manager_lock.unload_plugin(DUMMY_NAME);
         assert!(unload_result.is_ok());
-        assert_eq!(plugin_manager_lock.plugins.len(), 0);
+        assert_eq!(plugin_manager_lock.plugins.read().unwrap().len(), 0);
     }
 
     #[test]
     fn test_broadcast_mapping_update() {
-        let mut manager = SlipstreamPluginManager::new();
+        let manager = SlipstreamPluginManager::new();
 
         // Install a mock plugin that tracks calls.
         #[derive(Debug)]
@@ -539,7 +774,7 @@ mod tests {
         let _lib = Library::from(libloading::os::windows::Library::this().unwrap());
 
         let plugin = TrackingPlugin { calls: std::sync::atomic::AtomicU32::new(0) };
-        manager.plugins.push(LoadedPlugin {
+        manager.plugins.write().unwrap().push(LoadedPlugin {
             plugin: LoadedSlipstreamPlugin::new(Box::new(plugin), None),
             _lib,
             libpath: PathBuf::new(),
@@ -602,7 +837,80 @@ mod tests {
             block_height: 1,
         });
         manager.broadcast(BroadcastEvent::Block { block: b"block", block_height: 1 });
+        manager.flush();
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
         assert!(manager.has_subscribers(BroadcastEventKind::Block));
+        manager.unload_plugin("counting").unwrap();
+        assert!(!manager.has_subscribers(BroadcastEventKind::Block));
+    }
+
+    /// Drops the release sender on unwind so a failed test cannot leave the worker blocked.
+    struct ReleaseOnDrop(Option<std::sync::mpsc::Sender<()>>);
+
+    impl Drop for ReleaseOnDrop {
+        fn drop(&mut self) {
+            self.0.take();
+        }
+    }
+
+    #[test]
+    fn test_broadcast_returns_before_plugin_callback_finishes() {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+
+        #[derive(Debug)]
+        struct BlockingPlugin {
+            calls: std::sync::Arc<std::sync::atomic::AtomicU32>,
+            entered: std::sync::mpsc::Sender<()>,
+            release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+        }
+
+        impl SlipstreamPlugin for BlockingPlugin {
+            fn name(&self) -> &'static str {
+                "blocking"
+            }
+
+            fn subscribed_events(&self) -> &[BroadcastEventKind] {
+                &[BroadcastEventKind::Block]
+            }
+
+            fn on_broadcast(&self, _event: BroadcastEvent<'_>) -> anyhow::Result<()> {
+                if self.calls.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                    let _ = self.entered.send(());
+                    // The sender is dropped if the test fails. `recv` then returns and the worker can exit.
+                    let _ = self.release.lock().unwrap().recv();
+                }
+                self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            }
+        }
+
+        let mut manager = SlipstreamPluginManager::new();
+        manager
+            .install(BlockingPlugin {
+                calls: std::sync::Arc::clone(&calls),
+                entered: entered_tx,
+                release: std::sync::Mutex::new(release_rx),
+            })
+            .unwrap();
+        // Declared after the manager so unwind drops the sender before joining the worker.
+        let release = ReleaseOnDrop(Some(release_tx));
+
+        manager.broadcast(BroadcastEvent::Block { block: b"block", block_height: 1 });
+        // The plugin blocks in its first callback. This receive runs only if `broadcast` has returned.
+        entered_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+
+        for _ in 0..BROADCAST_QUEUE_CAPACITY {
+            manager.broadcast(BroadcastEvent::Block { block: b"block", block_height: 1 });
+        }
+        manager.broadcast(BroadcastEvent::Block { block: b"dropped", block_height: 1 });
+
+        drop(release);
+        manager.flush();
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            u32::try_from(BROADCAST_QUEUE_CAPACITY).unwrap() + 1
+        );
     }
 }

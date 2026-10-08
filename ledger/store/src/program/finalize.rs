@@ -1338,6 +1338,7 @@ mod tests {
         let mut manager = SlipstreamPluginManager::new();
         manager.install(RecordingPlugin { events: std::sync::Arc::clone(&events) }).unwrap();
         finalize_store.set_slipstream_plugin_manager(manager);
+        let flush = || finalize_store.slipstream_plugin_manager().read().as_ref().unwrap().flush();
 
         let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
         let mapping_name = Identifier::from_str("account").unwrap();
@@ -1347,11 +1348,13 @@ mod tests {
 
         // The flag is off, so a mapping write emits nothing.
         finalize_store.update_key_value(program_id, mapping_name, key.clone(), value.clone()).unwrap();
+        flush();
         assert!(events.lock().unwrap().is_empty());
 
         // The flag is on, but this write is outside canonical finalize.
         finalize_store.set_slipstream(true);
         finalize_store.update_key_value(program_id, mapping_name, key.clone(), value.clone()).unwrap();
+        flush();
         assert!(events.lock().unwrap().is_empty());
 
         finalize_store.is_finalize_mode().store(true, Ordering::SeqCst);
@@ -1387,6 +1390,7 @@ mod tests {
             )
             .unwrap();
 
+        flush();
         let recorded = events.lock().unwrap();
         assert_eq!(recorded.as_slice(), &[
             BroadcastEventKind::MappingUpdate,

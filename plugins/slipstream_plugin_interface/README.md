@@ -36,7 +36,8 @@ Manages loaded plugins and their backing `libloading::Library` handles.
   - `load_plugin(path)` / `unload_plugin(name)` — load or unload a single plugin at runtime
   - `unload()` — fires `on_unload()` on every plugin then drops the libraries; field declaration order guarantees all plugin code finishes executing before the backing `.so` is unmapped
   - `has_subscribers()` — aggregate opt-in check; used internally to skip serialization when no plugin is interested in an event kind
-  - `broadcast()` — fan-out broadcast to all interested plugins
+  - `broadcast()` — queues the event and returns. Callbacks run on the `slipstream-broadcast` thread. A full queue drops that event
+  - `flush()` — waits until every event queued before the call has been delivered
   - `list_plugins()` — returns the names of all loaded plugins
 
 ---
@@ -99,4 +100,4 @@ if let Some(manager) = finalize_store.slipstream_plugin_manager().write().as_mut
 }
 ```
 
-> Errors from plugin callbacks (`on_broadcast`) are logged as warnings and never propagated — a misbehaving plugin will not crash the node. A serialization failure skips that event and does not reject the block.
+> Errors and panics from plugin callbacks (`on_broadcast`) are logged as warnings and never propagated — a misbehaving plugin will not crash the node or stop later events. A serialization failure skips that event and does not reject the block. Dropping the manager delivers events already queued, then unloads the plugin libraries.
