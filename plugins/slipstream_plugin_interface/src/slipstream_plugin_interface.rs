@@ -23,6 +23,8 @@ use std::any::Any;
 pub enum BroadcastEventKind {
     /// Mapping key-value update during canonical finalize.
     MappingUpdate,
+    /// Mapping key or mapping removal during canonical finalize.
+    MappingRemoval,
     /// Staking reward distribution during canonical finalize.
     StakingReward,
     /// Canonical block committed to the ledger.
@@ -40,6 +42,10 @@ pub enum BroadcastEventKind {
 pub enum BroadcastEvent<'a> {
     /// A mapping key-value pair was inserted or updated during canonical finalize.
     MappingUpdate { program_id: &'a [u8], mapping_name: &'a [u8], key: &'a [u8], value: &'a [u8], block_height: u32 },
+    /// A mapping key was removed, or the mapping itself was removed, during canonical finalize.
+    ///
+    /// `key` is absent when `remove_mapping` removes every key in the mapping.
+    MappingRemoval { program_id: &'a [u8], mapping_name: &'a [u8], key: Option<&'a [u8]>, block_height: u32 },
     /// A staking reward was distributed to a staker during canonical finalize.
     StakingReward { staker: &'a [u8], validator: &'a [u8], reward: u64, new_stake: u64, block_height: u32 },
     /// A block was committed. `block` is the little-endian encoding of the block.
@@ -51,6 +57,7 @@ impl BroadcastEvent<'_> {
     pub fn kind(&self) -> BroadcastEventKind {
         match self {
             BroadcastEvent::MappingUpdate { .. } => BroadcastEventKind::MappingUpdate,
+            BroadcastEvent::MappingRemoval { .. } => BroadcastEventKind::MappingRemoval,
             BroadcastEvent::StakingReward { .. } => BroadcastEventKind::StakingReward,
             BroadcastEvent::Block { .. } => BroadcastEventKind::Block,
         }

@@ -43,6 +43,7 @@ const BROADCAST_QUEUE_CAPACITY: usize = 16_384;
 /// Owned copy of a [`BroadcastEvent`], so the caller can return while a worker delivers it.
 enum OwnedBroadcastEvent {
     MappingUpdate { program_id: Vec<u8>, mapping_name: Vec<u8>, key: Vec<u8>, value: Vec<u8>, block_height: u32 },
+    MappingRemoval { program_id: Vec<u8>, mapping_name: Vec<u8>, key: Option<Vec<u8>>, block_height: u32 },
     StakingReward { staker: Vec<u8>, validator: Vec<u8>, reward: u64, new_stake: u64, block_height: u32 },
     Block { block: Vec<u8>, block_height: u32 },
 }
@@ -59,6 +60,12 @@ impl From<BroadcastEvent<'_>> for OwnedBroadcastEvent {
                     block_height,
                 }
             }
+            BroadcastEvent::MappingRemoval { program_id, mapping_name, key, block_height } => Self::MappingRemoval {
+                program_id: program_id.to_vec(),
+                mapping_name: mapping_name.to_vec(),
+                key: key.map(|bytes| bytes.to_vec()),
+                block_height,
+            },
             BroadcastEvent::StakingReward { staker, validator, reward, new_stake, block_height } => {
                 Self::StakingReward {
                     staker: staker.to_vec(),
@@ -77,6 +84,7 @@ impl OwnedBroadcastEvent {
     fn kind(&self) -> BroadcastEventKind {
         match self {
             Self::MappingUpdate { .. } => BroadcastEventKind::MappingUpdate,
+            Self::MappingRemoval { .. } => BroadcastEventKind::MappingRemoval,
             Self::StakingReward { .. } => BroadcastEventKind::StakingReward,
             Self::Block { .. } => BroadcastEventKind::Block,
         }
@@ -90,6 +98,14 @@ impl OwnedBroadcastEvent {
                     mapping_name,
                     key,
                     value,
+                    block_height: *block_height,
+                });
+            }
+            Self::MappingRemoval { program_id, mapping_name, key, block_height } => {
+                deliver(BroadcastEvent::MappingRemoval {
+                    program_id,
+                    mapping_name,
+                    key: key.as_deref(),
                     block_height: *block_height,
                 });
             }
@@ -119,6 +135,7 @@ enum WorkerMessage {
 #[derive(Debug, Default)]
 struct SubscriberFlags {
     mapping_update: AtomicBool,
+    mapping_removal: AtomicBool,
     staking_reward: AtomicBool,
     block: AtomicBool,
 }
@@ -129,6 +146,7 @@ fn plugin_subscribes(plugins: &[LoadedPlugin], kind: BroadcastEventKind) -> bool
 
 fn store_subscribers(flags: &SubscriberFlags, plugins: &[LoadedPlugin]) {
     flags.mapping_update.store(plugin_subscribes(plugins, BroadcastEventKind::MappingUpdate), Ordering::SeqCst);
+    flags.mapping_removal.store(plugin_subscribes(plugins, BroadcastEventKind::MappingRemoval), Ordering::SeqCst);
     flags.staking_reward.store(plugin_subscribes(plugins, BroadcastEventKind::StakingReward), Ordering::SeqCst);
     flags.block.store(plugin_subscribes(plugins, BroadcastEventKind::Block), Ordering::SeqCst);
 }
@@ -210,8 +228,8 @@ impl DerefMut for LoadedSlipstreamPlugin {
 struct LoadedPlugin {
     plugin: LoadedSlipstreamPlugin,
     _lib: Library,
-    /// Resolved, absolute path to the `.so` file.
-    /// Used to detect duplicate loads before calling `dlopen`, preventing unsafe double-loading.
+    /// Canonical path of the loaded library.
+    /// A second `dlopen` of a library that is already loaded can re-run its startup code.
     libpath: PathBuf,
 }
 
@@ -315,6 +333,7 @@ impl SlipstreamPluginManager {
     pub fn has_subscribers(&self, kind: BroadcastEventKind) -> bool {
         match kind {
             BroadcastEventKind::MappingUpdate => self.subscribers.mapping_update.load(Ordering::SeqCst),
+            BroadcastEventKind::MappingRemoval => self.subscribers.mapping_removal.load(Ordering::SeqCst),
             BroadcastEventKind::StakingReward => self.subscribers.staking_reward.load(Ordering::SeqCst),
             BroadcastEventKind::Block => self.subscribers.block.load(Ordering::SeqCst),
         }
@@ -367,26 +386,23 @@ impl SlipstreamPluginManager {
     /// This function loads the dynamically linked library specified in the config. The library
     /// must do necessary initializations.
     pub fn load_plugin(&mut self, slipstream_plugin_config_file: impl AsRef<Path>) -> JsonRpcResult<String> {
-        // Resolve the library path from the config before calling dlopen.
-        // This lets us detect duplicates without loading the library a second time, which is
-        // unsafe: a second dlopen on an already-loaded .so can trigger re-execution of Rust
-        // .init_array startup code, corrupting global state in the running plugin instance.
-        let resolved_libpath = resolve_libpath_from_config(slipstream_plugin_config_file.as_ref())?;
+        let config_file = slipstream_plugin_config_file.as_ref();
+        // One read of the config. The loader opens `spec.libpath` from this read.
+        // A second dlopen of a library that is already loaded can re-run its startup code.
+        let spec = read_plugin_spec(config_file)?;
 
         let plugins = Arc::clone(&self.plugins);
-        // Check for duplicate library path first (catches same .so before dlopen).
         let duplicate = {
             let guard = write_plugins(&plugins);
-            guard.iter().find(|entry| entry.libpath == resolved_libpath).map(|entry| entry.plugin.name().to_string())
+            guard.iter().find(|entry| entry.libpath == spec.libpath).map(|entry| entry.plugin.name().to_string())
         };
         if let Some(name) = duplicate {
             return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(name));
         }
 
-        let (new_lib, mut new_plugin, new_config_file) =
-            load_plugin_from_config(slipstream_plugin_config_file.as_ref())?;
+        let (new_lib, mut new_plugin) = open_plugin(&spec)?;
 
-        // Also guard against a different .so that happens to expose the same plugin name.
+        // Also guard against a different library that exposes the same plugin name.
         let duplicate_name = {
             let guard = write_plugins(&plugins);
             guard.iter().any(|entry| entry.plugin.name().eq(new_plugin.name()))
@@ -395,14 +411,14 @@ impl SlipstreamPluginManager {
             return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(new_plugin.name().to_string()));
         }
 
-        // Call on_load and push plugin.
+        let config_file = config_file.as_os_str().to_str().ok_or(SlipstreamPluginManagerError::InvalidPluginPath)?;
         new_plugin
-            .on_load(new_config_file, false)
+            .on_load(config_file, false)
             .map_err(|e| SlipstreamPluginManagerError::PluginStartError(e.to_string()))?;
         let name = new_plugin.name().to_string();
 
         let mut guard = write_plugins(&plugins);
-        guard.push(LoadedPlugin { plugin: new_plugin, _lib: new_lib, libpath: resolved_libpath });
+        guard.push(LoadedPlugin { plugin: new_plugin, _lib: new_lib, libpath: spec.libpath });
         store_subscribers(&self.subscribers, &guard);
 
         info!("Loaded plugin: {}", name);
@@ -497,111 +513,73 @@ fn in_process_library() -> Result<Library, SlipstreamPluginManagerError> {
     }
 }
 
-/// Parses a plugin config file and returns the resolved, absolute path to the `.so`.
-///
-/// Does NOT open or load the library — safe to call for duplicate detection before `dlopen`.
-#[cfg(not(test))]
-pub(crate) fn resolve_libpath_from_config(
-    slipstream_plugin_config_file: &Path,
-) -> Result<PathBuf, SlipstreamPluginManagerError> {
+/// Plugin identity taken from one read of a config file.
+struct PluginSpec {
+    /// Canonical path of the library named by `libpath`.
+    libpath: PathBuf,
+    name: Option<String>,
+}
+
+/// Reads a plugin config once and returns the canonical library path from that read.
+fn read_plugin_spec(config_file: &Path) -> Result<PluginSpec, SlipstreamPluginManagerError> {
     use std::{fs::File, io::Read};
 
-    let mut file = File::open(slipstream_plugin_config_file).map_err(|e| {
+    let mut file = File::open(config_file).map_err(|error| {
         SlipstreamPluginManagerError::CannotOpenConfigFile(format!(
-            "Failed to open the plugin config file {slipstream_plugin_config_file:?}, error: {e:?}"
+            "Failed to open the plugin config file {config_file:?}, error: {error:?}"
         ))
     })?;
 
     let mut contents = String::new();
-    file.read_to_string(&mut contents).map_err(|e| {
+    file.read_to_string(&mut contents).map_err(|error| {
         SlipstreamPluginManagerError::CannotReadConfigFile(format!(
-            "Failed to read the plugin config file {slipstream_plugin_config_file:?}, error: {e:?}"
+            "Failed to read the plugin config file {config_file:?}, error: {error:?}"
         ))
     })?;
 
-    let result: serde_json::Value = json5::from_str(&contents).map_err(|e| {
+    let result: serde_json::Value = json5::from_str(&contents).map_err(|error| {
         SlipstreamPluginManagerError::InvalidConfigFileFormat(format!(
-            "The config file {slipstream_plugin_config_file:?} is not in a valid Json5 format, error: {e:?}"
+            "The config file {config_file:?} is not in a valid Json5 format, error: {error:?}"
         ))
     })?;
 
     let libpath_str = result["libpath"].as_str().ok_or(SlipstreamPluginManagerError::LibPathNotSet)?;
     let mut libpath = PathBuf::from(libpath_str);
     if libpath.is_relative() {
-        let config_dir = slipstream_plugin_config_file.parent().ok_or_else(|| {
-            SlipstreamPluginManagerError::CannotOpenConfigFile(format!(
-                "Failed to resolve parent of {slipstream_plugin_config_file:?}",
-            ))
+        let config_dir = config_file.parent().ok_or_else(|| {
+            SlipstreamPluginManagerError::CannotOpenConfigFile(format!("Failed to resolve parent of {config_file:?}"))
         })?;
         libpath = config_dir.join(libpath);
     }
+    let libpath = std::fs::canonicalize(&libpath).map_err(|error| {
+        SlipstreamPluginManagerError::PluginLoadError(format!(
+            "Cannot resolve plugin library path {}: {error}",
+            libpath.display()
+        ))
+    })?;
 
-    Ok(libpath)
+    Ok(PluginSpec { libpath, name: result["name"].as_str().map(|name| name.to_owned()) })
 }
 
+/// Opens the library at `spec.libpath`.
+///
 /// # Safety
 ///
-/// This function loads the dynamically linked library specified in the path. The library
-/// must do necessary initializations.
-///
-/// Returns the slipstream plugin, the dynamic library, and the parsed config file as a `&str`.
-/// (The slipstream plugin interface requires a `&str` for the `on_load` method.)
+/// The library must run its own initialization. The caller owns the returned plugin.
 #[cfg(not(test))]
-pub(crate) fn load_plugin_from_config(
-    slipstream_plugin_config_file: &Path,
-) -> Result<(Library, LoadedSlipstreamPlugin, &str), SlipstreamPluginManagerError> {
-    use std::{fs::File, io::Read, path::PathBuf};
+fn open_plugin(spec: &PluginSpec) -> Result<(Library, LoadedSlipstreamPlugin), SlipstreamPluginManagerError> {
     // Trait objects have no C equivalent; the suppression is intentional — the plugin ABI
     // uses raw pointers and the caller takes ownership immediately via Box::from_raw.
     #[allow(improper_ctypes_definitions)]
     type PluginConstructor = unsafe extern "C" fn() -> *mut dyn SlipstreamPlugin;
     use libloading::Symbol;
 
-    let mut file = match File::open(slipstream_plugin_config_file) {
-        Ok(file) => file,
-        Err(err) => {
-            return Err(SlipstreamPluginManagerError::CannotOpenConfigFile(format!(
-                "Failed to open the plugin config file {slipstream_plugin_config_file:?}, error: {err:?}"
-            )));
-        }
-    };
-
-    let mut contents = String::new();
-    if let Err(err) = file.read_to_string(&mut contents) {
-        return Err(SlipstreamPluginManagerError::CannotReadConfigFile(format!(
-            "Failed to read the plugin config file {slipstream_plugin_config_file:?}, error: {err:?}"
-        )));
-    }
-
-    let result: serde_json::Value = match json5::from_str(&contents) {
-        Ok(value) => value,
-        Err(err) => {
-            return Err(SlipstreamPluginManagerError::InvalidConfigFileFormat(format!(
-                "The config file {slipstream_plugin_config_file:?} is not in a valid Json5 format, error: {err:?}"
-            )));
-        }
-    };
-
-    let libpath = result["libpath"].as_str().ok_or(SlipstreamPluginManagerError::LibPathNotSet)?;
-    let mut libpath = PathBuf::from(libpath);
-    if libpath.is_relative() {
-        let config_dir = slipstream_plugin_config_file.parent().ok_or_else(|| {
-            SlipstreamPluginManagerError::CannotOpenConfigFile(format!(
-                "Failed to resolve parent of {slipstream_plugin_config_file:?}",
-            ))
-        })?;
-        libpath = config_dir.join(libpath);
-    }
-
-    let plugin_name = result["name"].as_str().map(|s| s.to_owned());
-
-    let config_file =
-        slipstream_plugin_config_file.as_os_str().to_str().ok_or(SlipstreamPluginManagerError::InvalidPluginPath)?;
-
     let (plugin, lib) = unsafe {
-        let lib = Library::new(libpath).map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
-        let constructor: Symbol<PluginConstructor> =
-            lib.get(b"_create_plugin").map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
+        let lib = Library::new(&spec.libpath)
+            .map_err(|error| SlipstreamPluginManagerError::PluginLoadError(error.to_string()))?;
+        let constructor: Symbol<PluginConstructor> = lib
+            .get(b"_create_plugin")
+            .map_err(|error| SlipstreamPluginManagerError::PluginLoadError(error.to_string()))?;
         let plugin_raw = constructor();
         if plugin_raw.is_null() {
             return Err(SlipstreamPluginManagerError::PluginLoadError(
@@ -610,38 +588,15 @@ pub(crate) fn load_plugin_from_config(
         }
         (Box::from_raw(plugin_raw), lib)
     };
-    Ok((lib, LoadedSlipstreamPlugin::new(plugin, plugin_name), config_file))
+    Ok((lib, LoadedSlipstreamPlugin::new(plugin, spec.name.clone())))
 }
 
+/// Tests construct an in-process plugin instead of calling `dlopen` on the config's library file.
 #[cfg(test)]
-const TESTPLUGIN_CONFIG: &str = "TESTPLUGIN_CONFIG";
-#[cfg(test)]
-const TESTPLUGIN2_CONFIG: &str = "TESTPLUGIN2_CONFIG";
-
-// In tests resolve_libpath_from_config returns the config path itself as a stand-in for
-// the .so path.  This is sufficient for duplicate detection without real file I/O.
-#[cfg(test)]
-pub(crate) fn resolve_libpath_from_config(
-    slipstream_plugin_config_file: &Path,
-) -> Result<PathBuf, SlipstreamPluginManagerError> {
-    Ok(slipstream_plugin_config_file.to_path_buf())
-}
-
-// This is mocked for tests to avoid having to do IO with a dynamically linked library
-// across different architectures at test time.
-#[cfg(test)]
-pub(crate) fn load_plugin_from_config(
-    slipstream_plugin_config_file: &Path,
-) -> Result<(Library, LoadedSlipstreamPlugin, &str), SlipstreamPluginManagerError> {
-    if slipstream_plugin_config_file.ends_with(TESTPLUGIN_CONFIG) {
-        Ok(tests::dummy_plugin_and_library(tests::TestPlugin, TESTPLUGIN_CONFIG))
-    } else if slipstream_plugin_config_file.ends_with(TESTPLUGIN2_CONFIG) {
-        Ok(tests::dummy_plugin_and_library(tests::TestPlugin2, TESTPLUGIN2_CONFIG))
-    } else {
-        Err(SlipstreamPluginManagerError::CannotOpenConfigFile(
-            slipstream_plugin_config_file.to_str().unwrap().to_string(),
-        ))
-    }
+fn open_plugin(spec: &PluginSpec) -> Result<(Library, LoadedSlipstreamPlugin), SlipstreamPluginManagerError> {
+    let lib = in_process_library()?;
+    let plugin = tests::plugin_for_name(spec.name.as_deref());
+    Ok((lib, LoadedSlipstreamPlugin::new(plugin, spec.name.clone())))
 }
 
 #[cfg(test)]
@@ -651,8 +606,7 @@ mod tests {
         LoadedPlugin,
         LoadedSlipstreamPlugin,
         SlipstreamPluginManager,
-        TESTPLUGIN_CONFIG,
-        TESTPLUGIN2_CONFIG,
+        SlipstreamPluginManagerError,
     };
     use libloading::Library;
     use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::{
@@ -664,6 +618,13 @@ mod tests {
         path::PathBuf,
         sync::{Arc, RwLock},
     };
+
+    pub(super) fn plugin_for_name(name: Option<&str>) -> Box<dyn SlipstreamPlugin> {
+        match name {
+            Some(ANOTHER_DUMMY_NAME) => Box::new(TestPlugin2),
+            _ => Box::new(TestPlugin),
+        }
+    }
 
     pub(super) fn dummy_plugin_and_library<P: SlipstreamPlugin>(
         plugin: P,
@@ -697,6 +658,35 @@ mod tests {
         }
     }
 
+    /// Removes `dir` when the test returns, including on failure.
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(label: &str) -> Self {
+            let nanos =
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+            let dir = std::env::temp_dir().join(format!("slipstream-{label}-{}-{nanos}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn write_plugin_config(dir: &std::path::Path, library_name: &str, config_name: &str, plugin_name: &str) -> PathBuf {
+        let library = dir.join(library_name);
+        if !library.exists() {
+            std::fs::write(&library, b"").unwrap();
+        }
+        let config = dir.join(config_name);
+        std::fs::write(&config, format!("{{ libpath: \"./{library_name}\", name: \"{plugin_name}\" }}\n")).unwrap();
+        config
+    }
+
     #[test]
     fn test_plugin_list() {
         // Initialize empty manager.
@@ -704,7 +694,7 @@ mod tests {
         let plugin_manager_lock = plugin_manager.write().unwrap();
 
         // Load two plugins.
-        let (_lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin, TESTPLUGIN_CONFIG);
+        let (_lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin, "TESTPLUGIN_CONFIG");
         plugin.on_load(config, false).unwrap();
         plugin_manager_lock.plugins.write().unwrap().push(LoadedPlugin {
             plugin,
@@ -712,7 +702,7 @@ mod tests {
             libpath: PathBuf::from(config),
         });
 
-        let (_lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin2, TESTPLUGIN2_CONFIG);
+        let (_lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin2, "TESTPLUGIN2_CONFIG");
         plugin.on_load(config, false).unwrap();
         plugin_manager_lock.plugins.write().unwrap().push(LoadedPlugin {
             plugin,
@@ -732,8 +722,11 @@ mod tests {
         let plugin_manager = Arc::new(RwLock::new(SlipstreamPluginManager::new()));
         let mut plugin_manager_lock = plugin_manager.write().unwrap();
 
+        let dir = TempDir::new("load");
+        let config = write_plugin_config(&dir.0, "plugin.so", "one.json5", DUMMY_NAME);
+
         // Load rpc call.
-        let load_result = plugin_manager_lock.load_plugin(TESTPLUGIN_CONFIG);
+        let load_result = plugin_manager_lock.load_plugin(&config);
         assert!(load_result.is_ok());
         assert_eq!(plugin_manager_lock.plugins.read().unwrap().len(), 1);
 
@@ -741,6 +734,27 @@ mod tests {
         let unload_result = plugin_manager_lock.unload_plugin(DUMMY_NAME);
         assert!(unload_result.is_ok());
         assert_eq!(plugin_manager_lock.plugins.read().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_equivalent_library_paths_load_once() {
+        let dir = TempDir::new("libpath");
+        let first = write_plugin_config(&dir.0, "plugin.so", "first.json5", DUMMY_NAME);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.0.join("plugin.so"), dir.0.join("link.so")).unwrap();
+        #[cfg(unix)]
+        let second = write_plugin_config(&dir.0, "link.so", "second.json5", ANOTHER_DUMMY_NAME);
+        #[cfg(not(unix))]
+        let second = write_plugin_config(&dir.0, "plugin.so", "second.json5", ANOTHER_DUMMY_NAME);
+
+        let mut manager = SlipstreamPluginManager::new();
+        manager.load_plugin(&first).unwrap();
+        // The test creates plugin.so before this call.
+        let canonical = std::fs::canonicalize(dir.0.join("plugin.so")).unwrap();
+        assert_eq!(manager.plugins.read().unwrap()[0].libpath, canonical);
+
+        let error = manager.load_plugin(&second).unwrap_err();
+        assert!(matches!(error, SlipstreamPluginManagerError::PluginAlreadyLoaded(name) if name == DUMMY_NAME));
     }
 
     #[test]
@@ -808,8 +822,12 @@ mod tests {
             }
 
             fn subscribed_events(&self) -> &[BroadcastEventKind] {
-                const EVENTS: &[BroadcastEventKind] =
-                    &[BroadcastEventKind::MappingUpdate, BroadcastEventKind::StakingReward, BroadcastEventKind::Block];
+                const EVENTS: &[BroadcastEventKind] = &[
+                    BroadcastEventKind::MappingUpdate,
+                    BroadcastEventKind::MappingRemoval,
+                    BroadcastEventKind::StakingReward,
+                    BroadcastEventKind::Block,
+                ];
                 EVENTS
             }
 
@@ -829,6 +847,12 @@ mod tests {
             value: b"value",
             block_height: 1,
         });
+        manager.broadcast(BroadcastEvent::MappingRemoval {
+            program_id: b"credits.aleo",
+            mapping_name: b"account",
+            key: Some(b"key"),
+            block_height: 1,
+        });
         manager.broadcast(BroadcastEvent::StakingReward {
             staker: &[0; 32],
             validator: &[1; 32],
@@ -838,9 +862,11 @@ mod tests {
         });
         manager.broadcast(BroadcastEvent::Block { block: b"block", block_height: 1 });
         manager.flush();
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 4);
+        assert!(manager.has_subscribers(BroadcastEventKind::MappingRemoval));
         assert!(manager.has_subscribers(BroadcastEventKind::Block));
         manager.unload_plugin("counting").unwrap();
+        assert!(!manager.has_subscribers(BroadcastEventKind::MappingRemoval));
         assert!(!manager.has_subscribers(BroadcastEventKind::Block));
     }
 

@@ -55,6 +55,30 @@ struct SerializedMappingEntries {
     entries: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
+/// Serialized mapping removal.
+///
+/// `keys` is `None` when the mapping itself is removed. Otherwise it lists removed keys.
+#[cfg(not(target_arch = "wasm32"))]
+struct SerializedMappingRemovals {
+    program_id: Vec<u8>,
+    mapping_name: Vec<u8>,
+    keys: Option<Vec<Vec<u8>>>,
+}
+
+/// Serializes `value` for a slipstream event.
+///
+/// A serialization failure logs a warning and returns `None`.
+#[cfg(not(target_arch = "wasm32"))]
+fn serialize_slipstream_bytes(value: &impl ToBytes, label: &str) -> Option<Vec<u8>> {
+    match value.to_bytes_le() {
+        Ok(bytes) => Some(bytes),
+        Err(_) => {
+            tracing::warn!("Failed to serialize a {label} for slipstream");
+            None
+        }
+    }
+}
+
 /// TODO (howardwu): Remove this.
 /// Returns the mapping ID for the given `program ID` and `mapping name`.
 fn to_mapping_id<N: Network>(program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<Field<N>> {
@@ -558,7 +582,7 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     block_height: Arc<AtomicU32>,
     /// When set, canonical finalize writes credits.aleo history as JSON.
     record_history_json: Arc<AtomicBool>,
-    /// When set, canonical finalize emits mapping updates, staking rewards, and committed blocks.
+    /// When set, canonical finalize emits mapping updates, mapping removals, staking rewards, and committed blocks.
     slipstream: Arc<AtomicBool>,
     /// Set for the duration of canonical finalize.
     /// Mapping and staking events are emitted only while this is set.
@@ -606,7 +630,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         self.slipstream.store(enabled, Ordering::SeqCst);
     }
 
-    /// Returns whether slipstream emits mapping updates, staking rewards, and committed blocks.
+    /// Returns whether slipstream emits mapping updates, mapping removals, staking rewards, and committed blocks.
     pub fn slipstream(&self) -> bool {
         self.slipstream.load(Ordering::SeqCst)
     }
@@ -782,6 +806,124 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         Some(SerializedMappingEntries { program_id, mapping_name, entries: entries_bytes })
     }
 
+    /// Serializes one mapping key when a plugin subscribes to mapping removals.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn capture_mapping_key(
+        &self,
+        program_id: &ProgramID<N>,
+        mapping_name: &Identifier<N>,
+        key: &Plaintext<N>,
+    ) -> Option<SerializedMappingRemovals> {
+        if !self.slipstream_wants(BroadcastEventKind::MappingRemoval) {
+            return None;
+        }
+        let (Some(program_id), Some(mapping_name), Some(key)) = (
+            serialize_slipstream_bytes(program_id, "program ID"),
+            serialize_slipstream_bytes(mapping_name, "mapping name"),
+            serialize_slipstream_bytes(key, "mapping key"),
+        ) else {
+            return None;
+        };
+        Some(SerializedMappingRemovals { program_id, mapping_name, keys: Some(vec![key]) })
+    }
+
+    /// Serializes keys that `entries` does not keep when a plugin subscribes to mapping removals.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn capture_removed_mapping_keys(
+        &self,
+        program_id: &ProgramID<N>,
+        mapping_name: &Identifier<N>,
+        entries: &[(Plaintext<N>, Value<N>)],
+    ) -> Option<SerializedMappingRemovals> {
+        if !self.slipstream_wants(BroadcastEventKind::MappingRemoval) {
+            return None;
+        }
+        let (Some(program_id_bytes), Some(mapping_name_bytes)) = (
+            serialize_slipstream_bytes(program_id, "program ID"),
+            serialize_slipstream_bytes(mapping_name, "mapping name"),
+        ) else {
+            return None;
+        };
+        let old_entries = match self.get_mapping_speculative(*program_id, *mapping_name) {
+            Ok(entries) => entries,
+            Err(_) => {
+                tracing::warn!("Failed to read a mapping before emitting slipstream removals");
+                return None;
+            }
+        };
+        let mut retained = std::collections::HashSet::with_capacity(entries.len());
+        for (key, _) in entries {
+            let bytes = serialize_slipstream_bytes(key, "mapping key")?;
+            retained.insert(bytes);
+        }
+        let mut removed = Vec::new();
+        for (key, _) in &old_entries {
+            if let Some(bytes) = serialize_slipstream_bytes(key, "mapping key")
+                && !retained.contains(&bytes)
+            {
+                removed.push(bytes);
+            }
+        }
+        if removed.is_empty() {
+            return None;
+        }
+        Some(SerializedMappingRemovals {
+            program_id: program_id_bytes,
+            mapping_name: mapping_name_bytes,
+            keys: Some(removed),
+        })
+    }
+
+    /// Serializes a mapping identity when a plugin subscribes to mapping removals.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn capture_removed_mapping(
+        &self,
+        program_id: &ProgramID<N>,
+        mapping_name: &Identifier<N>,
+    ) -> Option<SerializedMappingRemovals> {
+        if !self.slipstream_wants(BroadcastEventKind::MappingRemoval) {
+            return None;
+        }
+        let (Some(program_id), Some(mapping_name)) = (
+            serialize_slipstream_bytes(program_id, "program ID"),
+            serialize_slipstream_bytes(mapping_name, "mapping name"),
+        ) else {
+            return None;
+        };
+        Some(SerializedMappingRemovals { program_id, mapping_name, keys: None })
+    }
+
+    /// Delivers previously serialized mapping removals.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn emit_mapping_removals(&self, plugin_data: Option<SerializedMappingRemovals>) {
+        let Some(data) = plugin_data else {
+            return;
+        };
+        let height = self.block_height().load(Ordering::SeqCst);
+        let guard = self.slipstream_plugin_manager.read();
+        let Some(manager) = guard.as_ref() else {
+            return;
+        };
+        match &data.keys {
+            None => manager.broadcast(BroadcastEvent::MappingRemoval {
+                program_id: &data.program_id,
+                mapping_name: &data.mapping_name,
+                key: None,
+                block_height: height,
+            }),
+            Some(keys) => {
+                for key in keys {
+                    manager.broadcast(BroadcastEvent::MappingRemoval {
+                        program_id: &data.program_id,
+                        mapping_name: &data.mapping_name,
+                        key: Some(key),
+                        block_height: height,
+                    });
+                }
+            }
+        }
+    }
+
     /// Delivers each entry of a previously serialized mapping replacement.
     #[cfg(not(target_arch = "wasm32"))]
     fn emit_mapping_entries(&self, plugin_data: Option<SerializedMappingEntries>) {
@@ -931,7 +1073,14 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         mapping_name: Identifier<N>,
         key: &Plaintext<N>,
     ) -> Result<Option<FinalizeOperation<N>>> {
-        self.storage.remove_key_value(program_id, mapping_name, key)
+        #[cfg(not(target_arch = "wasm32"))]
+        let plugin_data = self.capture_mapping_key(&program_id, &mapping_name, key);
+        let result = self.storage.remove_key_value(program_id, mapping_name, key)?;
+        #[cfg(not(target_arch = "wasm32"))]
+        if result.is_some() {
+            self.emit_mapping_removals(plugin_data);
+        }
+        Ok(result)
     }
 }
 
@@ -955,8 +1104,12 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         entries: Vec<(Plaintext<N>, Value<N>)>,
     ) -> Result<FinalizeOperation<N>> {
         #[cfg(not(target_arch = "wasm32"))]
+        let removed_keys = self.capture_removed_mapping_keys(&program_id, &mapping_name, &entries);
+        #[cfg(not(target_arch = "wasm32"))]
         let plugin_data = self.capture_mapping_entries(&program_id, &mapping_name, &entries);
         let result = self.storage.replace_mapping(program_id, mapping_name, entries)?;
+        #[cfg(not(target_arch = "wasm32"))]
+        self.emit_mapping_removals(removed_keys);
         #[cfg(not(target_arch = "wasm32"))]
         self.emit_mapping_entries(plugin_data);
         Ok(result)
@@ -969,7 +1122,12 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         program_id: ProgramID<N>,
         mapping_name: Identifier<N>,
     ) -> Result<FinalizeOperation<N>> {
-        self.storage.remove_mapping(program_id, mapping_name)
+        #[cfg(not(target_arch = "wasm32"))]
+        let plugin_data = self.capture_removed_mapping(&program_id, &mapping_name);
+        let result = self.storage.remove_mapping(program_id, mapping_name)?;
+        #[cfg(not(target_arch = "wasm32"))]
+        self.emit_mapping_removals(plugin_data);
+        Ok(result)
     }
 
     /// Removes the program for the given `program ID` from storage,
@@ -1310,6 +1468,8 @@ mod tests {
         #[derive(Debug)]
         struct RecordingPlugin {
             events: std::sync::Arc<std::sync::Mutex<Vec<BroadcastEventKind>>>,
+            /// `true` when a mapping removal names a key. `false` when the mapping itself is removed.
+            removal_has_key: std::sync::Arc<std::sync::Mutex<Vec<bool>>>,
         }
 
         impl SlipstreamPlugin for RecordingPlugin {
@@ -1318,14 +1478,21 @@ mod tests {
             }
 
             fn subscribed_events(&self) -> &[BroadcastEventKind] {
-                const EVENTS: &[BroadcastEventKind] =
-                    &[BroadcastEventKind::MappingUpdate, BroadcastEventKind::StakingReward, BroadcastEventKind::Block];
+                const EVENTS: &[BroadcastEventKind] = &[
+                    BroadcastEventKind::MappingUpdate,
+                    BroadcastEventKind::MappingRemoval,
+                    BroadcastEventKind::StakingReward,
+                    BroadcastEventKind::Block,
+                ];
                 EVENTS
             }
 
             fn on_broadcast(&self, event: BroadcastEvent<'_>) -> anyhow::Result<()> {
                 // The test is the only other lock user, and it does not panic while holding the lock.
                 self.events.lock().expect("recording plugin lock is not poisoned").push(event.kind());
+                if let BroadcastEvent::MappingRemoval { key, .. } = event {
+                    self.removal_has_key.lock().expect("recording plugin lock is not poisoned").push(key.is_some());
+                }
                 Ok(())
             }
         }
@@ -1335,8 +1502,14 @@ mod tests {
         assert!(!finalize_store.slipstream());
 
         let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let removal_has_key = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let mut manager = SlipstreamPluginManager::new();
-        manager.install(RecordingPlugin { events: std::sync::Arc::clone(&events) }).unwrap();
+        manager
+            .install(RecordingPlugin {
+                events: std::sync::Arc::clone(&events),
+                removal_has_key: std::sync::Arc::clone(&removal_has_key),
+            })
+            .unwrap();
         finalize_store.set_slipstream_plugin_manager(manager);
         let flush = || finalize_store.slipstream_plugin_manager().read().as_ref().unwrap().flush();
 
@@ -1359,13 +1532,21 @@ mod tests {
 
         finalize_store.is_finalize_mode().store(true, Ordering::SeqCst);
         finalize_store.block_height().store(4, Ordering::SeqCst);
-        finalize_store.update_key_value(program_id, mapping_name, key, value).unwrap();
+        finalize_store.update_key_value(program_id, mapping_name, key.clone(), value).unwrap();
 
         let replacement = vec![
             (Plaintext::from_str("1field").unwrap(), Value::from_str("2u64").unwrap()),
             (Plaintext::from_str("2field").unwrap(), Value::from_str("3u64").unwrap()),
         ];
         finalize_store.replace_mapping(program_id, mapping_name, replacement).unwrap();
+        assert!(
+            finalize_store
+                .remove_key_value(program_id, mapping_name, &Plaintext::from_str("1field").unwrap())
+                .unwrap()
+                .is_some()
+        );
+        assert!(finalize_store.remove_key_value(program_id, mapping_name, &key).unwrap().is_none());
+        finalize_store.remove_mapping(program_id, mapping_name).unwrap();
 
         let staker = Address::<CurrentNetwork>::zero();
         let validator = Address::<CurrentNetwork>::zero();
@@ -1381,6 +1562,7 @@ mod tests {
         // Further writes stay local once the flag is cleared.
         finalize_store.set_slipstream(false);
         finalize_store.is_finalize_mode().store(true, Ordering::SeqCst);
+        finalize_store.initialize_mapping(program_id, mapping_name).unwrap();
         finalize_store
             .update_key_value(
                 program_id,
@@ -1394,11 +1576,15 @@ mod tests {
         let recorded = events.lock().unwrap();
         assert_eq!(recorded.as_slice(), &[
             BroadcastEventKind::MappingUpdate,
+            BroadcastEventKind::MappingRemoval,
             BroadcastEventKind::MappingUpdate,
             BroadcastEventKind::MappingUpdate,
+            BroadcastEventKind::MappingRemoval,
+            BroadcastEventKind::MappingRemoval,
             BroadcastEventKind::StakingReward,
             BroadcastEventKind::Block,
         ]);
+        assert_eq!(removal_has_key.lock().unwrap().as_slice(), &[true, true, false]);
     }
 
     #[test]

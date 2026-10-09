@@ -23,6 +23,7 @@ Defines the `SlipstreamPlugin` trait — the interface all plugins must implemen
 | Event | When it fires |
 |---|---|
 | `MappingUpdate` | A key-value pair is written with `update_key_value` or `replace_mapping` during canonical finalize. |
+| `MappingRemoval` | A key is removed with `remove_key_value`, a key is absent from a `replace_mapping`, or `remove_mapping` removes the mapping. `key` is absent when the whole mapping is removed. Removals for a replacement are emitted before that replacement's updates. |
 | `StakingReward` | A staker's reward is applied during canonical finalize. |
 | `Block` | A block has been committed. `block` is the little-endian encoding of the block. |
 
@@ -47,7 +48,7 @@ Manages loaded plugins and their backing `libloading::Library` handles.
 Each dynamic plugin requires a config file:
 ```json5
 {
-  "libpath": "/path/to/libmy_plugin.so",  // required; relative paths resolve from the config file's dir
+  "libpath": "/path/to/libmy_plugin.so",  // required; relative paths resolve from the config file's dir, then the path is canonicalized
   "name": "my_plugin"                      // optional; overrides the plugin's name() return value
 }
 ```
