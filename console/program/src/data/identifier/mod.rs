@@ -51,7 +51,9 @@ impl<N: Network> Identifier<N> {
 
     /// Returns `true` when this identifier is the `_nonce` member of a record access.
     pub fn is_record_nonce(&self) -> bool {
-        self.to_string() == Self::RECORD_NONCE
+        // `_nonce` is six ASCII bytes, so the field conversion cannot fail.
+        self.1 as usize == Self::RECORD_NONCE.len()
+            && self.0 == Self::record_nonce().expect("`_nonce` fits in an identifier field").0
     }
 }
 
@@ -157,5 +159,17 @@ pub(crate) mod tests {
         assert!(Identifier::<CurrentNetwork>::try_from("123").is_err());
         assert!(Identifier::<CurrentNetwork>::try_from("abc\x08def").is_err());
         assert!(Identifier::<CurrentNetwork>::try_from("abc\u{202a}def").is_err());
+    }
+
+    #[test]
+    fn test_is_record_nonce() -> Result<()> {
+        let nonce = Identifier::<CurrentNetwork>::record_nonce()?;
+        assert!(nonce.is_record_nonce());
+        assert_eq!(nonce.to_string(), "_nonce");
+
+        // `amount` has the same length as `_nonce`.
+        assert!(!Identifier::<CurrentNetwork>::from_str("amount")?.is_record_nonce());
+        assert!(!Identifier::<CurrentNetwork>::from_str("owner")?.is_record_nonce());
+        Ok(())
     }
 }
