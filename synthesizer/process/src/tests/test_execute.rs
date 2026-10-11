@@ -3043,6 +3043,7 @@ function twice:
     .unwrap();
     let error = process.execute::<CurrentAleo, _>(authorization, rng).map(|_| ()).unwrap_err();
     assert!(format!("{error:#}").contains("used 1 of its 2 requests"), "{error:#}");
+}
 
 /// Executes `caller.aleo/main(1u8)`, whose body is `call`, after re-signing its callee request for
 /// `program/function` on `input`, with the given `is_dynamic` flag, by the caller or by `other_signer`.
