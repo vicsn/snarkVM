@@ -16,6 +16,7 @@
 use crate::{
     Authorization,
     CallStack,
+    ExecutionKeyKind,
     InclusionVersion,
     Process,
     Trace,
@@ -26,7 +27,7 @@ use circuit::{Aleo, network::AleoV0};
 use console::{
     account::{Address, PrivateKey, ViewKey},
     network::{MainnetV0, prelude::*},
-    program::{Identifier, Literal, Plaintext, ProgramID, Record, Request, Value, ValueType},
+    program::{DynamicRecord, Identifier, Literal, Plaintext, ProgramID, Record, Request, Value, ValueType},
     types::{Field, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
@@ -43,6 +44,7 @@ use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Progr
 use snarkvm_synthesizer_snark::UniversalSRS;
 
 use aleo_std::StorageMode;
+use indexmap::{IndexMap, IndexSet};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
@@ -3111,6 +3113,8 @@ fn execute_with_resigned_callee(
     (result, holds_key)
 }
 
+/// For a static `call` and a `call.dynamic`, `execute` rejects a callee request with one thing wrong before it creates
+/// any key. A correctly re-signed request is the control: it executes, and its key is created.
 #[test]
 fn test_execute_rejects_mismatched_callee_request() {
     let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name).unwrap().to_field().unwrap();
@@ -3152,4 +3156,219 @@ fn test_execute_rejects_mismatched_callee_request() {
             assert!(!holds_key, "{case}");
         }
     }
+}
+
+/// `caller.aleo/main` makes four dynamic calls, one for each way a record is translated: `token.aleo/mint` outputs a
+/// `coin`, `token.aleo/spend` takes a `note`, `wrapper.aleo/peek` takes an external `ticket`, and `wrapper.aleo/relay`
+/// outputs an external `pass`, which it gets from a static call to `token.aleo/issue`. Each record has its own
+/// translation key, so each way contributes a distinct key.
+#[test]
+fn test_execution_keys_are_the_keys_execute_uses() {
+    let rng = &mut TestRng::default();
+
+    let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name).unwrap().to_field().unwrap();
+    let (token, wrapper, aleo) = (field("token"), field("wrapper"), field("aleo"));
+    let (mint, spend, peek, relay) = (field("mint"), field("spend"), field("peek"), field("relay"));
+    let programs = [
+        r"
+        program token.aleo;
+        record coin: owner as address.private; amount as u64.private;
+        record note: owner as address.private; amount as u64.private;
+        record ticket: owner as address.private; amount as u64.private;
+        record pass: owner as address.private; amount as u64.private;
+        function mint: input r0 as u64.private; cast self.signer r0 into r1 as coin.record; output r1 as coin.record;
+        function issue: input r0 as u64.private; cast self.signer r0 into r1 as pass.record; output r1 as pass.record;
+        function spend: input r0 as note.record; add r0.amount 0u64 into r1; output r1 as u64.private;"
+            .to_string(),
+        r"
+        import token.aleo;
+        program wrapper.aleo;
+        function peek: input r0 as token.aleo/ticket.record; add r0.amount 0u64 into r1; output r1 as u64.private;
+        function relay:
+            input r0 as u64.private;
+            call token.aleo/issue r0 into r1;
+            output r1 as token.aleo/pass.record;"
+            .to_string(),
+        format!(
+            r"
+        program caller.aleo;
+        function main:
+            input r0 as dynamic.record;
+            input r1 as dynamic.record;
+            call.dynamic {token} {aleo} {mint} with 5u64 (as u64.private) into r2 (as dynamic.record);
+            call.dynamic {token} {aleo} {spend} with r0 (as dynamic.record) into r3 (as u64.private);
+            call.dynamic {wrapper} {aleo} {peek} with r1 (as dynamic.record) into r4 (as u64.private);
+            call.dynamic {wrapper} {aleo} {relay} with 7u64 (as u64.private) into r5 (as dynamic.record);
+            output r2 as dynamic.record;"
+        ),
+    ]
+    .map(|source| Program::<CurrentNetwork>::from_str(&source).unwrap());
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    for program in &programs {
+        process.lock().add_program(program).unwrap();
+    }
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let address = Address::try_from(&private_key).unwrap();
+    let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&format!(
+        "{{ owner: {address}.private, amount: 1u64.private, _nonce: 0group.public, _version: 1u8.public }}"
+    ))
+    .unwrap();
+    let input = Value::DynamicRecord(DynamicRecord::from_record(&record).unwrap());
+    let authorization = process
+        .authorize::<CurrentAleo, _>(
+            &private_key,
+            ProgramID::from_str("caller.aleo").unwrap(),
+            Identifier::from_str("main").unwrap(),
+            [input.clone(), input].iter(),
+            rng,
+        )
+        .unwrap();
+
+    let held = || {
+        programs
+            .iter()
+            .flat_map(|program| {
+                let stack = process.get_stack(program.id()).unwrap();
+                program
+                    .functions()
+                    .keys()
+                    .chain(program.records().keys())
+                    .filter(move |name| stack.contains_proving_key(name))
+                    .map(|name| (*program.id(), *name))
+            })
+            .collect::<IndexSet<_>>()
+    };
+    let key = |program: &str, name: &str| (ProgramID::from_str(program).unwrap(), Identifier::from_str(name).unwrap());
+
+    // `authorize_requests` accepts the requests, so `execution_keys` is exact for them.
+    process
+        .get_stack(programs[2].id())
+        .unwrap()
+        .authorize_requests::<CurrentAleo, _>(authorization.to_vec_deque().into(), rng)
+        .unwrap();
+
+    // Every function the authorization runs, and every translated record, is used and missing.
+    let (function, translation) = (ExecutionKeyKind::Function, ExecutionKeyKind::Translation);
+    let expected: IndexMap<_, _> = [
+        (key("caller.aleo", "main"), function),
+        (key("token.aleo", "mint"), function),
+        (key("token.aleo", "coin"), translation),
+        (key("token.aleo", "spend"), function),
+        (key("token.aleo", "note"), translation),
+        (key("wrapper.aleo", "peek"), function),
+        (key("token.aleo", "ticket"), translation),
+        (key("wrapper.aleo", "relay"), function),
+        (key("token.aleo", "issue"), function),
+        (key("token.aleo", "pass"), translation),
+    ]
+    .into_iter()
+    .collect();
+    let flagged = |missing| expected.iter().map(|(key, kind)| (*key, (*kind, missing))).collect::<IndexMap<_, _>>();
+    assert_eq!(process.execution_keys(&authorization).unwrap(), flagged(true));
+
+    // `authorize_requests` accepts a root request flagged dynamic, as `execute` does. A root request has no caller,
+    // so its records are not translated.
+    let dynamic_root = Request::sign(
+        &private_key,
+        ProgramID::from_str("token.aleo").unwrap(),
+        Identifier::from_str("spend").unwrap(),
+        [Value::Record(record)].iter(),
+        &[ValueType::from_str("note.record").unwrap()],
+        None,
+        true,
+        None,
+        true,
+        rng,
+    )
+    .unwrap();
+    process
+        .get_stack(programs[0].id())
+        .unwrap()
+        .authorize_requests::<CurrentAleo, _>(vec![dynamic_root.clone()], rng)
+        .unwrap();
+    let keys_for_root = process.execution_keys(&Authorization::new(dynamic_root)).unwrap();
+    assert_eq!(keys_for_root, IndexMap::from([(key("token.aleo", "spend"), (function, true))]));
+
+    // The missing keys are exactly the keys `execute` inserts.
+    let before = held();
+    process.execute::<CurrentAleo, _>(authorization.replicate(), rng).unwrap();
+    let inserted: IndexSet<_> = held().difference(&before).copied().collect();
+    assert_eq!(inserted, expected.keys().copied().collect::<IndexSet<_>>());
+
+    // Once `execute` has inserted them, every key is still used and none is missing.
+    assert_eq!(process.execution_keys(&authorization).unwrap(), flagged(false));
+
+    // Without its verifying key, a function key is still held, and a translation key is missing.
+    let (main, coin) = (key("caller.aleo", "main"), key("token.aleo", "coin"));
+    process.remove_verifying_key(&main.0, &main.1).unwrap();
+    process.remove_verifying_key(&coin.0, &coin.1).unwrap();
+    let mut expected_keys = flagged(false);
+    expected_keys.insert(coin, (translation, true));
+    assert_eq!(process.execution_keys(&authorization).unwrap(), expected_keys);
+}
+
+/// Same-kind repeats are one entry, a request must name a function, and a record type that now names a function fails.
+#[test]
+fn test_execution_keys_checks_each_key_is_of_its_kind() {
+    let rng = &mut TestRng::default();
+
+    let [token, wrapper, edition_1] = [
+        r"
+        program token.aleo;
+        record pass: owner as address.private; amount as u64.private;
+        function issue: input r0 as u64.private; cast self.signer r0 into r1 as pass.record; output r1 as pass.record;",
+        r"
+        import token.aleo;
+        program wrapper.aleo;
+        function relay:
+            input r0 as u64.private;
+            call token.aleo/issue r0 into r1;
+            output r1 as token.aleo/pass.record;",
+        r"
+        program token.aleo;
+        function pass: input r0 as u64.private; add r0 0u64 into r1; output r1 as u64.private;",
+    ]
+    .map(|source| Program::<CurrentNetwork>::from_str(source).unwrap());
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    process.lock().add_program(&token).unwrap();
+    process.lock().add_program(&wrapper).unwrap();
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let mut request = |program: &str, function: &str, is_dynamic| {
+        Request::sign(
+            &private_key,
+            ProgramID::from_str(program).unwrap(),
+            Identifier::from_str(function).unwrap(),
+            [Value::<CurrentNetwork>::from_str("1u64").unwrap()].iter(),
+            &[ValueType::from_str("u64.private").unwrap()],
+            None,
+            true,
+            None,
+            is_dynamic,
+            rng,
+        )
+        .unwrap()
+    };
+    let key = |program: &str, name: &str| (ProgramID::from_str(program).unwrap(), Identifier::from_str(name).unwrap());
+
+    // A key repeated with the same kind is one entry.
+    let authorization = Authorization::new(request("wrapper.aleo", "relay", false));
+    authorization.push(request("wrapper.aleo", "relay", true)).unwrap();
+    authorization.push(request("wrapper.aleo", "relay", true)).unwrap();
+    let expected = IndexMap::from([
+        (key("wrapper.aleo", "relay"), (ExecutionKeyKind::Function, true)),
+        (key("token.aleo", "pass"), (ExecutionKeyKind::Translation, true)),
+    ]);
+    assert_eq!(process.execution_keys(&authorization).unwrap(), expected);
+
+    let record_as_function = Authorization::new(request("token.aleo", "pass", false));
+    let message = process.execution_keys(&record_as_function).unwrap_err().to_string();
+    assert_eq!(message, "Function 'token.aleo/pass' is not defined.");
+
+    process.lock().add_program_with_edition(&edition_1, 1).unwrap();
+    let message = process.execution_keys(&authorization).unwrap_err().to_string();
+    assert_eq!(message, "Record 'token.aleo/pass' is not defined.");
 }
