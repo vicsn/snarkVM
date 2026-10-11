@@ -652,7 +652,8 @@ impl<N: Network> Process<N> {
     /// record name, each mapped to its [`ExecutionKeyKind`] and whether `execute` needs to synthesize it.
     ///
     /// These are the function key of each request, and the translation key of each record in the inputs and
-    /// outputs of a dynamic callee's function.
+    /// outputs of a dynamic callee's function. The inclusion key is not among them: it is a network parameter, not a
+    /// key a stack holds, and `execute` neither uses nor synthesizes it.
     ///
     /// This takes each request's target and `is_dynamic` flag as given, without checking them against the call that
     /// takes the request. The result is exact for requests that `Stack::authorize_requests` accepts.
