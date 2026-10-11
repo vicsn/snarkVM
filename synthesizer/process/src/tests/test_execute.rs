@@ -3153,3 +3153,58 @@ fn test_execute_rejects_mismatched_callee_request() {
         }
     }
 }
+
+/// For a static `call` and a `call.dynamic`, `authorize_requests` and `execute` both refuse a callee request taken from
+/// another authorization of the same root call on the same inputs.
+#[test]
+fn test_authorize_requests_rejects_callee_request_from_another_root() {
+    let rng = &mut TestRng::default();
+
+    let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name).unwrap().to_field().unwrap();
+    let static_call = "call callee.aleo/f r0 into r1;".to_string();
+    let dynamic_call = format!(
+        "call.dynamic {} {} {} with r0 (as u8.private) into r1 (as u8.private);",
+        field("callee"),
+        field("aleo"),
+        field("f")
+    );
+
+    for call in [static_call, dynamic_call] {
+        let process = Process::<CurrentNetwork>::load().unwrap();
+        for source in [
+            "program callee.aleo; function f: input r0 as u8.private; output r0 as u8.private;".to_string(),
+            format!(
+                "import callee.aleo; program caller.aleo; function main: input r0 as u8.private; {call} output r1 as u8.private;"
+            ),
+        ] {
+            process.lock().add_program(&Program::from_str(&source).unwrap()).unwrap();
+        }
+
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let [honest, other] = [(); 2].map(|_| {
+            process
+                .authorize::<CurrentAleo, _>(
+                    &private_key,
+                    ProgramID::from_str("caller.aleo").unwrap(),
+                    Identifier::from_str("main").unwrap(),
+                    [Value::<CurrentNetwork>::from_str("1u8").unwrap()].iter(),
+                    rng,
+                )
+                .unwrap()
+                .to_vec_deque()
+        });
+        assert_ne!(honest[1].tvk(), other[1].tvk(), "{call}");
+
+        let spliced = Authorization::new(honest[0].clone());
+        spliced.push(other[1].clone()).unwrap();
+
+        let stack = process.get_stack(ProgramID::from_str("caller.aleo").unwrap()).unwrap();
+        stack.authorize_requests::<CurrentAleo, _>(honest.into(), rng).unwrap();
+
+        assert!(process.execute::<CurrentAleo, _>(spliced.replicate(), rng).is_err(), "{call}");
+
+        let result = stack.authorize_requests::<CurrentAleo, _>(spliced.to_vec_deque().into(), rng);
+        let message = format!("{:#}", result.map(|_| ()).map_err(Error::from).expect_err(&call));
+        assert!(message.contains("callee.aleo/f") && message.contains("signer commitment"), "{call}: {message}");
+    }
+}
