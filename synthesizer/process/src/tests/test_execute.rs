@@ -3178,8 +3178,7 @@ fn test_execution_keys_are_the_keys_execute_uses() {
         record pass: owner as address.private; amount as u64.private;
         function mint: input r0 as u64.private; cast self.signer r0 into r1 as coin.record; output r1 as coin.record;
         function issue: input r0 as u64.private; cast self.signer r0 into r1 as pass.record; output r1 as pass.record;
-        function spend: input r0 as note.record; add r0.amount 0u64 into r1; output r1 as u64.private;"
-            .to_string(),
+        function spend: input r0 as note.record; add r0.amount 0u64 into r1; output r1 as u64.private;",
         r"
         import token.aleo;
         program wrapper.aleo;
@@ -3187,8 +3186,7 @@ fn test_execution_keys_are_the_keys_execute_uses() {
         function relay:
             input r0 as u64.private;
             call token.aleo/issue r0 into r1;
-            output r1 as token.aleo/pass.record;"
-            .to_string(),
+            output r1 as token.aleo/pass.record;",
         format!(
             r"
         program caller.aleo;
@@ -3200,9 +3198,10 @@ fn test_execution_keys_are_the_keys_execute_uses() {
             call.dynamic {wrapper} {aleo} {peek} with r1 (as dynamic.record) into r4 (as u64.private);
             call.dynamic {wrapper} {aleo} {relay} with 7u64 (as u64.private) into r5 (as dynamic.record);
             output r2 as dynamic.record;"
-        ),
+        )
+        .as_str(),
     ]
-    .map(|source| Program::<CurrentNetwork>::from_str(&source).unwrap());
+    .map(|source| Program::<CurrentNetwork>::from_str(source).unwrap());
 
     let process = Process::<CurrentNetwork>::load().unwrap();
     for program in &programs {
