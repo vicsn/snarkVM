@@ -661,15 +661,15 @@ impl<N: Network> Process<N> {
     /// `execute` consumes the requests, and clones of an authorization share them. Call this before executing the
     /// authorization or any clone of it.
     ///
-    /// Fails if a request names no function, a translated record type names no record, or a program replaced during
-    /// the call changes a key's kind.
+    /// Fails if a request or a translated record type names a program that is not loaded, a request names no function,
+    /// a translated record type names no record, or a program replaced during the call changes a key's kind.
     #[inline]
     pub fn execution_keys(
         &self,
         authorization: &Authorization<N>,
     ) -> Result<IndexMap<(ProgramID<N>, Identifier<N>), (ExecutionKeyKind, bool)>> {
         let mut keys = IndexMap::new();
-        // Only a program replaced during this call can change a key's kind here.
+        // The bail is unreachable unless a program is replaced during this call without the upgrade checks.
         let mut insert = |key: (ProgramID<N>, Identifier<N>), kind, missing| match keys.insert(key, (kind, missing)) {
             Some((previous, _)) if previous != kind => bail!("'{}/{}' changed kind during this call", key.0, key.1),
             _ => Ok(()),

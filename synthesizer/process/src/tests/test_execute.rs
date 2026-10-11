@@ -3267,8 +3267,8 @@ fn test_execution_keys_are_the_keys_execute_uses() {
     let flagged = |missing| expected.iter().map(|(key, kind)| (*key, (*kind, missing))).collect::<IndexMap<_, _>>();
     assert_eq!(process.execution_keys(&authorization).unwrap(), flagged(true));
 
-    // `authorize_requests` accepts a root request flagged dynamic, as `execute` does. A root request has no caller,
-    // so its records are not translated.
+    // `authorize_requests` accepts a root request flagged dynamic. `execute` accepts it, and translates none of its
+    // records, because a root request has no caller.
     let dynamic_root = Request::sign(
         &private_key,
         ProgramID::from_str("token.aleo").unwrap(),
