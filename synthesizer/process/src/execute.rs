@@ -30,6 +30,10 @@ impl<N: Network> Process<N> {
         let request = authorization.peek_next()?;
         // Construct the locator.
         let locator = Locator::new(*request.program_id(), *request.function_name());
+        // A root request has no caller, so it cannot be dynamic.
+        if request.is_dynamic() {
+            return Err(anyhow!("The root request for '{locator}' is flagged dynamic").into());
+        }
 
         dev_println!("{}", format!(" • Executing '{locator}'...",));
 
