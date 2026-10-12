@@ -3205,6 +3205,61 @@ fn test_execute_rejects_mismatched_callee_request() {
     }
 }
 
+/// For a static `call` and a `call.dynamic`, `authorize_requests` and `execute` both refuse a callee request taken from
+/// another authorization of the same root call on the same inputs.
+#[test]
+fn test_authorize_requests_rejects_callee_request_from_another_root() {
+    let rng = &mut TestRng::default();
+
+    let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name).unwrap().to_field().unwrap();
+    let static_call = "call callee.aleo/f r0 into r1;".to_string();
+    let dynamic_call = format!(
+        "call.dynamic {} {} {} with r0 (as u8.private) into r1 (as u8.private);",
+        field("callee"),
+        field("aleo"),
+        field("f")
+    );
+
+    for call in [static_call, dynamic_call] {
+        let process = Process::<CurrentNetwork>::load().unwrap();
+        for source in [
+            "program callee.aleo; function f: input r0 as u8.private; output r0 as u8.private;".to_string(),
+            format!(
+                "import callee.aleo; program caller.aleo; function main: input r0 as u8.private; {call} output r1 as u8.private;"
+            ),
+        ] {
+            process.lock().add_program(&Program::from_str(&source).unwrap()).unwrap();
+        }
+
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let [honest, other] = [(); 2].map(|_| {
+            process
+                .authorize::<CurrentAleo, _>(
+                    &private_key,
+                    ProgramID::from_str("caller.aleo").unwrap(),
+                    Identifier::from_str("main").unwrap(),
+                    [Value::<CurrentNetwork>::from_str("1u8").unwrap()].iter(),
+                    rng,
+                )
+                .unwrap()
+                .to_vec_deque()
+        });
+        assert_ne!(honest[1].tvk(), other[1].tvk(), "{call}");
+
+        let spliced = Authorization::new(honest[0].clone());
+        spliced.push(other[1].clone()).unwrap();
+
+        let stack = process.get_stack(ProgramID::from_str("caller.aleo").unwrap()).unwrap();
+        stack.authorize_requests::<CurrentAleo, _>(honest.into(), rng).unwrap();
+
+        assert!(process.execute::<CurrentAleo, _>(spliced.replicate(), rng).is_err(), "{call}");
+
+        let result = stack.authorize_requests::<CurrentAleo, _>(spliced.to_vec_deque().into(), rng);
+        let message = format!("{:#}", result.map(|_| ()).map_err(Error::from).expect_err(&call));
+        assert!(message.contains("callee.aleo/f") && message.contains("signer commitment"), "{call}: {message}");
+    }
+}
+
 /// `caller.aleo/main` makes four dynamic calls, one for each way a record is translated: `token.aleo/mint` outputs a
 /// `coin`, `token.aleo/spend` takes a `note`, `wrapper.aleo/peek` takes an external `ticket`, and `wrapper.aleo/relay`
 /// outputs an external `pass`, which it gets from a static call to `token.aleo/issue`. Each record has its own
@@ -3314,8 +3369,7 @@ fn test_execution_keys_are_the_keys_execute_uses() {
     let flagged = |missing| expected.iter().map(|(key, kind)| (*key, (*kind, missing))).collect::<IndexMap<_, _>>();
     assert_eq!(process.execution_keys(&authorization).unwrap(), flagged(true));
 
-    // `authorize_requests` accepts a root request flagged dynamic. `execute` accepts it, and translates none of its
-    // records, because a root request has no caller.
+    // A root request has no caller, so it cannot be flagged dynamic.
     let dynamic_root = Request::sign(
         &private_key,
         ProgramID::from_str("token.aleo").unwrap(),
@@ -3329,13 +3383,13 @@ fn test_execution_keys_are_the_keys_execute_uses() {
         rng,
     )
     .unwrap();
-    process
+    let error = process
         .get_stack(programs[0].id())
         .unwrap()
-        .authorize_requests::<CurrentAleo, _>(vec![dynamic_root.clone()], rng)
-        .unwrap();
-    let keys_for_root = process.execution_keys(&Authorization::new(dynamic_root)).unwrap();
-    assert_eq!(keys_for_root, IndexMap::from([(key("token.aleo", "spend"), (function, true))]));
+        .authorize_requests::<CurrentAleo, _>(vec![dynamic_root], rng)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("root request") && error.contains("flagged dynamic"), "{error}");
 
     // The missing keys are exactly the keys `execute` inserts.
     let before = held();
