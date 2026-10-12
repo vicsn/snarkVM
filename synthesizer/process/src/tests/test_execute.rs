@@ -3045,6 +3045,53 @@ function twice:
     assert!(format!("{error:#}").contains("used 1 of its 2 requests"), "{error:#}");
 }
 
+/// `authorize_requests` and `execute` refuse a root request flagged dynamic, and accept the same request unflagged.
+#[test]
+fn test_authorize_requests_and_execute_reject_dynamic_root() {
+    let rng = &mut TestRng::default();
+
+    let program = Program::<CurrentNetwork>::from_str(
+        "program dynroot.aleo;
+        record token: owner as address.private; amount as u64.private;
+        function mint: input r0 as u64.private; cast self.signer r0 into r1 as token.record; output r1 as token.record;",
+    )
+    .unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    process.lock().add_program(&program).unwrap();
+    let stack = process.get_stack(program.id()).unwrap();
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    for is_dynamic in [false, true] {
+        let root = Request::sign(
+            &private_key,
+            *program.id(),
+            Identifier::from_str("mint").unwrap(),
+            [Value::<CurrentNetwork>::from_str("5u64").unwrap()].iter(),
+            &[ValueType::from_str("u64.private").unwrap()],
+            None,
+            true,
+            None,
+            is_dynamic,
+            rng,
+        )
+        .unwrap();
+
+        let authorized =
+            stack.authorize_requests::<CurrentAleo, _>(vec![root.clone()], rng).map(|_| ()).map_err(Error::from);
+        let executed =
+            process.execute::<CurrentAleo, _>(Authorization::new(root), rng).map(|_| ()).map_err(Error::from);
+        for (name, result) in [("authorize_requests", authorized), ("execute", executed)] {
+            match is_dynamic {
+                false => result.expect(name),
+                true => {
+                    let message = format!("{:#}", result.expect_err(name));
+                    assert!(message.contains("dynroot.aleo/mint") && message.contains("dynamic"), "{name}: {message}");
+                }
+            }
+        }
+    }
+}
+
 /// Executes `caller.aleo/main(1u8)`, whose body is `call`, after re-signing its callee request for
 /// `program/function` on `input`, with the given `is_dynamic` flag, by the caller or by `other_signer`.
 /// Returns the result of `execute`, and whether `twin_a.aleo`, the call's target, then holds any proving key.
