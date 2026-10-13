@@ -340,6 +340,16 @@ impl<N: Network> Stack<N> {
             return Err(anyhow!("No requests provided").into());
         }
 
+        // A root request has no caller, so it cannot be dynamic.
+        if requests[0].is_dynamic() {
+            return Err(anyhow!(
+                "The root request for '{}/{}' is flagged dynamic",
+                requests[0].program_id(),
+                requests[0].function_name()
+            )
+            .into());
+        }
+
         if *requests[0].program_id() != *self.program.id() {
             return Err(anyhow!("Program ID mismatch in 'authorize_requests'").into());
         }

@@ -98,6 +98,32 @@ macro_rules! impl_store_and_remote_fetch {
             Ok(())
         }
 
+        /// Returns an exclusive lock on `<file path>.lock`, waiting while another loader holds it,
+        /// or `None` if the lock is unavailable, e.g. on a filesystem without lock support.
+        #[cfg(all(feature = "filesystem", not(feature = "wasm"), not(target_env = "sgx")))]
+        fn lock_download(file_path: &std::path::Path) -> Option<std::fs::File> {
+            std::fs::create_dir_all(file_path.parent()?).ok()?;
+
+            // The lock file is never removed. Removing it lets a waiter that opened it lock the removed file
+            // while a new loader locks a new one, and both download.
+            let mut lock_path = file_path.as_os_str().to_owned();
+            lock_path.push(".lock");
+            let file = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(lock_path).ok()?;
+            match file.try_lock() {
+                Ok(()) => Some(file),
+                Err(std::fs::TryLockError::WouldBlock) => {
+                    #[cfg(not(feature = "no_std_out"))]
+                    {
+                        use colored::*;
+                        let output = format!("{:>15} - Waiting for a concurrent download of {:?}", "Installation", file_path);
+                        println!("{}", output.dimmed());
+                    }
+                    file.lock().ok().map(|()| file)
+                }
+                Err(std::fs::TryLockError::Error(_)) => None,
+            }
+        }
+
         #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
         fn remote_fetch(buffer: &mut Vec<u8>, url: &str) -> Result<(), $crate::errors::ParameterError> {
             use std::io::Read;
@@ -232,7 +258,15 @@ macro_rules! impl_load_bytes_logic_remote {
                 file_path.push($local_dir);
                 file_path.push($filename);
 
+                // A loader that finds the file missing holds this lock until the file is stored, so the first
+                // downloads it and the rest wait, then read and verify the stored file concurrently.
+                // A download that stalls blocks every waiting loader until the stalled process exits.
+                #[cfg(not(target_env = "sgx"))]
+                let lock = if file_path.exists() { None } else { Self::lock_download(&file_path) };
+
                 let buffer = if file_path.exists() {
+                    #[cfg(not(target_env = "sgx"))]
+                    drop(lock);
                     // Attempts to load the parameter file locally with an absolute path.
                     std::fs::read(&file_path)?
                 } else {
@@ -298,7 +332,9 @@ macro_rules! impl_load_bytes_logic_remote {
                                 return Err(err);
                             }
 
-                            match Self::store_bytes(&buffer, &file_path) {
+                            let stored = Self::store_bytes(&buffer, &file_path);
+                            drop(lock);
+                            match stored {
                                 Ok(()) => buffer,
                                 Err(_) => {
                                     eprintln!(
@@ -330,6 +366,8 @@ macro_rules! impl_load_bytes_logic_remote {
             } else {
                 cfg_if::cfg_if! {
                     if #[cfg(feature = "wasm")] {
+                        // This arm keeps the download in memory and stores no file, so it takes no download lock,
+                        // and concurrent loaders each download the file.
                         // Try each URL in order, falling back to the next if one fails.
                         let remote_urls: &[&str] = &$remote_urls;
                         let mut buffer = vec![];
