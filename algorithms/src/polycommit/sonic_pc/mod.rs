@@ -319,9 +319,6 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         Ok(Self::combine_polynomials(to_combine))
     }
 
-    /// On input a list of labeled polynomials and a query set, `open` outputs a
-    /// proof of evaluation of the polynomials at the points in the query
-    /// set.
     /// `batch_open` over combinations whose polynomials have not been formed.
     ///
     /// Both levels of the opening are linear in the coefficients. A combination
@@ -433,6 +430,9 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         Ok(BatchProof(proofs))
     }
 
+    /// On input a list of labeled polynomials and a query set, `open` outputs a
+    /// proof of evaluation of the polynomials at the points in the query
+    /// set.
     pub fn batch_open<'a>(
         universal_prover: &UniversalProver<E>,
         ck: &CommitterUnionKey<E>,
