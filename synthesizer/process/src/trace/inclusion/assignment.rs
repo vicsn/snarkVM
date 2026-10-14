@@ -68,6 +68,21 @@ impl<N: Network> InclusionAssignment<N> {
     /// [[ serial_number ]] := Commit( commitment || Hash( COFACTOR * gamma ) )
     /// ```
     pub fn to_circuit_assignment<A: circuit::Aleo<Network = N>>(&self) -> Result<circuit::Assignment<N::Field>> {
+        self.to_circuit_assignment_internal::<A>()?;
+
+        Stack::log_circuit::<A>(
+            format_args!("State Path for {}", self.serial_number),
+            "InclusionAssignment".to_string(),
+        );
+
+        // Eject the assignment and reset the circuit environment.
+        Ok(A::eject_assignment_and_reset())
+    }
+
+    /// Constructs the inclusion circuit in `A`, without ejecting the assignment.
+    /// Keeping the constraint system loaded allows tests to inspect circuit satisfaction.
+    /// Note: The caller is responsible for resetting the circuit environment afterwards.
+    pub(crate) fn to_circuit_assignment_internal<A: circuit::Aleo<Network = N>>(&self) -> Result<()> {
         use circuit::Inject;
 
         // Ensure the circuit environment is clean.
@@ -122,12 +137,6 @@ impl<N: Network> InclusionAssignment<N> {
         // Check that the height is valid if the record is from a global state path.
         A::assert(is_global.not().bitor(is_block_height_check_valid))?;
 
-        Stack::log_circuit::<A>(
-            format_args!("State Path for {}", self.serial_number),
-            "InclusionAssignment".to_string(),
-        );
-
-        // Eject the assignment and reset the circuit environment.
-        Ok(A::eject_assignment_and_reset())
+        Ok(())
     }
 }
