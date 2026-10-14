@@ -395,4 +395,24 @@ mod tests {
         assert!(Circuit::is_satisfied());
         Circuit::reset();
     }
+
+    #[test]
+    fn sample_is_equal_private() {
+        Circuit::reset();
+        Circuit::scope("sample_field_is_equal", || {
+            let a = Field::<Circuit>::new(Mode::Private, console::Field::one());
+            let b = Field::<Circuit>::new(Mode::Private, console::Field::one() + console::Field::one());
+            let _ = a.is_equal(&b);
+        });
+    }
+
+    #[test]
+    fn sample_is_not_equal_private() {
+        Circuit::reset();
+        Circuit::scope("sample_field_is_not_equal", || {
+            let a = Field::<Circuit>::new(Mode::Private, console::Field::one());
+            let b = Field::<Circuit>::new(Mode::Private, console::Field::one() + console::Field::one());
+            let _ = a.is_not_equal(&b);
+        });
+    }
 }

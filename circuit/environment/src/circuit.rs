@@ -135,6 +135,8 @@ impl Environment for Circuit {
                     // Run the logic.
                     let output = logic();
 
+                    circuit.borrow().maybe_write_scope_sample();
+
                     // Return the entire environment to the previous scope.
                     if let Err(error) = circuit.borrow_mut().pop_scope(name) {
                         Self::halt(error)
@@ -463,5 +465,56 @@ mod tests {
             assert_eq!(0, Circuit::num_private_in_scope());
             assert_eq!(0, Circuit::num_constraints_in_scope());
         })
+    }
+
+    fn field(value: u64) -> <Circuit as Environment>::BaseField {
+        let mut acc = <Circuit as Environment>::BaseField::zero();
+        let one = <Circuit as Environment>::BaseField::one();
+        for _ in 0..value {
+            acc += one;
+        }
+        acc
+    }
+
+    /// Deterministic samples of the environment constraint primitives.
+    /// `ALEOVM_SAMPLE_DIR` writes one JSON file per scope.
+    #[test]
+    fn sample_enforce() {
+        Circuit::reset();
+        Circuit::scope("sample_enforce", || {
+            let a = Circuit::new_variable(Mode::Private, field(2));
+            let b = Circuit::new_variable(Mode::Private, field(3));
+            let c = Circuit::new_variable(Mode::Private, field(6));
+            Circuit::enforce(|| (a, b, c)).unwrap();
+        });
+    }
+
+    #[test]
+    fn sample_assert() {
+        Circuit::reset();
+        Circuit::scope("sample_assert", || {
+            let b = Circuit::new_variable(Mode::Private, field(1));
+            Circuit::assert(b).unwrap();
+        });
+    }
+
+    #[test]
+    fn sample_assert_eq() {
+        Circuit::reset();
+        Circuit::scope("sample_assert_eq", || {
+            let a = Circuit::new_variable(Mode::Private, field(4));
+            let b = Circuit::new_variable(Mode::Private, field(4));
+            Circuit::assert_eq(a, b).unwrap();
+        });
+    }
+
+    #[test]
+    fn sample_assert_neq() {
+        Circuit::reset();
+        Circuit::scope("sample_assert_neq", || {
+            let a = Circuit::new_variable(Mode::Private, field(4));
+            let b = Circuit::new_variable(Mode::Private, field(5));
+            Circuit::assert_neq(a, b).unwrap();
+        });
     }
 }

@@ -111,6 +111,8 @@ impl Environment for TestnetCircuit {
                     // Run the logic.
                     let output = logic();
 
+                    circuit.borrow().maybe_write_scope_sample();
+
                     // Return the entire environment to the previous scope.
                     if let Err(error) = circuit.borrow_mut().pop_scope(name) {
                         Self::halt(error)

@@ -59,6 +59,46 @@ pub type Scope = String;
 #[cfg(feature = "save_r1cs_hashes")]
 pub static R1CS_HASHES: Mutex<Vec<[u8; 32]>> = Mutex::new(Vec::new());
 
+fn json_escape(text: &str) -> String {
+    let mut out = String::new();
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn sample_file_component(text: &str) -> String {
+    text.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect()
+}
+
+fn lc_sample_json<F: PrimeField>(lc: &LinearCombination<F>) -> String {
+    let mut parts = Vec::new();
+    let constant = lc.to_constant();
+    if !constant.is_zero() {
+        parts.push(format!("[\"ONE\",\"{constant}\"]"));
+    }
+    for (var, coeff) in lc.to_terms() {
+        if coeff.is_zero() {
+            continue;
+        }
+        let name = match var {
+            Variable::Constant(_) => continue,
+            Variable::Public(_) => format!("p{}", var.index()),
+            Variable::Private(_) => format!("w{}", var.index()),
+        };
+        parts.push(format!("[\"{name}\",\"{coeff}\"]"));
+    }
+    format!("[{}]", parts.join(","))
+}
+
+static SAMPLE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 #[derive(Debug, Hash)]
 pub struct R1CS<F: PrimeField> {
     constants: Vec<Variable<F>>,
@@ -244,6 +284,114 @@ impl<F: PrimeField> R1CS<F> {
     /// Returns the constraints in the constraint system.
     pub fn to_constraints(&self) -> &Vec<Arc<Constraint<F>>> {
         &self.constraints
+    }
+
+    /// JSON description of every constraint created in the current scope,
+    /// including constraints created in scopes nested under it.
+    ///
+    /// Variable names are `p<index>` for public variables and `w<index>` for
+    /// private variables.  The additive constant of a linear combination is
+    /// the term `ONE`.  Coefficients and assignment values are decimal strings.
+    pub fn scope_sample_json(&self) -> String {
+        let scope = self.counter.scope();
+        let prefix = format!("{scope}.");
+        let selected: Vec<&Constraint<F>> = self
+            .constraints
+            .iter()
+            .filter(|constraint| {
+                let constraint: &Constraint<F> = constraint;
+                let name = &constraint.0;
+                name == &scope || name.starts_with(&prefix)
+            })
+            .map(|constraint| {
+                let constraint: &Constraint<F> = constraint;
+                constraint
+            })
+            .collect();
+
+        let mut assignment: Vec<(String, String)> = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        let remember = |var: &Variable<F>,
+                        assignment: &mut Vec<(String, String)>,
+                        seen: &mut std::collections::BTreeSet<String>| {
+            let name = match var {
+                Variable::Constant(_) => return,
+                Variable::Public(_) => format!("p{}", var.index()),
+                Variable::Private(_) => format!("w{}", var.index()),
+            };
+            if seen.insert(name.clone()) {
+                assignment.push((name, format!("{}", var.value())));
+            }
+        };
+
+        let mut constraints_json = String::from("[");
+        for (i, constraint) in selected.iter().enumerate() {
+            if i > 0 {
+                constraints_json.push(',');
+            }
+            let (a, b, c) = constraint.to_terms();
+            for lc in [a, b, c] {
+                for (var, _) in lc.to_terms() {
+                    remember(var, &mut assignment, &mut seen);
+                }
+            }
+            let _ = std::fmt::Write::write_fmt(
+                &mut constraints_json,
+                format_args!("{{\"a\":{},\"b\":{},\"c\":{}}}", lc_sample_json(a), lc_sample_json(b), lc_sample_json(c)),
+            );
+        }
+        constraints_json.push(']');
+
+        let mut assignment_json = String::from("{");
+        for (i, (name, value)) in assignment.iter().enumerate() {
+            if i > 0 {
+                assignment_json.push(',');
+            }
+            let _ = std::fmt::Write::write_fmt(&mut assignment_json, format_args!("\"{name}\":\"{value}\""));
+        }
+        assignment_json.push('}');
+
+        let satisfied = selected.iter().all(|constraint| constraint.is_satisfied());
+        let thread = std::thread::current();
+        let test = thread.name().unwrap_or("");
+        format!(
+            "{{\"test\":\"{}\",\"scope\":\"{}\",\"num_constants\":{},\"num_public\":{},\"num_private\":{},\"num_constraints\":{},\"is_satisfied\":{},\"constraints\":{},\"assignment\":{}}}",
+            json_escape(test),
+            json_escape(&scope),
+            self.counter.num_constants_in_scope(),
+            self.counter.num_public_in_scope(),
+            self.counter.num_private_in_scope(),
+            selected.len(),
+            if satisfied { "true" } else { "false" },
+            constraints_json,
+            assignment_json,
+        )
+    }
+
+    /// When `ALEOVM_SAMPLE` is set, print the current scope as one JSON line.
+    /// When `ALEOVM_SAMPLE_DIR` is set, also write that JSON to a file in the directory.
+    pub fn maybe_write_scope_sample(&self) {
+        let dump_stdout = std::env::var_os("ALEOVM_SAMPLE").is_some();
+        let dir = std::env::var("ALEOVM_SAMPLE_DIR").ok();
+        if !dump_stdout && dir.is_none() {
+            return;
+        }
+        let json = self.scope_sample_json();
+        if dump_stdout {
+            println!("ALEOVM_SAMPLE {json}");
+        }
+        if let Some(dir) = dir {
+            let _ = std::fs::create_dir_all(&dir);
+            let seq = SAMPLE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let thread = std::thread::current();
+            let test = thread.name().unwrap_or("unknown");
+            let file = format!(
+                "{dir}/{}-{}-{seq}.json",
+                sample_file_component(test),
+                sample_file_component(&self.counter.scope())
+            );
+            let _ = std::fs::write(file, json);
+        }
     }
 
     /// Register the current hash of the entire R1CS and add

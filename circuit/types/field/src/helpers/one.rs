@@ -69,4 +69,13 @@ mod tests {
         // Should not equal 0.
         assert!(!candidate.is_zero().eject_value());
     }
+
+    #[test]
+    fn sample_is_one_private() {
+        Circuit::reset();
+        Circuit::scope("sample_field_is_one", || {
+            let x = Field::<Circuit>::new(Mode::Private, console::Field::one());
+            let _ = x.is_one();
+        });
+    }
 }

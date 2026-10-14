@@ -432,4 +432,15 @@ mod tests {
         check_true_sub_true_with_false(Mode::Public, Mode::Private, Mode::Private, 0, 0, 5, 5);
         check_true_sub_true_with_true(Mode::Public, Mode::Private, Mode::Private, 0, 0, 5, 5);
     }
+
+    #[test]
+    fn sample_subtractor_private() {
+        Circuit::reset();
+        Circuit::scope("sample_boolean_subtractor", || {
+            let a = Boolean::<Circuit>::new(Mode::Private, true);
+            let b = Boolean::<Circuit>::new(Mode::Private, false);
+            let c = Boolean::<Circuit>::new(Mode::Private, true);
+            let _ = a.subtractor(&b, &c);
+        });
+    }
 }
