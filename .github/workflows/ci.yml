@@ -277,9 +277,9 @@ jobs:
               -E test(/test_command_parse|test_instruction_parse|test_process_execute|test_program_parse|test_vm_execute_and_finalize/)
           - name: synthesizer-program
             runs: |
-              nextest run -p snarkvm-synthesizer-program -j 8 -E !test(/keccak|psd|sha|instruction::is|instruction::equal|instruction::commit/)
+              nextest run -p snarkvm-synthesizer-program -j 8 -E !test(/keccak|psd|sha|instruction::is|instruction::commit/)
               nextest run -p snarkvm-synthesizer-program -j 4 -E test(/keccak|sha/)
-              nextest run -p snarkvm-synthesizer-program -E test(/psd|instruction::is|instruction::equal|instruction::commit/)
+              nextest run -p snarkvm-synthesizer-program -E test(/psd|instruction::is|instruction::commit/)
     name: test (${{ matrix.name }})
     steps: *test-steps
 
