@@ -213,6 +213,7 @@ jobs:
         with:
           name: junit-${{ matrix.name }}
           path: ${{ runner.temp }}/junit
+          overwrite: true
       - uses: actions/cache/save@v6
         if: runner.environment == 'github-hosted' && github.ref == 'refs/heads/staging'
         with: *aleo-resources
