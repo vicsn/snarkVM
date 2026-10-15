@@ -993,10 +993,10 @@ mod tests {
         }
     }
 
-    /// An end of the powers that the SRS does not hold is read as owned points,
-    /// and nothing is downloaded.
+    /// A key whose powers the SRS does not hold does not read, and nothing is
+    /// downloaded.
     #[test]
-    fn reading_with_the_srs_owns_what_it_lacks() {
+    fn reading_with_the_srs_rejects_what_it_lacks() {
         let grown = PC_Bls12_377::load_srs((1 << 16) - 1).unwrap();
         let (ck, _) = PC_Bls12_377::trim(&grown, (1 << 15) + 10, [], 1, Some(&[500])).unwrap();
         let bytes = ck.to_bytes_le().unwrap();
@@ -1004,10 +1004,7 @@ mod tests {
         // A fresh SRS holds the first 2^15 powers, not the key's prefix.
         let fresh = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
         let (before, _) = fresh.shared_powers_of_beta_g(0, 1).unwrap();
-        let read = CommitterKey::<Bls12_377>::read_le_with_srs(&bytes[..], &fresh).unwrap();
-        assert!(matches!(read.powers_of_beta_g, Bases::Owned(_)));
-        assert!(matches!(read.shifted_powers_of_beta_g, Some(Bases::Shared { .. })));
-        assert_eq!(read.to_bytes_le().unwrap(), bytes);
+        assert!(CommitterKey::<Bls12_377>::read_le_with_srs(&bytes[..], &fresh).is_err());
         let (after, _) = fresh.shared_powers_of_beta_g(0, 1).unwrap();
         assert!(std::sync::Arc::ptr_eq(&before, &after), "reading downloaded powers");
     }

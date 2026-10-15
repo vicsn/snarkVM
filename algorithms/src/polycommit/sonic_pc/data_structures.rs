@@ -151,15 +151,15 @@ impl<E: PairingEngine> FromBytes for CommitterKey<E> {
 }
 
 impl<E: PairingEngine> CommitterKey<E> {
-    /// Reads the bytes `read_le` reads, but shares each end of the powers of
-    /// beta G with `srs` when `srs` already holds it, skipping those points in
-    /// `reader`. It never grows `srs`: an end `srs` does not hold is read as
-    /// owned points. Skipped points are never parsed or used: the key's hash
-    /// checks the shared points in their place.
+    /// Reads the bytes `read_le` reads, but shares both ends of the powers of
+    /// beta G with `srs`, skipping those points in `reader`. Skipped points are
+    /// never parsed or used: the key's hash checks the shared points in their
+    /// place.
     ///
-    /// A key shares the snapshot `srs` holds when it is read, so `srs` should
-    /// first be grown to the largest degree it will need: growing it later
-    /// leaves keys read before holding the older snapshot.
+    /// It never grows `srs`, and fails if `srs` does not hold either end.
+    /// A key shares the snapshot `srs` holds when it is read, and growing `srs`
+    /// later leaves that snapshot alive beside the new one. So grow `srs` to
+    /// the largest degree any key needs, then read the keys.
     pub fn read_le_with_srs<R: Read>(reader: R, srs: &UniversalParams<E>) -> io::Result<Self> {
         Self::read_le_sharing(reader, Some(srs))
     }
@@ -173,7 +173,12 @@ impl<E: PairingEngine> CommitterKey<E> {
                 "CommitterKey (from 'read_le') has too many points ({powers_len} > {MAX_NUM_POWERS})"
             )));
         }
-        let held = srs.and_then(|srs| srs.held_shared_powers_of_beta_g(0, powers_len as usize));
+        let held = srs
+            .map(|srs| {
+                srs.held_shared_powers_of_beta_g(0, powers_len as usize)
+                    .ok_or_else(|| error("The SRS does not hold the powers of the committer key"))
+            })
+            .transpose()?;
         let powers_of_beta_g = read_bases(&mut reader, powers_len as usize, held)?;
 
         // Deserialize `lagrange_basis_at_beta`.
@@ -209,11 +214,14 @@ impl<E: PairingEngine> CommitterKey<E> {
                     )));
                 }
                 // The shifted powers are the highest powers of the SRS.
-                let held = srs.and_then(|srs| {
-                    let end = srs.max_degree() + 1;
-                    let start = end.checked_sub(shifted_powers_len as usize)?;
-                    srs.held_shared_powers_of_beta_g(start, end)
-                });
+                let held = srs
+                    .map(|srs| {
+                        let end = srs.max_degree() + 1;
+                        end.checked_sub(shifted_powers_len as usize)
+                            .and_then(|start| srs.held_shared_powers_of_beta_g(start, end))
+                            .ok_or_else(|| error("The SRS does not hold the shifted powers of the committer key"))
+                    })
+                    .transpose()?;
                 Some(read_bases(&mut reader, shifted_powers_len as usize, held)?)
             }
             false => None,
@@ -274,7 +282,10 @@ impl<E: PairingEngine> CommitterKey<E> {
         // Enforce the group elements construct the expected hash. This also
         // checks the points shared with `srs` in place of the skipped ones.
         if key.points_hash()? != expected_hash {
-            return Err(error("Mismatching group elements"));
+            return Err(error(match srs {
+                Some(_) => "Mismatching group elements: the committer key does not match the SRS",
+                None => "Mismatching group elements",
+            }));
         }
         Ok(key)
     }
@@ -355,7 +366,7 @@ fn read_bases<G: AffineCurve, R: Read>(
             }
             Ok(Bases::shared(store, range))
         }
-        _ => {
+        None => {
             let mut points = Vec::with_capacity(len);
             for _ in 0..len {
                 points.push(G::read_le(&mut reader)?);

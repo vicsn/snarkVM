@@ -53,7 +53,7 @@ impl<E: PairingEngine, SM: SNARKMode> FromBytes for CircuitProvingKey<E, SM> {
 
 impl<E: PairingEngine, SM: SNARKMode> CircuitProvingKey<E, SM> {
     /// Reads a key as `read_le` does, but shares its committer key's powers
-    /// with `srs` where `srs` already holds them; see
+    /// with `srs`. Fails if `srs` does not hold them; see
     /// `CommitterKey::read_le_with_srs`.
     pub fn read_le_with_srs<R: Read>(reader: R, srs: &UniversalSRS<E>) -> io::Result<Self> {
         Self::read_le_sharing(reader, Some(srs))

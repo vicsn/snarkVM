@@ -24,17 +24,16 @@ impl<N: Network> FromBytes for ProvingKey<N> {
 
 impl<N: Network> ProvingKey<N> {
     /// Reads a proving key as `read_le` does, but shares its committer key's
-    /// powers with `universal_srs` where it already holds them; see
-    /// `CommitterKey::read_le_with_srs`.
+    /// powers with `universal_srs`. Fails if `universal_srs` does not hold
+    /// them, so grow it to the largest degree any key needs before reading
+    /// keys; see `CommitterKey::read_le_with_srs`.
     pub fn read_le_with_srs<R: Read>(reader: R, universal_srs: &UniversalSRS<N>) -> IoResult<Self> {
         Self::read_le_sharing(reader, Some(universal_srs))
     }
 
-    /// Reads a proving key from bytes; see `read_le_with_srs`. A key whose
-    /// points are not the ones `universal_srs` holds is read in full, owning
-    /// its points, as `from_bytes_le` reads it.
+    /// Reads a proving key from bytes, as `read_le_with_srs` does.
     pub fn from_bytes_le_with_srs(bytes: &[u8], universal_srs: &UniversalSRS<N>) -> Result<Self> {
-        Ok(Self::read_le_with_srs(bytes, universal_srs).or_else(|_| Self::read_le(bytes))?)
+        Ok(Self::read_le_with_srs(bytes, universal_srs)?)
     }
 
     fn read_le_sharing<R: Read>(mut reader: R, universal_srs: Option<&UniversalSRS<N>>) -> IoResult<Self> {
@@ -95,7 +94,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bytes_with_srs_falls_back_to_owned_points() -> Result<()> {
+    fn test_bytes_with_srs_rejects_other_points() -> Result<()> {
         let (proving_key, _) = sample_keys();
         let srs = UniversalSRS::<CurrentNetwork>::load()?;
 
@@ -117,12 +116,9 @@ mod tests {
         };
         let bytes = ProvingKey::<CurrentNetwork>::new(Arc::new(edited)).to_bytes_le()?;
 
-        // Read as a stream, the skipped powers are gone, so the read fails.
-        assert!(ProvingKey::<CurrentNetwork>::read_le_with_srs(&bytes[..], &srs).is_err());
-        // From bytes, the key is read in full instead.
-        let candidate = ProvingKey::<CurrentNetwork>::from_bytes_le_with_srs(&bytes, &srs)?;
-        assert!(matches!(candidate.committer_key.powers_of_beta_g, Bases::Owned(_)));
-        assert_eq!(candidate.to_bytes_le()?, bytes);
+        // The key reads in full, and not with the SRS.
+        assert!(ProvingKey::<CurrentNetwork>::from_bytes_le(&bytes).is_ok());
+        assert!(ProvingKey::<CurrentNetwork>::from_bytes_le_with_srs(&bytes, &srs).is_err());
 
         Ok(())
     }
