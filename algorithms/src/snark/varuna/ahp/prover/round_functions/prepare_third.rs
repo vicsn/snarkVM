@@ -123,8 +123,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             // One Lagrange vector per circuit rather than one per matrix: it depends only
             // on the constraint domain and alpha, both of which are fixed
             // across the jobs below.
+            let lagrange_time = start_timer!(|| "Lagrange coefficients at alpha");
             let l_at_alpha =
                 Arc::new(circuit_specific_state.constraint_domain.evaluate_all_lagrange_coefficients(*alpha));
+            end_timer!(lagrange_time);
 
             // Iterate for each instance in the batch.
             for assignment in assignments_i {
