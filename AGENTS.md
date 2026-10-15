@@ -85,8 +85,8 @@ cargo +nightly-2026-04-02 fmt --check
 cargo test -p <crate>
 ```
 
-Clippy warnings are errors. Formatting requires the nightly `.circleci/config.yml` pins as
-`fmt_nightly` (`cargo +nightly-2026-04-02 fmt --all` to fix) -- `.rustfmt.toml` uses
+Clippy warnings are errors. Formatting requires the nightly `.github/workflows/ci.yml` pins as
+`FMT_TOOLCHAIN` (`cargo +nightly-2026-04-02 fmt --all` to fix) -- `.rustfmt.toml` uses
 nightly-only options, and plain `cargo fmt` drops them silently rather than refusing.
 
 Pre-commit hook runs workspace-wide: `cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo +nightly-2026-04-02 fmt --all -- --check`
