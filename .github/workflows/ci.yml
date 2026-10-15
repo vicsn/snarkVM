@@ -10,6 +10,8 @@ on:
 # new push cancels it. Pushes are grouped by branch and commit instead: a group
 # keeps one pending run and drops the rest, and every merge needs its own
 # verdict, including one commit promoted to several branches.
+permissions: { contents: read }
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || format('{0}-{1}', github.ref, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -246,7 +248,6 @@ jobs:
   # release branch, and on demand.
   test-merge:
     needs: start-cpu-runners
-    permissions: { contents: read, actions: write }
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
     if: github.event_name != 'pull_request'
