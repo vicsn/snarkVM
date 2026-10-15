@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
 
 # A superseded PR run holds a one-slot box the new head is queued behind, so a
-# new push cancels it. Pushes to a branch are grouped by commit instead: a
-# group keeps one pending run and drops the rest, and every merge needs its own
-# verdict.
+# new push cancels it. Pushes are grouped by branch and commit instead: a group
+# keeps one pending run and drops the rest, and every merge needs its own
+# verdict, including one commit promoted to several branches.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || format('{0}-{1}', github.ref, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
