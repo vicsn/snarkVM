@@ -262,9 +262,7 @@ jobs:
               nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
               nextest run -p snarkvm-ledger-block
           - name: parameters
-            runs: |
-              nextest run -p snarkvm-parameters -j 2
-              test -p snarkvm-parameters --features large_params --no-run
+            runs: nextest run -p snarkvm-parameters -j 2
           - name: parameters-uncached
             runs: nextest run -p snarkvm-parameters --run-ignored ignored-only -j 2
           - name: synthesizer-release

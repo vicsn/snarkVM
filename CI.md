@@ -35,7 +35,7 @@ on every event.
 | `fmt` | hosted | all | | `cargo fmt --check` on `FMT_TOOLCHAIN` | `check-fmt` |
 | `deny` | hosted | all | | `cargo deny check` | `check-cargo-deny` |
 | `wasm` | hosted | all | | `wasm-pack test --node` in `wasm` | `wasm` |
-| `lint` | `cpu` | all | 90 | clippy, default and `--all-features`; on release, also `cargo check --release --workspace --all-targets` | `check-clippy`, `check-all-targets` |
+| `lint` | `cpu` | all | 90 | clippy, default and `--all-features`; on release, also `cargo check --release --workspace --all-targets` | `check-clippy`, `check-all-targets`, `parameters-large` |
 | `test (console)` | hosted | all | 90 | `snarkvm-console` and its sub-crates, except `-collections` | `console`, `console-account`, `console-algorithms`, `console-network`, `console-network-environment`, `console-program`, `console-types`, `console-types-address`, `console-types-boolean`, `console-types-field`, `console-types-group`, `console-types-integers`, `console-types-scalar`, `console-types-string` |
 | `test (circuit)` | hosted | all | 90 | `snarkvm-circuit` and its sub-crates, except `-collections`, `-types-integers` and `-program`; then `snarkvm-circuit-environment` | `circuit`, `circuit-account`, `circuit-algorithms`, `circuit-network`, `circuit-types`, `circuit-types-address`, `circuit-types-boolean`, `circuit-types-field`, `circuit-types-group`, `circuit-types-scalar`, `circuit-types-string`, `circuit-environment` |
 | `test (narwhal)` | hosted | all | 90 | `snarkvm-ledger-authority`, `-ledger-committee`, `-ledger-narwhal` and its sub-crates except `-data`, `-ledger-query`, `-synthesizer-snark`, `-curves`, `-fields`, `-utilities`, `-utilities-derives` | `ledger-authority`, `ledger-committee`, `ledger-narwhal`, `ledger-narwhal-batch-certificate`, `ledger-narwhal-batch-header`, `ledger-narwhal-subdag`, `ledger-narwhal-transmission`, `ledger-narwhal-transmission-id`, `ledger-query`, `synthesizer-snark`, `curves`, `fields`, `utilities`, `utilities-derives` |
@@ -46,7 +46,7 @@ on every event.
 | `test (synthesizer-process)` | `cpu` | all | 90 | `snarkvm-synthesizer-process`; then `-synthesizer-program` lib and bins; then `-circuit-program` | `synthesizer-process`, `synthesizer-program`, `circuit-program` |
 | `test (ledger-rocks)` | `cpu` | merge | 90 | `snarkvm-ledger` with `rocks`, release | `ledger-with-rocksdb-partition1`, `ledger-with-rocksdb-partition2` |
 | `test (ledger-merge)` | `cpu` | merge | 90 | the ignored `valid_solutions` tests of `snarkvm-ledger`; the ignored tests of `-ledger-store`; `-ledger-block` | `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
-| `test (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters`; then a build of its tests with `large_params` | `parameters`, `parameters-large` |
+| `test (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters` | `parameters` |
 | `test (parameters-uncached)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-parameters`, in an empty home directory | `parameters-uncached` |
 | `test (synthesizer-release)` | `cpu` | merge | 90 | `snarkvm-synthesizer` lib and bins with `test`, release | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
 | `test (synthesizer-prerelease)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-synthesizer` with `test`; `-synthesizer-process` with `rocks` | `synthesizer-prerelease`, `synthesizer-process-with-rocksdb` |
