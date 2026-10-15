@@ -18,7 +18,7 @@ Jobs run in one of two places:
 
 | Event | Runs |
 |---|---|
-| Pull request | `fmt`, `deny`, `wasm`, `lint`, `test` |
+| Pull request | `fmt`, `deny`, `wasm`, `lint`, `test`, `ci-ok` |
 | Push to `staging`, `canary`, `testnet`, `mainnet`, or manual dispatch | the above, plus `test-merge`, `machete` |
 | Push to `canary`, `testnet`, `mainnet`, or manual dispatch | the above, plus `windows` |
 
@@ -31,6 +31,7 @@ on every event.
 | Job | Runner | Trigger | Timeout (min) | What it runs | CircleCI job |
 |---|---|---|---|---|---|
 | `start-cpu-runners` | hosted | all | | starts fleet boxes | |
+| `ci-ok` | hosted | all | | fails unless every pull-request job above and every `test` entry succeeded; the check to require | |
 | `check-shared-refs` | hosted | all | | checks that each `aleo-labs-protocol/gh-actions` ref is a release tag | |
 | `fmt` | hosted | all | | `cargo fmt --check` on `FMT_TOOLCHAIN` | `check-fmt` |
 | `deny` | hosted | all | | `cargo deny check` | `check-cargo-deny` |
@@ -80,6 +81,8 @@ with the time of each test.
 ## Forks
 
 A fork's pull request runs nothing on the fleet. Every self-hosted job checks
-that the head repository is this one. The fleet's `target/` and sccache
+that the head repository is this one. The hosted jobs, including the hosted
+`test` entries, still run, but `ci-ok` fails, so a fork's change merges only
+after it is pushed to a branch here. The fleet's `target/` and sccache
 persist between jobs, so anyone who can push a branch here can affect later
 builds there. That is the same trust as push access; do not widen the guard.

@@ -122,8 +122,7 @@ jobs:
   # Cheap entries run on free hosted runners, the rest on the fleet.
   test:
     needs: start-cpu-runners
-    permissions: { contents: read, actions: write }
-    runs-on: ${{ matrix.runner }}
+    runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
     if: >-
       github.event.pull_request == null ||
@@ -132,49 +131,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: console
-            runner: ubuntu-latest
-            runs: >-
-              nextest run -p snarkvm-console -p snarkvm-console-account -p snarkvm-console-algorithms
-              -p snarkvm-console-network -p snarkvm-console-network-environment -p snarkvm-console-program
-              -p snarkvm-console-types -p snarkvm-console-types-address -p snarkvm-console-types-boolean
-              -p snarkvm-console-types-field -p snarkvm-console-types-group -p snarkvm-console-types-integers
-              -p snarkvm-console-types-scalar -p snarkvm-console-types-string
-          - name: circuit
-            runner: ubuntu-latest
-            runs: |
-              nextest run -p snarkvm-circuit -p snarkvm-circuit-account -p snarkvm-circuit-algorithms -p snarkvm-circuit-network -p snarkvm-circuit-types -p snarkvm-circuit-types-address -p snarkvm-circuit-types-boolean -p snarkvm-circuit-types-field -p snarkvm-circuit-types-group -p snarkvm-circuit-types-scalar -p snarkvm-circuit-types-string
-              nextest run -p snarkvm-circuit-environment
-          - name: narwhal
-            runner: ubuntu-latest
-            runs: >-
-              nextest run -p snarkvm-ledger-authority -p snarkvm-ledger-committee -p snarkvm-ledger-narwhal
-              -p snarkvm-ledger-narwhal-batch-certificate -p snarkvm-ledger-narwhal-batch-header
-              -p snarkvm-ledger-narwhal-subdag -p snarkvm-ledger-narwhal-transmission
-              -p snarkvm-ledger-narwhal-transmission-id -p snarkvm-ledger-query -p snarkvm-synthesizer-snark
-              -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
           - name: crates
-            runner: [self-hosted, linux, x64, cpu]
             runs: >-
               nextest run -p snarkvm -p snarkvm-algorithms -p snarkvm-circuit-collections
               -p snarkvm-circuit-types-integers -p snarkvm-console-collections
           - name: ledger
-            runner: [self-hosted, linux, x64, cpu]
             runs: |
               nextest run -p snarkvm-ledger
               nextest run -p snarkvm-ledger --features test valid_solutions
           - name: ledger-store
-            runner: [self-hosted, linux, x64, cpu]
             runs: |
               nextest run -p snarkvm-ledger-store --features rocks
               nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test --no-tests fail -E test(test_genesis_commitment_checks_passed_block_tree_root)
               nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers
               nextest run -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch
           - name: synthesizer
-            runner: [self-hosted, linux, x64, cpu]
             runs: nextest run -p snarkvm-synthesizer --lib --bins -j 16
           - name: synthesizer-process
-            runner: [self-hosted, linux, x64, cpu]
             runs: |
               nextest run -p snarkvm-synthesizer-process
               nextest run -p snarkvm-synthesizer-program --lib --bins
@@ -243,6 +216,37 @@ jobs:
       - uses: actions/cache/save@v6
         if: runner.environment == 'github-hosted' && github.ref == 'refs/heads/staging'
         with: *aleo-resources
+
+  # The cheap entries, on hosted runners: they wait for no box, and a fork's
+  # pull request runs them too.
+  test-hosted:
+    permissions: { contents: read, actions: write }
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: console
+            runs: >-
+              nextest run -p snarkvm-console -p snarkvm-console-account -p snarkvm-console-algorithms
+              -p snarkvm-console-network -p snarkvm-console-network-environment -p snarkvm-console-program
+              -p snarkvm-console-types -p snarkvm-console-types-address -p snarkvm-console-types-boolean
+              -p snarkvm-console-types-field -p snarkvm-console-types-group -p snarkvm-console-types-integers
+              -p snarkvm-console-types-scalar -p snarkvm-console-types-string
+          - name: circuit
+            runs: |
+              nextest run -p snarkvm-circuit -p snarkvm-circuit-account -p snarkvm-circuit-algorithms -p snarkvm-circuit-network -p snarkvm-circuit-types -p snarkvm-circuit-types-address -p snarkvm-circuit-types-boolean -p snarkvm-circuit-types-field -p snarkvm-circuit-types-group -p snarkvm-circuit-types-scalar -p snarkvm-circuit-types-string
+              nextest run -p snarkvm-circuit-environment
+          - name: narwhal
+            runs: >-
+              nextest run -p snarkvm-ledger-authority -p snarkvm-ledger-committee -p snarkvm-ledger-narwhal
+              -p snarkvm-ledger-narwhal-batch-certificate -p snarkvm-ledger-narwhal-batch-header
+              -p snarkvm-ledger-narwhal-subdag -p snarkvm-ledger-narwhal-transmission
+              -p snarkvm-ledger-narwhal-transmission-id -p snarkvm-ledger-query -p snarkvm-synthesizer-snark
+              -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+    name: test (${{ matrix.name }})
+    steps: *test-steps
 
   # Slower suites that rarely fail where the PR set passed. On every push to a
   # release branch, and on demand.
@@ -316,3 +320,16 @@ jobs:
         with: { key: '${{ matrix.dir }}' }
       - run: cargo check --examples --benches --tests
         working-directory: ${{ matrix.dir }}
+
+  # The one check to require. A skipped job counts as passing a required check,
+  # and a fleet job is skipped when the boxes fail to start or the pull request
+  # comes from a fork; here anything but success fails.
+  ci-ok:
+    if: always()
+    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -e 'to_entries | map(select(.value.result != "success")) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
