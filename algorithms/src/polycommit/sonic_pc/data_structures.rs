@@ -186,21 +186,14 @@ impl<E: PairingEngine> CommitterKey<E> {
         let mut lagrange_bases_at_beta_g = BTreeMap::new();
         for _ in 0..lagrange_bases_at_beta_len {
             let size: u32 = FromBytes::read_le(&mut reader)?;
-            let mut basis = Vec::with_capacity(size as usize);
-            for _ in 0..size {
-                let power: E::G1Affine = FromBytes::read_le(&mut reader)?;
-                basis.push(power);
-            }
+            let basis = read_bounded(&mut reader, size as usize, "Lagrange basis points")?;
             lagrange_bases_at_beta_g.insert(size as usize, basis);
         }
 
         // Deserialize `powers_of_beta_times_gamma_g`.
         let powers_of_beta_times_gamma_g_len: u32 = FromBytes::read_le(&mut reader)?;
-        let mut powers_of_beta_times_gamma_g = Vec::with_capacity(powers_of_beta_times_gamma_g_len as usize);
-        for _ in 0..powers_of_beta_times_gamma_g_len {
-            let powers_of_g: E::G1Affine = FromBytes::read_le(&mut reader)?;
-            powers_of_beta_times_gamma_g.push(powers_of_g);
-        }
+        let powers_of_beta_times_gamma_g =
+            read_bounded(&mut reader, powers_of_beta_times_gamma_g_len as usize, "hiding points")?;
 
         // Deserialize `shifted_powers_of_beta_g`.
         let has_shifted_powers_of_beta_g: bool = FromBytes::read_le(&mut reader)?;
@@ -241,11 +234,7 @@ impl<E: PairingEngine> CommitterKey<E> {
                     let key: u32 = FromBytes::read_le(&mut reader)?;
 
                     let value_len: u32 = FromBytes::read_le(&mut reader)?;
-                    let mut value = Vec::with_capacity(value_len as usize);
-                    for _ in 0..value_len {
-                        let val: E::G1Affine = FromBytes::read_le(&mut reader)?;
-                        value.push(val);
-                    }
+                    let value = read_bounded(&mut reader, value_len as usize, "shifted hiding points")?;
 
                     shifted_powers_of_beta_times_gamma_g.insert(key as usize, value);
                 }
@@ -260,11 +249,9 @@ impl<E: PairingEngine> CommitterKey<E> {
         let enforced_degree_bounds = match has_enforced_degree_bounds {
             true => {
                 let enforced_degree_bounds_len: u32 = FromBytes::read_le(&mut reader)?;
-                let mut enforced_degree_bounds = Vec::with_capacity(enforced_degree_bounds_len as usize);
-                for _ in 0..enforced_degree_bounds_len {
-                    let enforced_degree_bound: u32 = FromBytes::read_le(&mut reader)?;
-                    enforced_degree_bounds.push(enforced_degree_bound as usize);
-                }
+                let enforced_degree_bounds =
+                    read_bounded::<u32, _>(&mut reader, enforced_degree_bounds_len as usize, "degree bounds")?;
+                let enforced_degree_bounds = enforced_degree_bounds.into_iter().map(|bound| bound as usize).collect();
 
                 Some(enforced_degree_bounds)
             }
@@ -372,14 +359,21 @@ fn read_bases<G: AffineCurve, R: Read>(
             }
             Ok(Bases::shared(store, range))
         }
-        None => {
-            let mut points = Vec::with_capacity(len);
-            for _ in 0..len {
-                points.push(G::read_le(&mut reader)?);
-            }
-            Ok(Bases::Owned(points))
-        }
+        None => read_bounded(&mut reader, len, "points").map(Bases::Owned),
     }
+}
+
+/// Reads `len` values, failing before it allocates if `len` exceeds
+/// `MAX_NUM_POWERS`.
+fn read_bounded<T: FromBytes, R: Read>(mut reader: R, len: usize, what: &str) -> io::Result<Vec<T>> {
+    if len > MAX_NUM_POWERS {
+        return Err(error(format!("CommitterKey (from 'read_le') has too many {what} ({len} > {MAX_NUM_POWERS})")));
+    }
+    let mut values = Vec::with_capacity(len);
+    for _ in 0..len {
+        values.push(T::read_le(&mut reader)?);
+    }
+    Ok(values)
 }
 
 impl<E: PairingEngine> CommitterKey<E> {
