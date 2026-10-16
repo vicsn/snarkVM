@@ -9,11 +9,10 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: merge-into-staging
-  cancel-in-progress: false
+concurrency: merge-into-staging
 
 env:
+  REPO: ${{ github.repository }}
   TARGET: staging
   SOURCES: testnet mainnet
 
@@ -29,7 +28,6 @@ jobs:
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           pending=()
@@ -58,16 +56,13 @@ jobs:
     # The environment admits only runs on staging, so a workflow on any other
     # branch cannot read the app key.
     environment: merge-bot
-    permissions: {}
     strategy:
       fail-fast: false
       matrix:
         source: ${{ fromJSON(needs.check.outputs.sources) }}
     env:
       SOURCE: ${{ matrix.source }}
-      HEAD_BRANCH: ci/merge-${{ matrix.source }}-into-staging
       LABEL: merge-conflict
-      REPO: ${{ github.repository }}
     steps:
       # Pushes and pull requests made with github.token start no workflows, so
       # CI would never run on the pull request. `workflows: write` lets the
@@ -86,6 +81,7 @@ jobs:
         with:
           ref: ${{ env.TARGET }}
           fetch-depth: 0
+          filter: blob:none
           token: ${{ steps.app.outputs.token }}
 
       - name: Merge and open or update the pull request
@@ -98,17 +94,22 @@ jobs:
           git config user.name "$bot"
           git config user.email "$(gh api "users/$APP_SLUG%5Bbot%5D" --jq .id)+$bot@users.noreply.github.com"
 
+          head="ci/merge-$SOURCE-into-$TARGET"
           src=$(git rev-parse "origin/$SOURCE")
-          pr=$(gh pr list --head "$HEAD_BRANCH" --base "$TARGET" --state open --json number --jq '.[0].number // empty')
+          pr=$(gh pr list --head "$head" --base "$TARGET" --state open --json number --jq '.[0].number // empty')
           if [ -n "$pr" ]; then
             # Builds on the branch as people left it, so a pushed conflict
             # resolution is never overwritten.
-            git checkout -B "$HEAD_BRANCH" "origin/$HEAD_BRANCH"
+            base=$head
+            force=()
           else
-            git checkout -B "$HEAD_BRANCH" "origin/$TARGET"
+            # With no open pull request, a branch left by a closed one is replaced.
+            base=$TARGET
+            force=(--force)
           fi
+          git checkout -B "$head" "origin/$base"
           if git merge-base --is-ancestor "$src" HEAD; then
-            echo "$HEAD_BRANCH already contains $SOURCE"
+            echo "$head already contains $SOURCE"
             exit 0
           fi
           new_commits=$(git rev-list "HEAD..$src")
@@ -131,24 +132,16 @@ jobs:
           Committed with these paths unresolved:
           $(printf '    %s\n' "${conflicts[@]}")
           EOF
-          fi
-
-          # Gated before the push: once the branch carries the source, the next
-          # run has nothing to redo.
-          if [ "${#conflicts[@]}" != 0 ]; then
-            gh label create "$LABEL" --color B60205 --description "Committed with unresolved merge conflicts" 2>/dev/null || true
+            # Gated before the push: once the branch carries the source, the
+            # next run has nothing to redo.
+            gh label create "$LABEL" --force --color B60205 --description "Committed with unresolved merge conflicts"
             if [ -n "$pr" ]; then
               gh pr edit "$pr" --add-label "$LABEL"
               gh pr ready "$pr" --undo
             fi
           fi
 
-          if [ -n "$pr" ]; then
-            git push origin "HEAD:refs/heads/$HEAD_BRANCH"
-          else
-            # With no open pull request, a branch left by a closed one is replaced.
-            git push --force origin "HEAD:refs/heads/$HEAD_BRANCH"
-          fi
+          git push "${force[@]}" origin "HEAD:refs/heads/$head"
 
           count=$(wc -l <<< "$new_commits")
           summary="Merges $count new commit(s) from \`$SOURCE\` at ${src:0:9}."
@@ -160,7 +153,7 @@ jobs:
           >
           $(printf "> - \`%s\`\n" "${conflicts[@]}")
           >
-          > To resolve, check out \`$HEAD_BRANCH\`, fix these files, and push the fix as its own commit. Then remove the \`$LABEL\` label and mark the pull request ready for review."
+          > To resolve, check out \`$head\`, fix these files, and push the fix as its own commit. Then remove the \`$LABEL\` label and mark the pull request ready for review."
           fi
 
           if [ -n "$pr" ]; then
@@ -173,7 +166,7 @@ jobs:
           Changes on \`$SOURCE\`: https://github.com/$REPO/compare/$TARGET...$SOURCE
 
           Review is requested from the authors and reviewers of the pull requests these commits came from. When \`$SOURCE\` moves, the workflow merges it into this branch again and never force-pushes, so a resolution pushed here is kept."
-            args=(--head "$HEAD_BRANCH" --base "$TARGET" --title "$subject" --body "$body")
+            args=(--head "$head" --base "$TARGET" --title "$subject" --body "$body")
             if [ "${#conflicts[@]}" != 0 ]; then
               args+=(--draft --label "$LABEL")
             fi
@@ -182,10 +175,8 @@ jobs:
 
           # Authors and reviewers of the merged pull requests behind the new
           # commits, or the commit author where a commit has no pull request.
-          # The open pull request carrying a commit, this one included, is not
-          # one of them. Lookups are best effort, because the branch is already
-          # pushed and the next run has nothing to redo. On failure `gh api`
-          # prints the error body to stdout, so `lookup` drops it.
+          # Lookups are best effort. On failure `gh api` prints the error body
+          # to stdout, so `lookup` drops it.
           lookup() {
             local out
             if out=$(gh api "$@"); then
@@ -197,16 +188,16 @@ jobs:
           prs=()
           reviewers=()
           for sha in $new_commits; do
-            mapfile -t merged < <(lookup "repos/$REPO/commits/$sha/pulls" --jq '.[] | select(.merged_at != null) | .number')
+            mapfile -t merged < <(lookup "repos/$REPO/commits/$sha/pulls" --jq '.[] | select(.merged_at != null) | "\(.number) \(.user.login)"')
             if [ "${#merged[@]}" = 0 ]; then
               reviewers+=("$(lookup "repos/$REPO/commits/$sha" --jq '.author.login // empty')")
             fi
             prs+=("${merged[@]}")
           done
-          for n in $(printf '%s\n' "${prs[@]}" | sort -u); do
-            reviewers+=("$(lookup "repos/$REPO/pulls/$n" --jq .user.login)")
+          while read -r n author; do
+            reviewers+=("$author")
             mapfile -t -O "${#reviewers[@]}" reviewers < <(lookup --paginate "repos/$REPO/pulls/$n/reviews" --jq '.[].user.login')
-          done
+          done < <(printf '%s\n' "${prs[@]}" | sort -u | grep .)
           for login in $(printf '%s\n' "${reviewers[@]}" | grep -v -e '^$' -e '\[bot\]$' | sort -u); do
             gh api "repos/$REPO/pulls/$pr/requested_reviewers" -f "reviewers[]=$login" --silent \
               || echo "::warning::could not request review from $login"
