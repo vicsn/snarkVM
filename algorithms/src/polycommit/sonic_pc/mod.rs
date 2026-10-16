@@ -1059,6 +1059,25 @@ mod tests {
         assert!(CommitterKey::<Bls12_377>::read_le_with_srs(&bytes[..], &pp).is_err());
     }
 
+    /// A hiding length beyond the SRS is rejected before anything is allocated
+    /// for it.
+    #[test]
+    fn reading_rejects_too_many_hiding_powers() {
+        let pp = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
+        let (ck, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        let mut bytes = ck.to_bytes_le().unwrap();
+
+        // The powers and an empty list of Lagrange bases come before the hiding
+        // length.
+        let point = 97;
+        let offset = 4 + 1001 * point + 4;
+        bytes[offset..offset + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        for read in [CommitterKey::<Bls12_377>::read_le(&bytes[..]), CommitterKey::read_le_with_srs(&bytes[..], &pp)] {
+            let err = read.unwrap_err();
+            assert!(err.to_string().contains("too many hiding points"), "{err}");
+        }
+    }
+
     #[test]
     fn test_union_takes_each_array_from_the_key_where_it_is_longest() {
         let pp = PC_Bls12_377::load_srs(32).unwrap();
