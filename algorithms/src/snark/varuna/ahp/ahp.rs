@@ -363,49 +363,55 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             linear_combinations.insert("lineval_sumcheck".into(), lineval_sumcheck);
         }
 
-        let v_K_at_gamma = max_non_zero_domain.evaluate_vanishing_polynomial(gamma);
-
         //  Matrix sumcheck:
-        let mut matrix_sumcheck = LinearCombination::empty("matrix_sumcheck");
+        {
+            let matrix_sumcheck_time = start_timer!(|| "Matrix sumcheck");
+            defer! { end_timer!(matrix_sumcheck_time); }
+            let v_K_at_gamma = max_non_zero_domain.evaluate_vanishing_polynomial(gamma);
+            let mut matrix_sumcheck = LinearCombination::empty("matrix_sumcheck");
 
-        for (i, (&id, state_i)) in state.circuit_specific_states.iter().enumerate() {
-            let v_R_i_at_alpha = state_i.constraint_domain.evaluate_vanishing_polynomial(alpha);
-            let v_C_i_at_beta = state_i.variable_domain.evaluate_vanishing_polynomial(beta);
-            let v_rc = v_R_i_at_alpha * v_C_i_at_beta;
-            let rc = state_i.constraint_domain.size_as_field_element * state_i.variable_domain.size_as_field_element;
+            for (i, (&id, state_i)) in state.circuit_specific_states.iter().enumerate() {
+                let v_R_i_at_alpha = state_i.constraint_domain.evaluate_vanishing_polynomial(alpha);
+                let v_C_i_at_beta = state_i.variable_domain.evaluate_vanishing_polynomial(beta);
+                let v_rc = v_R_i_at_alpha * v_C_i_at_beta;
+                let rc =
+                    state_i.constraint_domain.size_as_field_element * state_i.variable_domain.size_as_field_element;
 
-            let matrices = ["a", "b", "c"];
-            let deltas = [delta_a[i], delta_b[i], delta_c[i]];
-            let non_zero_domains = [&state_i.non_zero_a_domain, &state_i.non_zero_b_domain, &state_i.non_zero_c_domain];
-            let sums = sums_fourth_msg[i].iter();
+                let matrices = ["a", "b", "c"];
+                let deltas = [delta_a[i], delta_b[i], delta_c[i]];
+                let non_zero_domains =
+                    [&state_i.non_zero_a_domain, &state_i.non_zero_b_domain, &state_i.non_zero_c_domain];
+                let sums = sums_fourth_msg[i].iter();
 
-            ensure!(matrices.len() == sums.len());
-            ensure!(matrices.len() == deltas.len());
-            ensure!(matrices.len() == non_zero_domains.len());
-            for (((m, sum), delta), non_zero_domain) in
-                matrices.into_iter().zip_eq(sums).zip_eq(deltas).zip_eq(non_zero_domains)
-            {
-                let selector = selectors
-                    .get(&(max_non_zero_domain.size, non_zero_domain.size, gamma))
-                    .ok_or(anyhow!("Could not find selector at gamma"))?;
-                let label = "g_".to_string() + m;
-                let g_m_label = witness_label(id, &label, 0);
-                let g_m = LinearCombination::new(g_m_label.clone(), [(F::one(), g_m_label)]);
-                let g_m_at_gamma = evals.get_lc_eval(&g_m, gamma)?;
+                ensure!(matrices.len() == sums.len());
+                ensure!(matrices.len() == deltas.len());
+                ensure!(matrices.len() == non_zero_domains.len());
+                for (((m, sum), delta), non_zero_domain) in
+                    matrices.into_iter().zip_eq(sums).zip_eq(deltas).zip_eq(non_zero_domains)
+                {
+                    let selector = selectors
+                        .get(&(max_non_zero_domain.size, non_zero_domain.size, gamma))
+                        .ok_or(anyhow!("Could not find selector at gamma"))?;
+                    let label = "g_".to_string() + m;
+                    let g_m_label = witness_label(id, &label, 0);
+                    let g_m = LinearCombination::new(g_m_label.clone(), [(F::one(), g_m_label)]);
+                    let g_m_at_gamma = evals.get_lc_eval(&g_m, gamma)?;
 
-                let (a_poly, b_poly) = Self::construct_matrix_linear_combinations(evals, id, m, v_rc, challenges, rc)?;
-                let g_m_term = Self::construct_g_m_term(gamma, g_m_at_gamma, sum, *selector, a_poly, b_poly);
+                    let (a_poly, b_poly) =
+                        Self::construct_matrix_linear_combinations(evals, id, m, v_rc, challenges, rc)?;
+                    let g_m_term = Self::construct_g_m_term(gamma, g_m_at_gamma, sum, *selector, a_poly, b_poly);
 
-                matrix_sumcheck += (delta, &g_m_term);
+                    matrix_sumcheck += (delta, &g_m_term);
 
-                linear_combinations.insert(g_m.label.clone(), g_m);
+                    linear_combinations.insert(g_m.label.clone(), g_m);
+                }
             }
+
+            matrix_sumcheck -= &LinearCombination::new("h_2", [(v_K_at_gamma, "h_2")]);
+            debug_assert!(evals.get_lc_eval(&matrix_sumcheck, gamma)?.is_zero());
+
+            linear_combinations.insert("matrix_sumcheck".into(), matrix_sumcheck);
         }
-
-        matrix_sumcheck -= &LinearCombination::new("h_2", [(v_K_at_gamma, "h_2")]);
-        debug_assert!(evals.get_lc_eval(&matrix_sumcheck, gamma)?.is_zero());
-
-        linear_combinations.insert("matrix_sumcheck".into(), matrix_sumcheck);
 
         Ok(linear_combinations)
     }

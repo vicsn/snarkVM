@@ -699,14 +699,18 @@ where
         // Compute the AHP verifier's query set.
         let (query_set, verifier_state) = AHPForR1CS::<_, SM>::verifier_query_set(verifier_state);
         dev_println!("Final challenge gamma: {:?}", verifier_state.gamma);
-        let lc_s = AHPForR1CS::<_, SM>::construct_linear_combinations(
-            &public_inputs,
-            &polynomials,
-            &prover_third_message,
-            &prover_fourth_message,
-            &verifier_state,
-            varuna_version,
-        )?;
+        let lc_s = {
+            let lc_time = start_timer!(|| "Constructing linear combinations");
+            defer! { end_timer!(lc_time); }
+            AHPForR1CS::<_, SM>::construct_linear_combinations(
+                &public_inputs,
+                &polynomials,
+                &prover_third_message,
+                &prover_fourth_message,
+                &verifier_state,
+                varuna_version,
+            )?
+        };
 
         let evaluations = {
             let eval_time = start_timer!(|| "Evaluating linear combinations over query set");
@@ -722,7 +726,9 @@ where
             proof::Evaluations::from_map(&evaluations, batch_sizes.clone())
         };
 
+        let absorb_time = start_timer!(|| "Absorbing evaluations");
         sponge.absorb_nonnative_field_elements(evaluations.to_field_elements());
+        end_timer!(absorb_time);
 
         let pc_proof = SonicKZG10::<E, FS>::open_combinations(
             universal_prover,
@@ -1083,7 +1089,9 @@ where
         let (query_set, verifier_state) = AHPForR1CS::<_, SM>::verifier_query_set(verifier_state);
         end_timer!(query_set_time);
 
+        let absorb_time = start_timer!(|| "Absorbing evaluations");
         sponge.absorb_nonnative_field_elements(proof.evaluations.to_field_elements());
+        end_timer!(absorb_time);
 
         let mut evaluations = Evaluations::new();
 
