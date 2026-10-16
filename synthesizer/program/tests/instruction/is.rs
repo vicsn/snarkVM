@@ -368,17 +368,16 @@ fn test_is_eq_fails() {
     let modes_a = [circuit::Mode::Public, circuit::Mode::Private];
     let modes_b = [circuit::Mode::Public, circuit::Mode::Private];
 
-    for _ in 0..ITERATIONS {
-        let literals_a = sample_literals!(CurrentNetwork, &mut rng);
-        let literals_b = sample_literals!(CurrentNetwork, &mut rng);
-        for literal_a in &literals_a {
-            for literal_b in &literals_b {
-                if literal_a.to_type() != literal_b.to_type() {
-                    for mode_a in &modes_a {
-                        for mode_b in &modes_b {
-                            // Check the operation fails.
-                            check_is_fails(opcode, literal_a, literal_b, mode_a, mode_b);
-                        }
+    // Only the literal types decide the outcome, so one sample covers every pair.
+    let literals_a = sample_literals!(CurrentNetwork, &mut rng);
+    let literals_b = sample_literals!(CurrentNetwork, &mut rng);
+    for literal_a in &literals_a {
+        for literal_b in &literals_b {
+            if literal_a.to_type() != literal_b.to_type() {
+                for mode_a in &modes_a {
+                    for mode_b in &modes_b {
+                        // Check the operation fails.
+                        check_is_fails(opcode, literal_a, literal_b, mode_a, mode_b);
                     }
                 }
             }
@@ -426,17 +425,16 @@ fn test_is_neq_fails() {
     let modes_a = [circuit::Mode::Public, circuit::Mode::Private];
     let modes_b = [circuit::Mode::Public, circuit::Mode::Private];
 
-    for _ in 0..ITERATIONS {
-        let literals_a = sample_literals!(CurrentNetwork, &mut rng);
-        let literals_b = sample_literals!(CurrentNetwork, &mut rng);
-        for literal_a in &literals_a {
-            for literal_b in &literals_b {
-                if literal_a.to_type() != literal_b.to_type() {
-                    for mode_a in &modes_a {
-                        for mode_b in &modes_b {
-                            // Check the operation fails.
-                            check_is_fails(opcode, literal_a, literal_b, mode_a, mode_b);
-                        }
+    // Only the literal types decide the outcome, so one sample covers every pair.
+    let literals_a = sample_literals!(CurrentNetwork, &mut rng);
+    let literals_b = sample_literals!(CurrentNetwork, &mut rng);
+    for literal_a in &literals_a {
+        for literal_b in &literals_b {
+            if literal_a.to_type() != literal_b.to_type() {
+                for mode_a in &modes_a {
+                    for mode_b in &modes_b {
+                        // Check the operation fails.
+                        check_is_fails(opcode, literal_a, literal_b, mode_a, mode_b);
                     }
                 }
             }
