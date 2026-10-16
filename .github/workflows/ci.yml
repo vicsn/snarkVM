@@ -137,7 +137,7 @@ jobs:
           - name: ledger
             runs: |
               nextest run -p snarkvm-ledger
-              nextest run -p snarkvm-ledger --features test valid_solutions
+              nextest run -p snarkvm-ledger --features test --no-tests fail valid_solutions
           - name: ledger-store
             runs: |
               nextest run -p snarkvm-ledger-store --features rocks
@@ -239,12 +239,9 @@ jobs:
               nextest run -p snarkvm-circuit -p snarkvm-circuit-account -p snarkvm-circuit-algorithms -p snarkvm-circuit-network -p snarkvm-circuit-types -p snarkvm-circuit-types-address -p snarkvm-circuit-types-boolean -p snarkvm-circuit-types-field -p snarkvm-circuit-types-group -p snarkvm-circuit-types-scalar -p snarkvm-circuit-types-string
               nextest run -p snarkvm-circuit-environment
           - name: narwhal
-            runs: >-
-              nextest run -p snarkvm-ledger-authority -p snarkvm-ledger-committee -p snarkvm-ledger-narwhal
-              -p snarkvm-ledger-narwhal-batch-certificate -p snarkvm-ledger-narwhal-batch-header
-              -p snarkvm-ledger-narwhal-subdag -p snarkvm-ledger-narwhal-transmission
-              -p snarkvm-ledger-narwhal-transmission-id -p snarkvm-ledger-query -p snarkvm-synthesizer-snark
-              -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+            runs: |
+              nextest run -p snarkvm-ledger-authority -p snarkvm-ledger-committee -p snarkvm-ledger-narwhal -p snarkvm-ledger-narwhal-batch-certificate -p snarkvm-ledger-narwhal-batch-header -p snarkvm-ledger-narwhal-subdag -p snarkvm-ledger-narwhal-transmission -p snarkvm-ledger-narwhal-transmission-id -p snarkvm-ledger-query -p snarkvm-synthesizer-snark -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+              nextest run -p snarkvm-ledger-query --features async
     name: test (${{ matrix.name }})
     steps: *test-steps
 
@@ -263,7 +260,7 @@ jobs:
             runs: nextest run -p snarkvm-ledger --release --features rocks -j 10
           - name: ledger-merge
             runs: |
-              nextest run -p snarkvm-ledger --features test --run-ignored ignored-only valid_solutions
+              nextest run -p snarkvm-ledger --features test --run-ignored ignored-only --no-tests fail valid_solutions
               nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
               nextest run -p snarkvm-ledger-block
           - name: parameters
@@ -277,14 +274,12 @@ jobs:
               nextest run -p snarkvm-synthesizer --features test --run-ignored ignored-only -j 2
               nextest run -p snarkvm-synthesizer-process --features rocks -j 4
           - name: synthesizer-integration
-            runs: >-
-              nextest run -p snarkvm-synthesizer --features test,dev-print -j 4
-              -E test(/test_command_parse|test_instruction_parse|test_process_execute|test_program_parse|test_vm_execute_and_finalize/)
+            runs: nextest run -p snarkvm-synthesizer --features test,dev-print -j 4 -E kind(test)
           - name: synthesizer-program
             runs: |
               nextest run -p snarkvm-synthesizer-program --test lib -j 8 -E !test(/keccak|psd|sha|instruction::is|instruction::commit/)
-              nextest run -p snarkvm-synthesizer-program --test lib -j 4 -E test(/keccak|sha/)
-              nextest run -p snarkvm-synthesizer-program --test lib -E test(/psd|instruction::is|instruction::commit/)
+              nextest run -p snarkvm-synthesizer-program --test lib -j 4 --no-tests fail -E test(/keccak|sha/)
+              nextest run -p snarkvm-synthesizer-program --test lib --no-tests fail -E test(/psd|instruction::is|instruction::commit/)
     name: test (${{ matrix.name }})
     steps: *test-steps
 
