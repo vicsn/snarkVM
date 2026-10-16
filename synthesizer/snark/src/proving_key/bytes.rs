@@ -26,7 +26,8 @@ impl<N: Network> ProvingKey<N> {
     /// Reads a proving key as `read_le` does, but shares its committer key's
     /// powers with `universal_srs`. Fails if `universal_srs` does not hold
     /// them, so grow it to the largest degree any key needs before reading
-    /// keys; see `CommitterKey::read_le_with_srs`.
+    /// keys; see `CommitterKey::read_le_with_srs`. The first use of
+    /// `universal_srs` loads it, and panics if it cannot be loaded.
     pub fn read_le_with_srs<R: Read>(reader: R, universal_srs: &UniversalSRS<N>) -> IoResult<Self> {
         Self::read_le_sharing(reader, Some(universal_srs))
     }

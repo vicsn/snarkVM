@@ -997,14 +997,17 @@ mod tests {
     /// downloaded.
     #[test]
     fn reading_with_the_srs_rejects_what_it_lacks() {
-        let grown = PC_Bls12_377::load_srs((1 << 16) - 1).unwrap();
-        let (ck, _) = PC_Bls12_377::trim(&grown, (1 << 15) + 10, [], 1, Some(&[500])).unwrap();
-        let bytes = ck.to_bytes_le().unwrap();
-
-        // A fresh SRS holds the first 2^15 powers, not the key's prefix.
         let fresh = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
+        let (ck, _) = PC_Bls12_377::trim(&fresh, 1000, [], 1, Some(&[500])).unwrap();
+        let mut bytes = ck.to_bytes_le().unwrap();
+        // A fresh SRS holds the first 2^15 powers, one fewer than the key now
+        // claims. The read fails before it reaches a point.
+        let powers_len: u32 = (1 << 15) + 1;
+        bytes[..4].copy_from_slice(&powers_len.to_le_bytes());
+
         let (before, _) = fresh.shared_powers_of_beta_g(0, 1).unwrap();
-        assert!(CommitterKey::<Bls12_377>::read_le_with_srs(&bytes[..], &fresh).is_err());
+        let err = CommitterKey::<Bls12_377>::read_le_with_srs(&bytes[..], &fresh).unwrap_err();
+        assert!(err.to_string().contains(&powers_len.to_string()), "{err}");
         let (after, _) = fresh.shared_powers_of_beta_g(0, 1).unwrap();
         assert!(std::sync::Arc::ptr_eq(&before, &after), "reading downloaded powers");
     }

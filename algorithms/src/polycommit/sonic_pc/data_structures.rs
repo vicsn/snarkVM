@@ -176,7 +176,7 @@ impl<E: PairingEngine> CommitterKey<E> {
         let held = srs
             .map(|srs| {
                 srs.held_shared_powers_of_beta_g(0, powers_len as usize)
-                    .ok_or_else(|| error("The SRS does not hold the powers of the committer key"))
+                    .ok_or_else(|| error(format!("The SRS does not hold the committer key's {powers_len} powers")))
             })
             .transpose()?;
         let powers_of_beta_g = read_bases(&mut reader, powers_len as usize, held)?;
@@ -219,7 +219,11 @@ impl<E: PairingEngine> CommitterKey<E> {
                         let end = srs.max_degree() + 1;
                         end.checked_sub(shifted_powers_len as usize)
                             .and_then(|start| srs.held_shared_powers_of_beta_g(start, end))
-                            .ok_or_else(|| error("The SRS does not hold the shifted powers of the committer key"))
+                            .ok_or_else(|| {
+                                error(format!(
+                                    "The SRS does not hold the committer key's {shifted_powers_len} shifted powers"
+                                ))
+                            })
                     })
                     .transpose()?;
                 Some(read_bases(&mut reader, shifted_powers_len as usize, held)?)
@@ -283,7 +287,9 @@ impl<E: PairingEngine> CommitterKey<E> {
         // checks the points shared with `srs` in place of the skipped ones.
         if key.points_hash()? != expected_hash {
             return Err(error(match srs {
-                Some(_) => "Mismatching group elements: the committer key does not match the SRS",
+                Some(_) => {
+                    "Mismatching group elements: the committer key does not match the SRS, or its hiding powers are corrupt"
+                }
                 None => "Mismatching group elements",
             }));
         }
