@@ -6,15 +6,14 @@ on:
     branches: [staging, canary, testnet, mainnet]
   workflow_dispatch:
 
-# A superseded PR run holds a one-slot box the new head is queued behind, so a
-# new push cancels it. Pushes are grouped by branch and commit instead: a group
-# keeps one pending run and drops the rest, and every merge needs its own
-# verdict, including one commit promoted to several branches.
 permissions: { contents: read }
 
+# A superseded run holds one-slot boxes the newest commit is queued behind, so
+# a new push to a PR or branch cancels it: only the newest commit on each branch
+# gets a verdict. A manual dispatch is never cancelled.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || format('{0}-{1}', github.ref, github.sha) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 env:
   CARGO_TERM_COLOR: always
