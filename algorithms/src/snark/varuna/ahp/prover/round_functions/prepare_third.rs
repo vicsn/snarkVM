@@ -24,7 +24,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::ExecutionPool;
+use snarkvm_utilities::{ExecutionPool, defer};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -46,6 +46,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         _r: &mut R,
     ) -> Result<(prover::ThirdMessage<F>, prover::State<'a, F, SM>), AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::PrepareThirdRound");
+        defer! { end_timer!(round_time); }
 
         let verifier::FirstMessage { first_round_batch_combiners } = verifier_message;
         let verifier::SecondMessage { alpha, eta_b, eta_c } = verifier_second_message;
@@ -66,8 +67,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             matrix_transposes,
             alpha,
         )?;
-
-        end_timer!(round_time);
 
         Ok((msg, state))
     }
