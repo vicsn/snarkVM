@@ -232,7 +232,7 @@ impl<E: Environment> From<&Group<E>> for LinearCombination<E::BaseField> {
 /// Injects `(x, y)` without `enforce_in_group`, which rejects off-subgroup and off-curve points.
 #[cfg(test)]
 fn inject_unchecked<E: Environment>(x: console::Field<E::Network>, y: console::Field<E::Network>) -> Group<E> {
-    Group { x: Field::new(Mode::Private, x), y: Field::new(Mode::Private, y) }
+    Group::from_xy_coordinates_unchecked(Field::new(Mode::Private, x), Field::new(Mode::Private, y))
 }
 
 /// The identity and the points of order 2 and 4.
