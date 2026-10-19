@@ -137,7 +137,48 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
     const ITERATIONS: u64 = 10;
+
+    /// `pow` over every bit of the exponent, including a constant exponent's leading zeros.
+    fn reference_pow(base: &Field<Circuit>, exponent: &Field<Circuit>) -> Field<Circuit> {
+        let mut output = Field::one();
+        for bit in exponent.to_bits_be() {
+            output = output.square();
+            match exponent.is_constant() {
+                true if bit.eject_value() => output *= base,
+                true => (),
+                false => output = Field::ternary(&bit, &(&output * base), &output),
+            }
+        }
+        output
+    }
+
+    #[test]
+    fn test_pow_matches_reference() {
+        let mut rng = TestRng::default();
+        let mut exponents = [0, 1, 2, 17].map(console::Field::<<Circuit as Environment>::Network>::from_u64).to_vec();
+        exponents.push(-console::Field::one());
+        exponents.extend((0..5).map(|_| console::Field::rand(&mut rng)));
+        let modes = [Mode::Constant, Mode::Public, Mode::Private];
+        let cases = modes.iter().flat_map(|a| modes.iter().map(move |b| (a, b)));
+        for ((mode_a, mode_b), exponent) in cases.flat_map(|modes| exponents.iter().map(move |e| (modes, e))) {
+            let base = Uniform::rand(&mut rng);
+            let run = |pow: fn(&Field<Circuit>, &Field<Circuit>) -> Field<Circuit>| {
+                let (base, exponent) = (Field::new(*mode_a, base), Field::new(*mode_b, *exponent));
+                // The second call reads the exponent's bits from a warm cache.
+                let outputs = [pow(&base, &exponent), pow(&base, &exponent)];
+                let mut hasher = DefaultHasher::new();
+                outputs.iter().for_each(|output| output.linear_combination.hash(&mut hasher));
+                let values = outputs.map(|output| (output.eject_value(), output.eject_mode()));
+                let count = Circuit::count();
+                Circuit::eject_r1cs_and_reset().hash(&mut hasher);
+                (values, count, hasher.finish())
+            };
+            assert_eq!(run(reference_pow), run(|base, exponent| base.pow(exponent)), "{mode_a} ^ {mode_b} {exponent}");
+        }
+    }
 
     fn check_pow(
         name: &str,

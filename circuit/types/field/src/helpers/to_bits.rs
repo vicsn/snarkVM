@@ -18,12 +18,12 @@ use super::*;
 impl<E: Environment> ToBits for Field<E> {
     type Boolean = Boolean<E>;
 
-    /// Outputs the little-endian bit representation of `self` *without* trailing zeros.
+    /// Outputs the little-endian bit representation of `self`, padded to the field's size in bits.
     fn write_bits_le(&self, vec: &mut Vec<Self::Boolean>) {
         (&self).write_bits_le(vec);
     }
 
-    /// Outputs the big-endian bit representation of `self` *without* leading zeros.
+    /// Outputs the big-endian bit representation of `self`, padded to the field's size in bits.
     fn write_bits_be(&self, vec: &mut Vec<Self::Boolean>) {
         (&self).write_bits_be(vec);
     }
@@ -32,7 +32,7 @@ impl<E: Environment> ToBits for Field<E> {
 impl<E: Environment> ToBits for &Field<E> {
     type Boolean = Boolean<E>;
 
-    /// Outputs the unique, minimal little-endian bit representation of `self` *without* trailing zeros.
+    /// Outputs the unique little-endian bit representation of `self`, padded to the field's size in bits.
     fn write_bits_le(&self, vec: &mut Vec<Self::Boolean>) {
         // Compute the bits of the field value.
         let bits = self.bits_le.get_or_init(|| {
@@ -54,7 +54,7 @@ impl<E: Environment> ToBits for &Field<E> {
         vec.extend_from_slice(bits)
     }
 
-    /// Outputs the unique, minimal big-endian bit representation of `self` *without* leading zeros.
+    /// Outputs the unique big-endian bit representation of `self`, padded to the field's size in bits.
     fn write_bits_be(&self, vec: &mut Vec<Self::Boolean>) {
         let initial_len = vec.len();
         self.write_bits_le(vec);
@@ -63,7 +63,7 @@ impl<E: Environment> ToBits for &Field<E> {
 }
 
 impl<E: Environment> Field<E> {
-    /// Outputs a non-unique little-endian bit representation of `self` *without* trailing zeros.
+    /// Outputs a non-unique little-endian bit representation of `self`, padded to the field's size in bits.
     ///
     /// The bits are only constrained to reconstruct `self` modulo the modulus, so a
     /// prover may assign the bits of `self + modulus` when they fit in `n` bits.
