@@ -699,12 +699,13 @@ where
         // Compute the AHP verifier's query set.
         let (query_set, verifier_state) = AHPForR1CS::<_, SM>::verifier_query_set(verifier_state);
         dev_println!("Final challenge gamma: {:?}", verifier_state.gamma);
+        let memoized = MemoizedEvaluations { inner: &polynomials, memo: Default::default() };
         let lc_s = {
             let lc_time = start_timer!(|| "Constructing linear combinations");
             defer! { end_timer!(lc_time); }
             AHPForR1CS::<_, SM>::construct_linear_combinations(
                 &public_inputs,
-                &polynomials,
+                &memoized,
                 &prover_third_message,
                 &prover_fourth_message,
                 &verifier_state,
@@ -719,7 +720,7 @@ where
             for (label, (_, point)) in query_set.to_set() {
                 if !AHPForR1CS::<E::Fr, SM>::LC_WITH_ZERO_EVAL.contains(&label.as_str()) {
                     let lc = lc_s.get(&label).ok_or_else(|| AHPError::MissingEval(label.to_string()))?;
-                    let evaluation = polynomials.get_lc_eval(lc, point)?;
+                    let evaluation = memoized.get_lc_eval(lc, point)?;
                     evaluations.insert(label, evaluation);
                 }
             }
@@ -1149,5 +1150,29 @@ where
         }
 
         Ok(evaluations_are_correct & proof_has_correct_zk_mode)
+    }
+}
+
+/// Memoizes the wrapped provider's evaluations by label and point, so distinct
+/// linear combinations must not share a label.
+#[derive(Debug)]
+struct MemoizedEvaluations<'a, F: PrimeField, E> {
+    inner: &'a E,
+    memo: std::cell::RefCell<Evaluations<F>>,
+}
+
+impl<F: PrimeField, E: EvaluationsProvider<F>> EvaluationsProvider<F> for MemoizedEvaluations<'_, F, E> {
+    fn get_lc_eval(&self, lc: &crate::polycommit::sonic_pc::LinearCombination<F>, point: F) -> Result<F> {
+        let key = (lc.label.clone(), point);
+        if let Some(eval) = self.memo.borrow().get(&key).copied() {
+            return Ok(eval);
+        }
+        let eval = self.inner.get_lc_eval(lc, point)?;
+        self.memo.borrow_mut().insert(key, eval);
+        Ok(eval)
+    }
+
+    fn has_lc_eval(&self, lc: &crate::polycommit::sonic_pc::LinearCombination<F>, point: F) -> bool {
+        self.inner.has_lc_eval(lc, point)
     }
 }
