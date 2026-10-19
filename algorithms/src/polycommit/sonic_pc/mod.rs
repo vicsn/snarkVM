@@ -869,7 +869,6 @@ mod tests {
     use super::{Bases, CommitterKey, CommitterUnionKey, SonicKZG10};
     use crate::{crypto_hash::PoseidonSponge, polycommit::test_templates::*};
     use snarkvm_curves::bls12_377::{Bls12_377, Fq};
-    use snarkvm_parameters::mainnet::PowersFile;
     use snarkvm_utilities::{FromBytes, ToBytes, rand::TestRng};
 
     use itertools::Itertools;
@@ -877,20 +876,6 @@ mod tests {
 
     type Sponge = PoseidonSponge<Fq, 2, 1>;
     type PC_Bls12_377 = SonicKZG10<Bls12_377, Sponge>;
-
-    /// The bytes of `file`. Without `filesystem`, they are read from
-    /// `~/.aleo/resources`, where a test run with `filesystem` leaves them.
-    fn cached_file_bytes(file: &PowersFile) -> Vec<u8> {
-        #[cfg(feature = "filesystem")]
-        return snarkvm_parameters::mainnet::default_load_powers_file_sync(file).unwrap();
-        #[cfg(not(feature = "filesystem"))]
-        {
-            let path =
-                std::path::Path::new(&std::env::var_os("HOME").unwrap()).join(".aleo/resources").join(file.name());
-            std::fs::read(&path)
-                .unwrap_or_else(|error| panic!("Run the tests with `filesystem` first: {path:?}: {error}"))
-        }
-    }
 
     #[test]
     fn test_committer_key_serialization() {

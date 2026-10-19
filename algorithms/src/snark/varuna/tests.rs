@@ -941,11 +941,8 @@ mod varuna_hiding {
         let error = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap_err();
         assert_eq!(error.downcast_ref::<MissingPowers>().map(|missing| &missing.files), Some(&files));
 
-        for file in files {
-            let path =
-                std::path::Path::new(&std::env::var_os("HOME").unwrap()).join(".aleo/resources").join(file.name());
-            // A test run with `filesystem` leaves the file there.
-            universal_srs.add_powers_file(&file, &*std::fs::read(path).unwrap()).unwrap();
+        for file in &files {
+            universal_srs.add_powers_file(file, &*crate::polycommit::test_templates::cached_file_bytes(file)).unwrap();
         }
         VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
     }
