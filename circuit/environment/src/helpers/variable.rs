@@ -120,7 +120,7 @@ impl<F: PrimeField> Ord for Variable<F> {
             (Self::Public(..), Self::Constant(..)) => Ordering::Greater,
             (Self::Private(..), Self::Constant(..)) => Ordering::Greater,
             (Self::Public(a), Self::Public(b)) | (Self::Private(a), Self::Private(b)) => {
-                // `a.cmp(b)` orders the same, but `Fp256::cmp` leaves Montgomery form on both sides of every equal hit.
+                // `a.cmp(b)` orders the same, but `F::cmp` takes both sides out of Montgomery form, even when equal.
                 a.0.cmp(&b.0).then_with(|| if a.1 == b.1 { Ordering::Equal } else { a.1.cmp(&b.1) })
             }
             (Self::Public(..), Self::Private(..)) => Ordering::Less,
