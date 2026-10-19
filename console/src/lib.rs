@@ -43,5 +43,5 @@ pub mod prelude {
     pub use crate::network::prelude::*;
 }
 
-#[cfg(all(feature = "filesystem", any(target_arch = "wasm32", target_arch = "wasm64")))]
-compile_error!("Filesystem feature is not supported on wasm32 or wasm64");
+#[cfg(all(feature = "filesystem", target_family = "wasm"))]
+compile_error!("Filesystem feature is not supported on wasm targets");
