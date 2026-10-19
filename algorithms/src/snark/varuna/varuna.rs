@@ -45,7 +45,6 @@ use crate::{
 };
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
-use snarkvm_parameters::mainnet::MissingPowers;
 use snarkvm_utilities::{ToBytes, defer, dev_eprintln, dev_println, to_bytes_le};
 
 use anyhow::{Result, anyhow, bail, ensure};
@@ -84,14 +83,6 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
             let mut indexed_circuit = AHPForR1CS::<_, SM>::index(*circuit)?;
             // TODO: Add check that c is in the correct mode.
             let max_degree = indexed_circuit.max_degree()?;
-            // Ensure the universal SRS supports the circuit size. An SRS that
-            // downloads nothing leaves its `MissingPowers` to `trim`, which names
-            // every file the circuit needs.
-            if let Err(e) = universal_srs.download_powers_for(0..max_degree)
-                && !e.is::<MissingPowers>()
-            {
-                return Err(anyhow!("Failed to download powers for degree {max_degree}: {e}"));
-            }
             let coefficient_support = AHPForR1CS::<E::Fr, SM>::get_degree_bounds(&indexed_circuit.index_info)?;
 
             // Varuna only needs degree 2 random polynomials.

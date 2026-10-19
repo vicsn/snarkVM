@@ -24,7 +24,6 @@ use hashbrown::HashMap;
 use itertools::Itertools;
 use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{One, Zero};
-use snarkvm_parameters::mainnet::MissingPowers;
 use snarkvm_utilities::defer;
 
 use anyhow::{Result, bail, ensure};
@@ -121,27 +120,12 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             );
         }
 
-        // Every prefix download before anything is shared: a later one would
-        // replace a snapshot this key already shared, which the key would then
-        // keep alive after the SRS moved on. The suffix is downloaded, and shared,
-        // below, and touches only the suffix.
-        let downloaded = pp
-            .download_powers_for(0..supported_degree + 1)
-            .and_then(|()| supported_lagrange_sizes.iter().try_for_each(|&size| pp.download_powers_for(0..size)));
-        if let Err(error) = downloaded {
-            if !error.is::<MissingPowers>() {
-                return Err(error);
-            }
-            // An SRS that downloads nothing names the files of every range this
-            // call needs. The prefix range passed its bound check, so no degree
-            // bound exceeds `max_degree`.
-            let prefix_end = supported_lagrange_sizes.iter().fold(supported_degree + 1, |end, &size| end.max(size));
-            let mut files = pp.missing_files_for(0..prefix_end)?;
-            if let Some([.., highest_enforced_degree_bound]) = enforced_degree_bounds.as_deref() {
-                files.extend(pp.missing_files_for(max_degree - highest_enforced_degree_bound..max_degree + 1)?);
-            }
-            bail!(MissingPowers { files });
-        }
+        // Both ends are downloaded before anything is shared: a later download
+        // would replace a snapshot this key already shared, which the key would
+        // then keep alive after the SRS moved on.
+        let prefix = supported_lagrange_sizes.iter().fold(supported_degree + 1, |end, &size| end.max(size));
+        let suffix = enforced_degree_bounds.as_deref().and_then(|bounds| bounds.last()).map_or(0, |bound| bound + 1);
+        pp.download_powers_for_ends(prefix, suffix)?;
 
         let (shifted_powers_of_beta_g, shifted_powers_of_beta_times_gamma_g) = match enforced_degree_bounds.as_deref() {
             // The bounds are sorted, so the last is the highest.

@@ -309,13 +309,25 @@ impl<E: PairingEngine> PowersOfG<E> {
             return Ok(());
         }
         ensure!(range.end <= MAX_NUM_POWERS, "Upper bound must be less than the maximum number of powers");
-        self.powers_of_beta_g.write().download_powers_for(&range)
+        self.powers_of_beta_g.write().download_powers_for(&[range])
+    }
+
+    /// Downloads the first `prefix` and the last `suffix` powers of beta G. On a
+    /// native build without `filesystem`, it downloads nothing, and returns one
+    /// `MissingPowers` naming the files of both.
+    pub fn download_powers_for_ends(&self, prefix: usize, suffix: usize) -> Result<()> {
+        ensure!(prefix.max(suffix) <= MAX_NUM_POWERS, "Upper bound must be less than the maximum number of powers");
+        let ranges = [0..prefix, MAX_NUM_POWERS - suffix..MAX_NUM_POWERS];
+        if self.powers_of_beta_g.read().missing_files_for(&ranges)?.is_empty() {
+            return Ok(());
+        }
+        self.powers_of_beta_g.write().download_powers_for(&ranges)
     }
 
     /// The files this SRS still needs to hold `range`, in the order `add_powers_file` accepts them.
     /// An embedded file is never listed.
     pub fn missing_files_for(&self, range: Range<usize>) -> Result<Vec<PowersFile>> {
-        self.powers_of_beta_g.read().missing_files_for(&range)
+        self.powers_of_beta_g.read().missing_files_for(&[range])
     }
 
     /// Reads `file` from `reader`, checks its size and checksum, and appends its
@@ -489,11 +501,11 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         Ok(&store[within])
     }
 
-    /// Downloads the files that `missing_files_for` lists for `range`. On a
+    /// Downloads the files that `missing_files_for` lists for `ranges`. On a
     /// native build without `filesystem`, it downloads nothing, and returns
     /// `MissingPowers` naming them.
-    pub fn download_powers_for(&mut self, range: &Range<usize>) -> Result<()> {
-        let files = self.missing_files_for(range)?;
+    pub fn download_powers_for(&mut self, ranges: &[Range<usize>]) -> Result<()> {
+        let files = self.missing_files_for(ranges)?;
         #[cfg(not(any(feature = "filesystem", feature = "wasm")))]
         {
             ensure!(files.is_empty(), MissingPowers { files });
@@ -519,22 +531,25 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         Ok(())
     }
 
-    /// The files `download_powers_for` fetches to hold `range`, in the order
+    /// The files `download_powers_for` fetches to hold `ranges`, in the order
     /// `extend` accepts them: prefix files upward, then shifted files downward
     /// from the top.
-    fn missing_files_for(&self, range: &Range<usize>) -> Result<Vec<PowersFile>> {
+    fn missing_files_for(&self, ranges: &[Range<usize>]) -> Result<Vec<PowersFile>> {
         let half_max = MAX_NUM_POWERS / 2;
         let (held, held_shifted) = (self.powers_of_beta_g.len(), self.shifted_powers_of_beta_g.len());
         let (mut target, mut target_shifted) = (held, held_shifted);
         let shifted_start = MAX_NUM_POWERS - held_shifted;
-        if !range.is_empty() && range.end > held && !(range.start >= shifted_start && range.end <= MAX_NUM_POWERS) {
+        for range in ranges {
+            if range.is_empty() || range.end <= held || (range.start >= shifted_start && range.end <= MAX_NUM_POWERS) {
+                continue;
+            }
             ensure!(range.end <= MAX_NUM_POWERS, "Upper bound must be less than the maximum number of powers");
             // Shifted files hold only powers above the midpoint, so a range starting at or below it needs the
             // prefix, which rounds up to a power of two.
             if range.start <= half_max || range.end.abs_diff(held) <= range.start.abs_diff(shifted_start) {
-                target = range.end.next_power_of_two();
+                target = target.max(range.end.next_power_of_two());
             } else {
-                target_shifted = (MAX_NUM_POWERS - range.start).next_power_of_two();
+                target_shifted = target_shifted.max((MAX_NUM_POWERS - range.start).next_power_of_two());
             }
         }
         // A full prefix holds the shifted powers too.
@@ -680,10 +695,14 @@ mod tests {
         assert_eq!(missing_powers(powers.shared_powers_of_beta_g(0..NUM_POWERS_17).unwrap_err()), prefix_files);
         assert_eq!(missing_powers(powers.power_of_beta_g(NUM_POWERS_16).unwrap_err()), prefix_files);
         assert_eq!(missing_powers(powers.powers_of_beta_g(SHIFTED_17).unwrap_err()), shifted_files);
+        let both = powers.download_powers_for_ends(NUM_POWERS_17, NUM_POWERS_17).unwrap_err();
+        assert_eq!(missing_powers(both), [&prefix_files[..], &shifted_files[..]].concat());
+        assert!(powers.download_powers_for_ends(MAX_NUM_POWERS + 1, 0).is_err());
         assert!(Arc::ptr_eq(&before, &prefix(&powers)) && Arc::ptr_eq(&before_shifted, &shifted(&powers)));
 
         add_files_for(&powers, 0..NUM_POWERS_17);
         add_files_for(&powers, SHIFTED_17);
+        powers.download_powers_for_ends(NUM_POWERS_17, NUM_POWERS_17).unwrap();
         assert_eq!(powers.powers_of_beta_g(0..NUM_POWERS_17).unwrap(), prefix(&powers)[..NUM_POWERS_17]);
         let shifted_powers = shifted(&powers);
         assert_eq!(powers.powers_of_beta_g(SHIFTED_17).unwrap(), shifted_powers[shifted_powers.len() - NUM_POWERS_17..]);

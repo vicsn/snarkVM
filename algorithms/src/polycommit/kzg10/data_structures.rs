@@ -72,6 +72,11 @@ impl<E: PairingEngine> UniversalParams<E> {
         self.powers.download_powers_for(range)
     }
 
+    /// See `PowersOfG::download_powers_for_ends`.
+    pub fn download_powers_for_ends(&self, prefix: usize, suffix: usize) -> Result<()> {
+        self.powers.download_powers_for_ends(prefix, suffix)
+    }
+
     /// The files this SRS still needs to hold `range`, in the order
     /// `add_powers_file` accepts them. An embedded file is never listed.
     pub fn missing_files_for(&self, range: Range<usize>) -> Result<Vec<PowersFile>> {
