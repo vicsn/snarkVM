@@ -106,6 +106,10 @@ workspace = true
 features = ["rustls"]
 optional = true
 
+[dev-dependencies.aleo-std]
+workspace = true
+features = ["storage"]
+
 [dev-dependencies.snarkvm-algorithms]
 path = "../algorithms"
 default-features = false

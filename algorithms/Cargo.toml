@@ -120,6 +120,10 @@ workspace = true
 [dependencies.num-traits]
 workspace = true
 
+[dev-dependencies.aleo-std]
+workspace = true
+features = [ "storage" ]
+
 [dev-dependencies.expect-test]
 workspace = true
 

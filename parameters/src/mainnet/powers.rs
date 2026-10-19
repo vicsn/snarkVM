@@ -632,7 +632,7 @@ mod tests {
         return default_load_powers_file_sync(file).unwrap();
         #[cfg(not(feature = "filesystem"))]
         {
-            let path = std::path::Path::new(&std::env::var_os("HOME").unwrap()).join(".aleo/resources").join(file.name());
+            let path = aleo_std::aleo_dir().join("resources").join(file.name());
             std::fs::read(&path).unwrap_or_else(|error| panic!("Run the tests with `filesystem` first: {path:?}: {error}"))
         }
     }
