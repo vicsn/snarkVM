@@ -37,7 +37,9 @@ use rand::{
 };
 use zeroize::Zeroize;
 
+// The CUDA FFI reads this by bytes.
 #[derive(Copy, Clone, PartialEq, Eq, Default, Hash, Zeroize)]
+#[repr(transparent)]
 pub struct BigInteger256(pub [u64; 4]);
 
 impl BigInteger256 {
