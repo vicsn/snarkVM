@@ -2,6 +2,9 @@
 
 CI runs on GitHub Actions, in [`ci.yml`](.github/workflows/ci.yml). Benchmarks
 run from [`benchmarks.yml`](.github/workflows/benchmarks.yml).
+[`gpu-test.yml`](.github/workflows/gpu-test.yml) runs the CUDA kernels on a
+`gpu` fleet box, built for `sm_86`, when a pull request or a push to `staging`
+changes `algorithms/` or the manifests, and nightly.
 
 Jobs run in one of two places:
 
