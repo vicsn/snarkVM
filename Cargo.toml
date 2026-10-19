@@ -479,7 +479,7 @@ version = "0.4.3"
 version = "2.0"
 
 [workspace.dependencies.itertools]
-version = "0.14"
+version = "0.15"
 
 [workspace.dependencies.k256]
 version = "0.14.0"
