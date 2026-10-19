@@ -119,8 +119,10 @@ impl<F: PrimeField> Ord for Variable<F> {
             (Self::Constant(..), Self::Private(..)) => Ordering::Less,
             (Self::Public(..), Self::Constant(..)) => Ordering::Greater,
             (Self::Private(..), Self::Constant(..)) => Ordering::Greater,
-            (Self::Public(i1, ..), Self::Public(i2, ..)) => i1.cmp(i2),
-            (Self::Private(i1, ..), Self::Private(i2, ..)) => i1.cmp(i2),
+            (Self::Public(a), Self::Public(b)) | (Self::Private(a), Self::Private(b)) => {
+                // `a.cmp(b)` orders the same, but `Fp256::cmp` leaves Montgomery form on both sides of every equal hit.
+                a.0.cmp(&b.0).then_with(|| if a.1 == b.1 { Ordering::Equal } else { a.1.cmp(&b.1) })
+            }
             (Self::Public(..), Self::Private(..)) => Ordering::Less,
             (Self::Private(..), Self::Public(..)) => Ordering::Greater,
         }
