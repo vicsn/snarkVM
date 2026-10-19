@@ -51,22 +51,23 @@ impl<E: Environment> Pow<&Field<E>> for &Field<E> {
 
         // If the exponent is a constant, eject its bits to determine whether to multiply in each iteration.
         if exponent.is_constant() {
-            for bit in exponent.to_bits_be() {
+            // The cached bits allocate the exponent's constants on first use, so read them rather than the value.
+            for bit in exponent.cached_bits_le().iter().rev().map(Boolean::eject_value).skip_while(|bit| !bit) {
                 // Square the output.
                 output = output.square();
                 // If `bit` is `true, set the output to `output * self`.
-                if bit.eject_value() {
+                if bit {
                     output *= self;
                 }
             }
         }
         // If the exponent is a variable, use a ternary to select whether to multiply in each iteration.
         else {
-            for bit in exponent.to_bits_be() {
+            for bit in exponent.cached_bits_le().iter().rev() {
                 // Square the output.
                 output = output.square();
                 // If `bit` is `true, set the output to `output * self`.
-                output = Field::ternary(&bit, &(&output * self), &output);
+                output = Field::ternary(bit, &(&output * self), &output);
             }
         }
 
