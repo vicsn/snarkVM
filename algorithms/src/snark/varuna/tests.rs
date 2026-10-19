@@ -945,7 +945,7 @@ mod varuna_hiding {
             let path =
                 std::path::Path::new(&std::env::var_os("HOME").unwrap()).join(".aleo/resources").join(file.name());
             // A test run with `filesystem` leaves the file there.
-            universal_srs.add_powers_file(file, &*std::fs::read(path).unwrap()).unwrap();
+            universal_srs.add_powers_file(&file, &*std::fs::read(path).unwrap()).unwrap();
         }
         VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
     }

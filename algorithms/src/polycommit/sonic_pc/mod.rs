@@ -965,8 +965,8 @@ mod tests {
         let (before, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
         let points = before.powers_of_beta_g.to_vec();
 
-        let [file] = pp.missing_files_for(0..(1 << 16)).unwrap()[..] else { panic!("expected one file") };
-        pp.add_powers_file(file, &*cached_file_bytes(&file)).unwrap();
+        let [file] = &pp.missing_files_for(0..(1 << 16)).unwrap()[..] else { panic!("expected one file") };
+        pp.add_powers_file(file, &*cached_file_bytes(file)).unwrap();
         assert!(pp.missing_files_for(0..(1 << 16)).unwrap().is_empty());
 
         assert_eq!(&*before.powers_of_beta_g, points.as_slice(), "the older snapshot changed");
@@ -996,8 +996,8 @@ mod tests {
         let error = PC_Bls12_377::trim(&pp, degree, [], 1, Some(&[bound])).unwrap_err();
         assert_eq!(error.downcast::<snarkvm_parameters::mainnet::MissingPowers>().unwrap().files, files);
 
-        for file in files {
-            pp.add_powers_file(file, &*cached_file_bytes(&file)).unwrap();
+        for file in &files {
+            pp.add_powers_file(file, &*cached_file_bytes(file)).unwrap();
         }
         let (ck, _) = PC_Bls12_377::trim(&pp, degree, [], 1, Some(&[bound])).unwrap();
         assert_eq!(&*ck.powers_of_beta_g, pp.powers_of_beta_g(0, degree + 1).unwrap().as_slice());

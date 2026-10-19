@@ -81,7 +81,7 @@ impl<E: PairingEngine> UniversalParams<E> {
     /// Reads `file` from `reader`, checks its size and checksum, and appends
     /// its powers. A file already held is not read. `reader` need not be
     /// buffered.
-    pub fn add_powers_file(&self, file: PowersFile, reader: impl Read) -> Result<()> {
+    pub fn add_powers_file(&self, file: &PowersFile, reader: impl Read) -> Result<()> {
         self.powers.add_powers_file(file, reader)
     }
 

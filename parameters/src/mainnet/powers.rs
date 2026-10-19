@@ -70,11 +70,13 @@ lazy_static::lazy_static! {
 /// One SRS degree file. The prefix file of `num_powers` holds the powers
 /// `num_powers / 2..num_powers`, and the shifted one the powers
 /// `MAX_NUM_POWERS - num_powers..MAX_NUM_POWERS - num_powers / 2`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PowersFile {
     shifted: bool,
     num_powers: usize,
-    metadata: &'static str,
+    name: String,
+    checksum: String,
+    size: usize,
 }
 
 impl PowersFile {
@@ -115,31 +117,27 @@ impl PowersFile {
             (true, NUM_POWERS_27) => ShiftedDegree27::METADATA,
             _ => bail!("Cannot download an invalid degree of '{num_powers}'"),
         };
-        Ok(Self { shifted, num_powers, metadata })
-    }
-
-    /// The checksum and size of the file.
-    fn metadata(&self) -> (String, usize) {
-        // The metadata is compiled in, and each file's is parsed by its `load_bytes` test.
-        let metadata: serde_json::Value = serde_json::from_str(self.metadata).expect("Metadata was not well-formatted");
-        let checksum = metadata["checksum"].as_str().expect("Failed to parse checksum").to_string();
-        (checksum, metadata["size"].to_string().parse().expect("Failed to retrieve the file size"))
+        let metadata: serde_json::Value = serde_json::from_str(metadata)?;
+        let checksum = metadata["checksum"].as_str().ok_or_else(|| anyhow!("Failed to parse checksum"))?.to_string();
+        let size = metadata["size"].as_u64().ok_or_else(|| anyhow!("Failed to retrieve the file size"))? as usize;
+        let prefix = if shifted { "shifted-" } else { "" };
+        let name = format!("{prefix}powers-of-beta-{}.usrs.{}", num_powers.trailing_zeros(), &checksum[..7]);
+        Ok(Self { shifted, num_powers, name, checksum, size })
     }
 
     /// The name snarkVM fetches the file by.
-    pub fn name(&self) -> String {
-        let shifted = if self.shifted { "shifted-" } else { "" };
-        format!("{shifted}powers-of-beta-{}.usrs.{}", self.num_powers.trailing_zeros(), &self.checksum()[..7])
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// The SHA-256 of the file, in hex.
-    pub fn checksum(&self) -> String {
-        self.metadata().0
+    pub fn checksum(&self) -> &str {
+        &self.checksum
     }
 
     /// The size of the file in bytes.
     pub fn size(&self) -> usize {
-        self.metadata().1
+        self.size
     }
 
     /// Whether the file holds shifted powers, which grow downward from
@@ -169,14 +167,14 @@ impl PowersFile {
     /// Reads the powers in the file from `reader`, rejecting it unless it has the
     /// file's size and checksum.
     fn read_checked_powers<E: PairingEngine>(&self, reader: impl Read) -> Result<Vec<E::G1Affine>> {
-        let (expected_checksum, size) = self.metadata();
+        let size = self.size;
         let mut hashed = Sha256Reader { reader: reader.take(size as u64 + 1), hasher: Sha256::new(), len: 0 };
         let mut buffered = BufReader::new(&mut hashed);
         let powers = self.read_powers::<E>(&mut buffered);
         io::copy(&mut buffered, &mut io::sink())?;
         ensure!(hashed.len == size, ParameterError::SizeMismatch(size, hashed.len));
         let checksum = hex::encode(hashed.hasher.finalize());
-        ensure!(checksum == expected_checksum, ParameterError::ChecksumMismatch(expected_checksum, checksum));
+        ensure!(checksum == self.checksum, ParameterError::ChecksumMismatch(self.checksum.clone(), checksum));
         powers
     }
 }
@@ -322,8 +320,8 @@ impl<E: PairingEngine> PowersOfG<E> {
 
     /// Reads `file` from `reader`, checks its size and checksum, and appends its
     /// powers. A file already held is not read. `reader` need not be buffered.
-    pub fn add_powers_file(&self, file: PowersFile, reader: impl Read) -> Result<()> {
-        if !self.powers_of_beta_g.read().accepts(&file)? {
+    pub fn add_powers_file(&self, file: &PowersFile, reader: impl Read) -> Result<()> {
+        if !self.powers_of_beta_g.read().accepts(file)? {
             return Ok(());
         }
         let powers = file.read_checked_powers::<E>(reader)?;
@@ -516,7 +514,7 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         for file in files {
             snarkvm_utilities::dev_println!("Loading {}", file.name());
             let powers = file.read_powers::<E>(&*default_load_powers_file_sync(&file)?)?;
-            self.extend(file, powers)?;
+            self.extend(&file, powers)?;
         }
         Ok(())
     }
@@ -565,8 +563,8 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
     }
 
     /// Appends the powers read from `file`, if it is the next one to append.
-    fn extend(&mut self, file: PowersFile, powers: Vec<E::G1Affine>) -> Result<()> {
-        if !self.accepts(&file)? {
+    fn extend(&mut self, file: &PowersFile, powers: Vec<E::G1Affine>) -> Result<()> {
+        if !self.accepts(file)? {
             return Ok(());
         }
         if file.shifted {
@@ -609,7 +607,7 @@ mod tests {
     const SHIFTED_17: Range<usize> = MAX_NUM_POWERS - NUM_POWERS_17..MAX_NUM_POWERS;
 
     fn names(files: &[PowersFile]) -> Vec<String> {
-        files.iter().map(PowersFile::name).collect()
+        files.iter().map(|file| file.name().to_string()).collect()
     }
 
     /// The bytes of `file`. Without `filesystem`, they are read from
@@ -625,8 +623,8 @@ mod tests {
     }
 
     fn add_files_for(powers: &Powers, range: Range<usize>) {
-        for file in powers.missing_files_for(range.clone()).unwrap() {
-            powers.add_powers_file(file, &*file_bytes(&file)).unwrap();
+        for file in &powers.missing_files_for(range.clone()).unwrap() {
+            powers.add_powers_file(file, &*file_bytes(file)).unwrap();
         }
     }
 
@@ -697,7 +695,7 @@ mod tests {
         let error = anyhow::Error::from(MissingPowers { files: files.clone() }).context("trimming");
         assert_eq!(error.downcast_ref::<MissingPowers>().map(|error| &error.files), Some(&files));
         let message = error.root_cause().to_string();
-        assert!(message.contains(&files[0].name()) && message.contains(&files[1].name()), "{message}");
+        assert!(message.contains(files[0].name()) && message.contains(files[1].name()), "{message}");
     }
 
     #[test]
@@ -714,7 +712,7 @@ mod tests {
         ]);
         let shifted_files = names(&powers.missing_files_for(SHIFTED_17).unwrap());
         assert_eq!(shifted_files.len(), if cfg!(feature = "no-embedded-srs") { 2 } else { 1 });
-        assert_eq!(shifted_files.last(), Some(&PowersFile::new(true, NUM_POWERS_17).unwrap().name()));
+        assert_eq!(shifted_files.last().map(String::as_str), Some(PowersFile::new(true, NUM_POWERS_17).unwrap().name()));
         add_files_for(&powers, 0..NUM_POWERS_16);
         assert_eq!(names(&powers.missing_files_for(0..NUM_POWERS_17).unwrap()), ["powers-of-beta-17.usrs.7c27308"]);
         add_files_for(&powers, 0..NUM_POWERS_17);
@@ -751,9 +749,9 @@ mod tests {
         let longer = [&bytes[..], &[0]].concat();
         let other = file_bytes(&PowersFile::new(true, NUM_POWERS_17).unwrap());
         for candidate in [&flipped[..], &header, &bytes[..bytes.len() - 1], &longer, &other, &[]] {
-            assert!(powers.add_powers_file(file, candidate).is_err());
+            assert!(powers.add_powers_file(&file, candidate).is_err());
         }
-        let error = powers.add_powers_file(PowersFile::new(false, NUM_POWERS_17).unwrap(), &[][..]).unwrap_err();
+        let error = powers.add_powers_file(&PowersFile::new(false, NUM_POWERS_17).unwrap(), &[][..]).unwrap_err();
         assert!(error.to_string().contains("powers-of-beta-16.usrs.84631bc"), "{error}");
         assert!(Arc::ptr_eq(&before, &prefix(&powers)), "a rejected file replaced the prefix");
         assert!(Arc::ptr_eq(&before_shifted, &shifted(&powers)), "a rejected file replaced the shifted powers");
@@ -765,7 +763,7 @@ mod tests {
         let powers = Powers::load().unwrap();
         add_files_for(&powers, 0..NUM_POWERS_16);
         let before = prefix(&powers);
-        powers.add_powers_file(PowersFile::new(false, NUM_POWERS_16).unwrap(), &[][..]).unwrap();
+        powers.add_powers_file(&PowersFile::new(false, NUM_POWERS_16).unwrap(), &[][..]).unwrap();
         assert!(Arc::ptr_eq(&before, &prefix(&powers)));
     }
 }
