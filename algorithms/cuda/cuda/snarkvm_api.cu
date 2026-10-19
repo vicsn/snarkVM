@@ -20,8 +20,30 @@
 #ifndef __CUDA_ARCH__
 
 // Largest domain the device pool is sized for, as a log2 element count.
+//
+// `snarkvm_t`'s constructor allocates `(1 << max_lg_domain) * 4` elements, and
+// the two capacity checks in `snarkvm.cu` spend that differently:
+//
+//   snarkvm_t::NTT      domain <= allocated       ->  2^(MAX_LG_DOMAIN+2)
+//   snarkvm_t::PolyMul  4 * domain <= allocated   ->  2^MAX_LG_DOMAIN
+//
+// Every multiply the prover issues combines two polynomials, so PolyMul's
+// domain is twice the constraint domain, and the largest provable constraint
+// domain is 2^(MAX_LG_DOMAIN-1), as `snarkvm_algorithms_cuda::max_domain()`
+// reports.
+//
+// sppark also guards `lg_domain_size <= MAX_LG_DOMAIN_SIZE` (28) in
+// ntt/ntt.cuh with a plain `assert`, which a release build compiles out, so a
+// MAX_LG_DOMAIN above 26 claims an NTT bound sppark does not enforce.
+//
+// The pool costs `allocated_elements * FLIP_FLOP * sizeof(fr_t)` of device and
+// pinned host memory per GPU, which is 3 GiB of each at 23. A card with less
+// free device memory cannot build the pool, and a failed build latches
+// `max_domain()` at zero.
+//
+// 23 covers `MAX_DEPLOYMENT_CONSTRAINTS_V2` (2^22).
 #ifndef MAX_LG_DOMAIN
-#define MAX_LG_DOMAIN 17
+#define MAX_LG_DOMAIN 23
 #endif
 
 // Lazy instantiation of snarkvm_t
@@ -111,6 +133,24 @@ extern "C" {
             return 0;
         }
         return (size_t)count;
+    }
+
+    /// Elements the device pool reserves per device per stream slot.
+    ///
+    /// `NTT` admits a domain up to this, `PolyMul` up to a quarter of it.
+    /// `snarkvm_algorithms_cuda::max_domain()` derives the circuit limit.
+    ///
+    /// Zero if there is no usable pool; the entry points return
+    /// `snarkvm_g.failure()` with the reason. This constructs the pool if it is
+    /// not built, and a failed construction is never retried, so asking before
+    /// the device is ready latches the failure for the life of the process.
+    size_t snarkvm_cuda_pool_elements()
+    {
+        try {
+            return snarkvm_g.ok() ? snarkvm_g->pool_elements() : 0;
+        } catch (...) {
+            return 0;
+        }
     }
 
     RustError snarkvm_ntt(fr_t* inout, uint32_t lg_domain_size,

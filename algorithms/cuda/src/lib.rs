@@ -45,6 +45,8 @@ pub enum NTTType {
 unsafe extern "C" {
     fn snarkvm_cuda_device_count() -> usize;
 
+    fn snarkvm_cuda_pool_elements() -> usize;
+
     fn snarkvm_ntt(
         inout: *mut core::ffi::c_void,
         lg_domain_size: u32,
@@ -106,6 +108,36 @@ fn assert_type<T: 'static, Expected: 'static>() {
 /// runtime could not be queried at all.
 pub fn device_count() -> usize {
     unsafe { snarkvm_cuda_device_count() }
+}
+
+/// The largest constraint domain a proof can multiply here, as an element
+/// count. Zero means there is no usable pool.
+///
+/// Compare `CircuitInfo::num_constraints`, rounded up to a power of two, and
+/// refuse above it. Round two's `z_a * z_b` is over the constraint domain and
+/// always reaches the pool guard, so anything this refuses would have failed.
+///
+/// `snarkvm_t::PolyMul` admits a domain up to a quarter of
+/// [`pool_elements()`], and `PolyMultiplier::multiply` asks for `2n` to
+/// multiply two polynomials over a domain of `n`, so the bound is `pool / 8`.
+/// The factor depends on the prover: a multiply of three polynomials would make
+/// it `pool / 16`. The contract test in `fft::domain` checks it.
+///
+/// This builds the pool if it is not built, and a failed build is never
+/// retried, so calling it before the device is ready latches the failure for
+/// the life of the process. [`device_count()`] has no such side effect.
+pub fn max_domain() -> usize {
+    unsafe { snarkvm_cuda_pool_elements() / 8 }
+}
+
+/// Elements the pool reserves per device per stream slot.
+///
+/// `snarkvm_t::NTT` refuses a domain above it and `snarkvm_t::PolyMul` above a
+/// quarter of it. It is for diagnostics, not a refusal criterion: use
+/// [`max_domain()`] for that. Zero, and the construction side effect, are as
+/// for [`max_domain()`].
+pub fn pool_elements() -> usize {
+    unsafe { snarkvm_cuda_pool_elements() }
 }
 
 /// Compute an in-place NTT on the input data.
