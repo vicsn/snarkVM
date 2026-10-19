@@ -51,7 +51,8 @@ impl<E: Environment> Pow<&Field<E>> for &Field<E> {
 
         // If the exponent is a constant, eject its bits to determine whether to multiply in each iteration.
         if exponent.is_constant() {
-            // The cached bits allocate the exponent's constants on first use, so read them rather than the value.
+            // Read the cached bits, not `eject_value()`: filling the cache allocates the exponent's 253 constant bits,
+            // which count in `num_variables`.
             for bit in exponent.cached_bits_le().iter().rev().map(Boolean::eject_value).skip_while(|bit| !bit) {
                 // Square the output.
                 output = output.square();
@@ -135,10 +136,10 @@ impl<E: Environment> OutputMode<dyn Pow<Field<E>, Output = Field<E>>> for Field<
 
 #[cfg(test)]
 mod tests {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
     use super::*;
     use snarkvm_circuit_environment::Circuit;
-
-    use std::hash::{DefaultHasher, Hash, Hasher};
 
     const ITERATIONS: u64 = 10;
 
