@@ -234,6 +234,29 @@ mod tests {
     }
 
     #[test]
+    fn test_add_small_order() {
+        let mut points = small_order_points::<Circuit>().to_vec();
+        points.push(Uniform::rand(&mut TestRng::default()));
+        for first in &points {
+            for second in &points {
+                let candidate = inject_unchecked::<Circuit>(first.to_x_coordinate(), first.to_y_coordinate())
+                    + inject_unchecked(second.to_x_coordinate(), second.to_y_coordinate());
+                assert_eq!(*first + *second, candidate.eject_value());
+                assert!(Circuit::is_satisfied());
+                Circuit::reset();
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Field division by zero")]
+    fn test_add_zero_denominator() {
+        let one = console::Field::one();
+        let d = console::Field::<<Circuit as Environment>::Network>::new(<Circuit as Environment>::EDWARDS_D);
+        let _ = inject_unchecked::<Circuit>(one, one) + inject_unchecked(one, d.inverse().expect("d is nonzero"));
+    }
+
+    #[test]
     fn test_add_matches() {
         let mut rng = TestRng::default();
 

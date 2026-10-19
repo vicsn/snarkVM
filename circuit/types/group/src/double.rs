@@ -138,6 +138,23 @@ mod tests {
     }
 
     #[test]
+    fn test_double_small_order() {
+        for point in small_order_points::<Circuit>() {
+            let candidate = inject_unchecked::<Circuit>(point.to_x_coordinate(), point.to_y_coordinate()).double();
+            assert_eq!(point.double(), candidate.eject_value());
+            assert!(Circuit::is_satisfied());
+            Circuit::reset();
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Field division by zero")]
+    fn test_double_zero_denominator() {
+        let zero = console::Field::zero();
+        inject_unchecked::<Circuit>(zero, zero).double();
+    }
+
+    #[test]
     fn test_double_matches() {
         // Sample two random elements.
         let a = Uniform::rand(&mut TestRng::default());
