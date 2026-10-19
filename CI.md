@@ -34,7 +34,7 @@ on every event.
 | `ci-ok` | hosted | all | | fails unless every pull-request job above and every `test` entry succeeded; the check to require | |
 | `check-shared-refs` | hosted | all | | checks that each `aleo-labs-protocol/gh-actions` ref is a release tag | |
 | `fmt` | hosted | all | | `cargo fmt --check` on `FMT_TOOLCHAIN` | `check-fmt` |
-| `deny` | hosted | all | | `cargo deny check` | `check-cargo-deny` |
+| `deny` | hosted | all | | `cargo deny check bans licenses sources`; advisories are checked nightly by [`bump-advisories.yml`](.github/workflows/bump-advisories.yml) | `check-cargo-deny` |
 | `wasm` | hosted | all | | `wasm-pack test --node` in `wasm` | `wasm` |
 | `lint` | `cpu` | all | 90 | clippy, default and `--all-features`; on release, also `cargo check --release --workspace --all-targets` | `check-clippy`, `check-all-targets`, `parameters-large` |
 | `test (console)` | hosted | all | 90 | `snarkvm-console` and its sub-crates, except `-collections` | `console`, `console-account`, `console-algorithms`, `console-network`, `console-network-environment`, `console-program`, `console-types`, `console-types-address`, `console-types-boolean`, `console-types-field`, `console-types-group`, `console-types-integers`, `console-types-scalar`, `console-types-string` |
