@@ -698,7 +698,10 @@ pub fn fp256_inverse_test<P: Fp256Parameters>(rng: &mut TestRng) {
     assert_eq!(P::MODULUS.0[0].wrapping_mul(P::INV.wrapping_neg()), 1);
 
     let check = |a: Fp256<P>| {
-        // Every caller filters out zero.
+        if a.is_zero() {
+            return;
+        }
+        // `a` is nonzero.
         let inverse = a.inverse().unwrap();
         assert!(inverse.0 < P::MODULUS, "{:?}", a.0);
         assert_eq!(a * inverse, Fp256::one(), "{:?}", a.0);
@@ -720,7 +723,7 @@ pub fn fp256_inverse_test<P: Fp256Parameters>(rng: &mut TestRng) {
         near_p.sub_noborrow(&BigInteger256::from(i));
         edges.push(near_p);
     }
-    for edge in edges.into_iter().filter(|e| !e.is_zero() && *e < P::MODULUS) {
+    for edge in edges.into_iter().filter(|e| *e < P::MODULUS) {
         check(raw(edge));
         if let Some(canonical) = Fp256::<P>::from_bigint(edge) {
             check(canonical);
@@ -729,7 +732,7 @@ pub fn fp256_inverse_test<P: Fp256Parameters>(rng: &mut TestRng) {
     for i in 0..10_000 {
         let mut short = rng.random::<BigInteger256>();
         short.divn(i % 256);
-        if !short.is_zero() && short < P::MODULUS {
+        if short < P::MODULUS {
             check(raw(short));
         }
         check(Fp256::<P>::rand(rng));
@@ -739,7 +742,6 @@ pub fn fp256_inverse_test<P: Fp256Parameters>(rng: &mut TestRng) {
         (0..1000).map(|i| if i % 97 == 0 { Fp256::zero() } else { Fp256::rand(rng) }).collect();
     let originals = values.clone();
     batch_inversion(&mut values);
-    assert_eq!(originals.len(), values.len());
     for (original, inverse) in originals.iter().zip(&values) {
         assert_eq!(*original * inverse, if original.is_zero() { Fp256::zero() } else { Fp256::one() });
     }

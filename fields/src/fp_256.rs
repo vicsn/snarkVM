@@ -806,9 +806,10 @@ impl<P: Fp256Parameters> DivAssign<&'_ Self> for Fp256<P> {
 
 // The loop in `Fp256::safegcd_inverse` and the functions `divsteps_62_var`, `update_de_62`,
 // `update_fg_62_var` and `normalize_62` are ported from `src/modinv64_impl.h` in libsecp256k1
-// (https://github.com/bitcoin-core/secp256k1), which is distributed under the following notice:
+// (https://github.com/bitcoin-core/secp256k1). That file carries the copyright line
+// "Copyright (c) 2020 Peter Dettman" and is distributed under the project's MIT license:
 //
-// Copyright (c) 2020 Peter Dettman
+// Copyright (c) 2013 Pieter Wuille
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -963,4 +964,37 @@ fn sign_62(a: &[i64; 5], modulus: &[i64; 5], k: i64) -> i64 {
         carry >>= 62;
     }
     if carry != 0 { carry.signum() as i64 } else { nonzero as i64 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The BLS12-377 scalar field modulus.
+    const MODULUS: [u64; 4] = [725501752471715841, 6461107452199829505, 6968279316240510977, 1345280370688173398];
+
+    #[test]
+    fn test_update_de_62_at_the_range_bounds() {
+        let modulus = to_signed62(&MODULUS);
+        let inv = (0..6).fold(MODULUS[0], |x, _| x.wrapping_mul(2u64.wrapping_sub(MODULUS[0].wrapping_mul(x)))) & M62;
+        assert_eq!(MODULUS[0].wrapping_mul(inv) & M62, 1);
+        let at = |k: i64, offset: i64| {
+            let mut x = modulus.map(|m| k * m);
+            x[0] += offset;
+            carry_62(&mut x);
+            x
+        };
+        let bounds = [at(-2, 1), at(1, -1), [0; 5]];
+        for k in [1, 3, 1 << 20, (1 << 61) - 1] {
+            let w = (1i64 << 62) - k;
+            for t in [[w, k, k, w], [-w, -k, -k, -w], [w, -k, -k, w], [-w, k, k, -w]] {
+                for (mut d, mut e) in bounds.iter().flat_map(|d| bounds.iter().map(move |e| (*d, *e))) {
+                    update_de_62(&mut d, &mut e, t, &modulus, inv);
+                    for x in [d, e] {
+                        assert!(sign_62(&x, &modulus, 2) > 0 && sign_62(&x, &modulus, -1) < 0, "{t:?}");
+                    }
+                }
+            }
+        }
+    }
 }
