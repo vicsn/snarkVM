@@ -113,9 +113,10 @@ mod varuna {
 
     #[test]
     fn test_varuna_v3_key_reuse_and_batch() {
+        use blake2::{Blake2s256, Digest};
         use snarkvm_utilities::FromBytes;
 
-        fn check<SM: SNARKMode>() {
+        fn check<SM: SNARKMode>() -> String {
             type Inst<SM> = VarunaSNARK<Bls12_377, FS, SM>;
             let rng = &mut TestRng::fixed(3102);
             let srs = Inst::<SM>::universal_setup(2048).expect("valid test fixture");
@@ -143,10 +144,16 @@ mod varuna {
             }
 
             let mut proof_sizes = Vec::new();
+            let mut snapshot = String::new();
             for version in [VarunaVersion::V2, VarunaVersion::V3] {
                 let proof = Inst::<SM>::prove_batch(&prover, &parameters, version, &prover_inputs, rng)
                     .expect("valid test fixture");
                 let bytes = proof.to_bytes_le().expect("valid test fixture");
+                snapshot.push_str(&format!(
+                    "hiding={} {version:?}={}\n",
+                    SM::ZK,
+                    hex::encode(Blake2s256::digest(&bytes))
+                ));
                 let proof =
                     crate::snark::varuna::Proof::<Bls12_377>::from_bytes_le(&bytes).expect("valid test fixture");
                 assert!(
@@ -180,10 +187,17 @@ mod varuna {
                 );
             }
             assert_eq!(proof_sizes[0], proof_sizes[1]);
+            snapshot
         }
 
-        check::<VarunaHidingMode>();
-        check::<VarunaNonHidingMode>();
+        let snapshot = check::<VarunaHidingMode>() + &check::<VarunaNonHidingMode>();
+        expect_test::expect![[r#"
+            hiding=true V2=03673be9a6b1aa62629164620492ffc9f30b677c80dd0f8b05a8f8c63a6cc965
+            hiding=true V3=f6a95d87ce3026bc71199b3e419d0cf93d065ffe06ad88600e08b90806fd6666
+            hiding=false V2=1247d0fc9643ed261fb7633b39e06fde7d287708eab5861ead4970e3f2521a86
+            hiding=false V3=514f2f98043b5945abd3115fd305056ed28162e4e5135c4818333d8113b994ca
+        "#]]
+        .assert_eq(&snapshot);
     }
 
     #[test]
