@@ -34,14 +34,12 @@ impl<E: Environment> Double for Group<E> {
             let y2 = self.y.square();
             let ax2 = &x2 * &a;
 
-            // Compute x3 and y3.
+            // Montgomery's trick: one inversion for x3 = 2xy / (ax^2 + y^2) and y3 = (y^2 - ax^2) / (2 - ax^2 - y^2).
+            // Divide, not `inverse().unwrap_or(..)`: a zero denominator must halt, not yield a wrong witness.
             let (x3, y3) = witness!(|two, xy, y2, ax2| {
-                // Assign x3 = (2xy) / (ax^2 + y^2).
-                let x3 = xy.double() / (ax2 + y2);
-                // Assign y3 = (y^2 - ax^2) / (2 - ax^2 - y^2).
-                let y3 = (y2 - ax2) / (two - ax2 - y2);
-                // Return (x3, y3).
-                (x3, y3)
+                let (x_den, y_den) = (ax2 + y2, two - ax2 - y2);
+                let inv = console::Field::one() / (x_den * y_den);
+                (xy.double() * y_den * inv, (y2 - ax2) * x_den * inv)
             });
 
             // Ensure x3 is well-formed.
