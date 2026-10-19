@@ -77,7 +77,7 @@ impl<'a, F: PrimeField> PolyMultiplier<'a, F> {
                 None
             } else {
                 #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-                {
+                if crate::fft::is_cuda_field::<F>() {
                     let mut poly_slices = Vec::new();
                     for (_, p) in &self.polynomials {
                         poly_slices.push(p.coeffs().to_vec());
