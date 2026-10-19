@@ -13,18 +13,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io::Cursor;
+use std::{io::Cursor, marker::PhantomData};
 
 use snarkvm_fields::{
     FftField,
     Field,
+    Fp256,
+    Fp256Parameters,
     LegendreSymbol,
+    One,
     PrimeField,
     SquareRootField,
+    Zero,
+    batch_inversion,
     traits::{FftParameters, FieldParameters},
 };
 use snarkvm_utilities::{
-    rand::TestRng,
+    biginteger::{BigInteger, BigInteger256},
+    rand::{TestRng, Uniform},
     serialize::{CanonicalDeserialize, Flags, SWFlags},
 };
 
@@ -685,5 +691,56 @@ pub fn field_serialization_test<F: Field>(rng: &mut TestRng) {
                 <F as CanonicalDeserialize>::deserialize_with_mode(&mut cursor, compress, validate).unwrap_err();
             }
         }
+    }
+}
+
+pub fn fp256_inverse_test<P: Fp256Parameters>(rng: &mut TestRng) {
+    assert_eq!(P::MODULUS.0[0].wrapping_mul(P::INV.wrapping_neg()), 1);
+
+    let check = |a: Fp256<P>| {
+        // Every caller filters out zero.
+        let inverse = a.inverse().unwrap();
+        assert!(inverse.0 < P::MODULUS, "{:?}", a.0);
+        assert_eq!(a * inverse, Fp256::one(), "{:?}", a.0);
+    };
+    let raw = |x: BigInteger256| Fp256::<P>(x, PhantomData);
+    let one = BigInteger256::from(1);
+
+    let mut edges = vec![P::R, P::R2];
+    for k in 0..256 {
+        let mut power = one;
+        power.muln(k);
+        let (mut below, mut above) = (power, power);
+        below.sub_noborrow(&one);
+        above.add_nocarry(&one);
+        edges.extend([power, below, above]);
+    }
+    for i in 1..=64 {
+        let mut near_p = P::MODULUS;
+        near_p.sub_noborrow(&BigInteger256::from(i));
+        edges.push(near_p);
+    }
+    for edge in edges.into_iter().filter(|e| !e.is_zero() && *e < P::MODULUS) {
+        check(raw(edge));
+        if let Some(canonical) = Fp256::<P>::from_bigint(edge) {
+            check(canonical);
+        }
+    }
+    for i in 0..10_000 {
+        let mut short = rng.random::<BigInteger256>();
+        short.divn(i % 256);
+        if !short.is_zero() && short < P::MODULUS {
+            check(raw(short));
+        }
+        check(Fp256::<P>::rand(rng));
+    }
+
+    let mut values: Vec<Fp256<P>> =
+        (0..1000).map(|i| if i % 97 == 0 { Fp256::zero() } else { Fp256::rand(rng) }).collect();
+    let originals = values.clone();
+    batch_inversion(&mut values);
+    assert_eq!(originals.len(), values.len());
+    for (original, inverse) in originals.iter().zip(&values) {
+        assert_eq!(*original * inverse, if original.is_zero() { Fp256::zero() } else { Fp256::one() });
     }
 }
