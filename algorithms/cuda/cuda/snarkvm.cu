@@ -65,6 +65,7 @@ public:
 #include <vector>
 #include <chrono>
 #include <atomic>
+#include <mutex>
 
 typedef std::chrono::high_resolution_clock Clock;
 
@@ -269,11 +270,28 @@ public:
         // SNP TODO: cleanup
         // auto start = Clock::now();
 
-        size_t gpu_count = min(ngpus(), npoints);
+        // With no points, `gpu_count` is 0, and `ch.recv()` below would wait
+        // forever. Rust reads all three coordinates, and `inf()` sets only Z,
+        // so this writes Rust's zero in full.
+        if (npoints == 0) {
+            fp_t zero;
+            zero.zero();
+            *out = point_t{zero, fp_t::one(), zero};
+            return RustError{cudaSuccess};
+        }
+
+        size_t bases_per_gpu = (npoints + ngpus() - 1) / ngpus();
+        // One worker per share, so no worker starts past the last point.
+        size_t gpu_count = (npoints + bases_per_gpu - 1) / bases_per_gpu;
+        // A failed worker leaves its sum unwritten, and the reduction below
+        // reads every one.
         point_t partial_sums[gpu_count];
-        size_t bases_per_gpu = (npoints + gpu_count - 1) / gpu_count;
+        for (size_t i = 0; i < gpu_count; i++) {
+            partial_sums[i].inf();
+        }
         channel_t<size_t> ch;
         RustError error = RustError{cudaSuccess};
+        std::mutex error_mtx;
 
         // Divide the MSM among the GPUs
         for (size_t i = 0; i < gpu_count; i++) {
@@ -292,7 +310,6 @@ public:
                     ret = msm.invoke(partial_sums[i], slice_t<affine_t>{pts, sz},
                                      &scalars[start], false, ffi_affine_size);
                 } catch (const cuda_error& e) {
-                    out->inf();
 #ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
                     ret = RustError{e.code(), e.what()};
 #else
@@ -304,7 +321,12 @@ public:
                     ret = RustError{cudaErrorUnknown};
                 }
                 if (ret.code != cudaSuccess) {
-                    error = ret;
+                    std::lock_guard<std::mutex> lock(error_mtx);
+                    if (error.code == cudaSuccess) {
+                        error = ret;
+                    } else {
+                        free(ret.message);
+                    }
                 }
                 ch.send(i);
             });
