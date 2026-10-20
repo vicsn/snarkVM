@@ -104,6 +104,11 @@ fn assert_type<T: 'static, Expected: 'static>() {
     );
 }
 
+/// Whether the build found nvcc and compiled the kernels. Without nvcc this
+/// crate still builds, so a workspace build, clippy and rust-analyzer need no
+/// nvcc, but nothing it declares links.
+pub const HAVE_NVCC: bool = cfg!(feature = "cuda");
+
 /// How many usable CUDA devices are present. Zero means none, or that the
 /// runtime could not be queried at all.
 pub fn device_count() -> usize {
