@@ -33,8 +33,9 @@ public:
     bool ok() {
         if (!failed && snarkvm == nullptr) {
             // SNP TODO: max domain size?
-            snarkvm = new snarkvm_t(17);
-            if (snarkvm == nullptr) {
+            try {
+                snarkvm = new snarkvm_t(17);
+            } catch (...) {
                 failed = true;
             }
         }
@@ -46,7 +47,20 @@ public:
     }
 };
 snarkvm_singleton_t snarkvm_g;
-                                         
+
+// sppark reports device failures by throwing, and an exception that crosses
+// `extern "C"` into Rust is undefined behaviour.
+template<class F> static RustError catch_all(F f) noexcept
+{
+    try {
+        return f();
+    } catch (const cuda_error& e) {
+        return RustError{e.code(), e.what()};
+    } catch (...) {
+        return RustError{cudaErrorUnknown};
+    }
+}
+
 #ifndef __CUDA_ARCH__
 
 extern "C" {
@@ -54,32 +68,38 @@ extern "C" {
                           NTT::InputOutputOrder ntt_order, NTT::Direction ntt_direction,
                           NTT::Type ntt_type)
     {
-        if (!snarkvm_g.ok()) {
-            return RustError{cudaErrorMemoryAllocation};
-        }
-        return snarkvm_g->NTT(inout, inout, lg_domain_size, ntt_order,
-                              ntt_direction, ntt_type);
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return RustError{cudaErrorMemoryAllocation};
+            }
+            return snarkvm_g->NTT(inout, inout, lg_domain_size, ntt_order,
+                                  ntt_direction, ntt_type);
+        });
     }
 
     RustError snarkvm_polymul(fr_t* out,
                               size_t pcount, fr_t** polynomials, size_t* plens,
                               size_t ecount, fr_t** evaluations, size_t* elens,
                               uint32_t lg_domain_size) {
-        if (!snarkvm_g.ok()) {
-            return RustError{cudaErrorMemoryAllocation};
-        }
-        return snarkvm_g->PolyMul(out,
-                                  pcount, polynomials, plens,
-                                  ecount, evaluations, elens,
-                                  lg_domain_size);
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return RustError{cudaErrorMemoryAllocation};
+            }
+            return snarkvm_g->PolyMul(out,
+                                      pcount, polynomials, plens,
+                                      ecount, evaluations, elens,
+                                      lg_domain_size);
+        });
     }
 
     RustError snarkvm_msm(point_t* out, const affine_t points[], size_t npoints,
                           const scalar_t scalars[], size_t ffi_affine_size) {
-        if (!snarkvm_g.ok()) {
-            return RustError{cudaErrorMemoryAllocation};
-        }
-        return snarkvm_g->MSM(out, points, npoints, scalars, ffi_affine_size);
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return RustError{cudaErrorMemoryAllocation};
+            }
+            return snarkvm_g->MSM(out, points, npoints, scalars, ffi_affine_size);
+        });
     }
 }
 #endif // __CUDA_ARCH__

@@ -82,7 +82,29 @@ class snarkvm_t {
         }
     };
     channel_t<resource_t*> resources;
-    
+
+    // Returns a pool slot on every path out, including an exception. A lost
+    // slot is never replaced, and after `ngpus() * FLIP_FLOP` losses
+    // `resources.recv()` blocks forever.
+    class slot_t {
+        channel_t<resource_t*>& pool;
+        resource_t* r;
+    public:
+        slot_t(channel_t<resource_t*>& p) : pool(p), r(p.recv()) {}
+        // An exception can leave copies into this slot's staging buffers in
+        // flight, so the stream is synced before the next holder gets them.
+        // Both calls can throw, and a throw during unwinding is
+        // `std::terminate`.
+        ~slot_t() noexcept {
+            try { select_gpu(r->dev)[r->stream].sync(); } catch (...) {}
+            try { pool.send(r); } catch (...) {}
+        }
+        slot_t(const slot_t&) = delete;
+        slot_t& operator=(const slot_t&) = delete;
+        int dev() const { return r->dev; }
+        int stream() const { return r->stream; }
+    };
+
     // Host and device storage
     size_t                         allocated_elements;
     std::vector<dev_ptr_t<fr_t>*>  d_mem;
@@ -163,10 +185,10 @@ public:
             return RustError{cudaErrorMemoryAllocation};
         }
 
-        resource_t* resource = resources.recv();
-        int dev = resource->dev;
+        slot_t slot(resources);
+        int dev = slot.dev();
         auto& gpu = select_gpu(dev);
-        int stream_idx = resource->stream;
+        int stream_idx = slot.stream();
         stream_t& stream = gpu[stream_idx];
 
         fr_t* h_mem = h_addr(dev, stream_idx);
@@ -176,12 +198,10 @@ public:
         RustError e = Polynomial::Base(gpu, h_mem, lg_domain_size,
                                        ntt_order, ntt_direction, ntt_type);
         if (e.code != cudaSuccess) {
-            resources.send(resource);
             return e;
         }
         // Successful. Copy the result back
         memcpy(out, h_mem, sizeof(fr_t) * domain_size);
-        resources.send(resource);
         return RustError{cudaSuccess};
     }
 
@@ -214,10 +234,10 @@ public:
             return RustError{cudaErrorMemoryAllocation};
         }
 
-        resource_t* resource = resources.recv();
-        int dev = resource->dev;
+        slot_t slot(resources);
+        int dev = slot.dev();
         auto& gpu = select_gpu(dev);
-        int stream_idx = resource->stream;
+        int stream_idx = slot.stream();
         stream_t& stream = gpu[stream_idx];
 
         // // Copy data to pinned staging buffer
@@ -235,14 +255,12 @@ public:
                                       ecount, evaluations, elens,
                                       lg_domain_size);
         if (e.code != cudaSuccess) {
-            resources.send(resource);
             return e;
         }
 
         cudaDeviceSynchronize();
         memcpy(out, h_mem0, sizeof(fr_t) * domain_size);
 
-        resources.send(resource);
         return RustError{cudaSuccess};
     }
 
@@ -261,7 +279,6 @@ public:
         for (size_t i = 0; i < gpu_count; i++) {
             pool.spawn([&, i]() {
                 int dev = i;
-                select_gpu(dev);
                 size_t start = i * bases_per_gpu;
                 size_t sz = std::min(bases_per_gpu, npoints - start);
 
@@ -270,6 +287,7 @@ public:
                 
                 RustError ret;
                 try {
+                    select_gpu(dev);
                     msm_t<bucket_t, point_t, affine_t, scalar_t> msm(dev);
                     ret = msm.invoke(partial_sums[i], slice_t<affine_t>{pts, sz},
                                      &scalars[start], false, ffi_affine_size);
@@ -280,6 +298,10 @@ public:
 #else
                     ret = RustError{e.code()};
 #endif
+                } catch (...) {
+                    // An exception that leaves the worker would skip the
+                    // `send` below, and the caller would wait forever.
+                    ret = RustError{cudaErrorUnknown};
                 }
                 if (ret.code != cudaSuccess) {
                     error = ret;
