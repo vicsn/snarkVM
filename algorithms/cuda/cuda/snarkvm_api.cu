@@ -19,10 +19,17 @@
 
 #ifndef __CUDA_ARCH__
 
+// Largest domain the device pool is sized for, as a log2 element count.
+#ifndef MAX_LG_DOMAIN
+#define MAX_LG_DOMAIN 17
+#endif
+
 // Lazy instantiation of snarkvm_t
 class snarkvm_singleton_t {
     std::once_flag once;
     snarkvm_t *snarkvm = nullptr;
+    cudaError_t fail_code = cudaErrorNoDevice;
+    std::string fail_detail;
 
     // Never throws: `std::call_once` does not mark a call that throws as
     // done, so the next call would build the pool again.
@@ -33,8 +40,11 @@ class snarkvm_singleton_t {
             if (ngpus() == 0) {
                 return;
             }
-            // SNP TODO: max domain size?
-            snarkvm = new snarkvm_t(17);
+            fail_code = cudaErrorInitializationError;
+            snarkvm = new snarkvm_t(MAX_LG_DOMAIN);
+        } catch (const std::exception& e) {
+            snarkvm = nullptr;
+            try { fail_detail = e.what(); } catch (...) {}
         } catch (...) {
             snarkvm = nullptr;
         }
@@ -50,6 +60,12 @@ public:
     bool ok() {
         std::call_once(once, [this] { init(); });
         return snarkvm != nullptr;
+    }
+    // Why `ok()` failed: `cudaErrorNoDevice` for no usable GPU, or
+    // `cudaErrorInitializationError` for a pool that would not build. No
+    // per-call path returns either.
+    RustError failure() const {
+        return RustError{fail_code, fail_detail};
     }
     snarkvm_t* operator->() {
         assert (ok());
@@ -87,13 +103,23 @@ extern "C" {
         return __blst_platform_cap;
     }
 
+    /// How many usable CUDA devices the runtime reports. Zero on any error.
+    size_t snarkvm_cuda_device_count()
+    {
+        int count = 0;
+        if (cudaGetDeviceCount(&count) != cudaSuccess) {
+            return 0;
+        }
+        return (size_t)count;
+    }
+
     RustError snarkvm_ntt(fr_t* inout, uint32_t lg_domain_size,
                           NTT::InputOutputOrder ntt_order, NTT::Direction ntt_direction,
                           NTT::Type ntt_type)
     {
         return catch_all([&] {
             if (!snarkvm_g.ok()) {
-                return RustError{cudaErrorMemoryAllocation};
+                return snarkvm_g.failure();
             }
             return snarkvm_g->NTT(inout, inout, lg_domain_size, ntt_order,
                                   ntt_direction, ntt_type);
@@ -106,7 +132,7 @@ extern "C" {
                               uint32_t lg_domain_size) {
         return catch_all([&] {
             if (!snarkvm_g.ok()) {
-                return RustError{cudaErrorMemoryAllocation};
+                return snarkvm_g.failure();
             }
             return snarkvm_g->PolyMul(out,
                                       pcount, polynomials, plens,
@@ -119,7 +145,7 @@ extern "C" {
                           const scalar_t scalars[], size_t ffi_affine_size) {
         return catch_all([&] {
             if (!snarkvm_g.ok()) {
-                return RustError{cudaErrorMemoryAllocation};
+                return snarkvm_g.failure();
             }
             return snarkvm_g->MSM(out, points, npoints, scalars, ffi_affine_size);
         });

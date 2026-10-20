@@ -42,7 +42,9 @@ pub enum NTTType {
     Coset = 1,
 }
 
-extern "C" {
+unsafe extern "C" {
+    fn snarkvm_cuda_device_count() -> usize;
+
     fn snarkvm_ntt(
         inout: *mut core::ffi::c_void,
         lg_domain_size: u32,
@@ -100,7 +102,16 @@ fn assert_type<T: 'static, Expected: 'static>() {
     );
 }
 
+/// How many usable CUDA devices are present. Zero means none, or that the
+/// runtime could not be queried at all.
+pub fn device_count() -> usize {
+    unsafe { snarkvm_cuda_device_count() }
+}
+
 /// Compute an in-place NTT on the input data.
+///
+/// A domain larger than the device pool is refused with
+/// `cudaErrorNotSupported`, whose message names the domain and the limit.
 #[allow(non_snake_case)]
 pub fn NTT<T: 'static>(
     domain_size: usize,
@@ -139,8 +150,8 @@ pub fn polymul_supports(domain_size: usize, operands: usize) -> bool {
 /// Compute a polynomial multiply
 pub fn polymul<T: std::clone::Clone + 'static>(
     domain: usize,
-    polynomials: &Vec<Vec<T>>,
-    evaluations: &Vec<Vec<T>>,
+    polynomials: &[&[T]],
+    evaluations: &[&[T]],
     zero: &T,
 ) -> Result<Vec<T>, cuda::Error> {
     assert_type::<T, Fr>();
@@ -166,21 +177,20 @@ pub fn polymul<T: std::clone::Clone + 'static>(
 
     let lg_domain_size = initial_domain_size.trailing_zeros();
 
-    let mut pptrs = Vec::new();
-    let mut plens = Vec::new();
+    let mut pptrs = Vec::with_capacity(polynomials.len());
+    let mut plens = Vec::with_capacity(polynomials.len());
     for polynomial in polynomials {
         pptrs.push(polynomial.as_ptr() as *const core::ffi::c_void);
         plens.push(polynomial.len());
     }
-    let mut eptrs = Vec::new();
-    let mut elens = Vec::new();
+    let mut eptrs = Vec::with_capacity(evaluations.len());
+    let mut elens = Vec::with_capacity(evaluations.len());
     for evaluation in evaluations {
         eptrs.push(evaluation.as_ptr() as *const core::ffi::c_void);
         elens.push(evaluation.len());
     }
 
-    let mut out = Vec::new();
-    out.resize(initial_domain_size, zero.clone());
+    let mut out = vec![zero.clone(); initial_domain_size];
     let err = unsafe {
         snarkvm_polymul(
             out.as_mut_ptr() as *mut core::ffi::c_void,
@@ -200,7 +210,8 @@ pub fn polymul<T: std::clone::Clone + 'static>(
     Ok(out)
 }
 
-/// Compute a multi-scalar multiplication
+/// Compute a multi-scalar multiplication over scalars reduced out of
+/// Montgomery form.
 pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
     points: &[Affine],
     scalars: &[Scalar],
@@ -211,7 +222,7 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
 
     let npoints = scalars.len();
     if npoints > points.len() {
-        panic!("length mismatch {} points < {} scalars", npoints, scalars.len())
+        panic!("length mismatch {} points < {} scalars", points.len(), scalars.len())
     }
     let mut ret = std::mem::MaybeUninit::<Projective>::uninit();
     let err = unsafe {
@@ -234,4 +245,108 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
 #[doc(hidden)]
 pub fn blst_platform_cap() -> i32 {
     unsafe { snarkvm_blst_platform_cap() }
+}
+
+/// Argument guards that a caller can trip.
+///
+/// The device-failure paths — `cudaSetDevice` throwing, the pool allocation
+/// failing — cannot be provoked from a test, so nothing here covers them.
+#[cfg(all(test, feature = "cuda"))]
+mod argument_guards {
+    use super::Fr;
+
+    /// Zero passes the power-of-two test, and the C++ would then compute
+    /// `(size_t)1 << 64`, which is undefined and 1 on x86.
+    #[test]
+    #[should_panic(expected = "non-zero power of 2")]
+    fn ntt_refuses_a_zero_domain() {
+        let mut v: Vec<Fr> = Vec::new();
+        let _ = super::NTT(
+            0,
+            &mut v,
+            super::NTTInputOutputOrder::NN,
+            super::NTTDirection::Forward,
+            super::NTTType::Standard,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "non-zero power of 2")]
+    fn polymul_refuses_a_zero_domain() {
+        let one = [Fr::default()];
+        let polys: Vec<&[Fr]> = vec![&one, &one];
+        let _ = super::polymul(0, &polys, &[], &Fr::default());
+    }
+
+    /// The C++ transforms `domain_size` elements through this pointer and has
+    /// no length to check, so a short buffer is an overrun.
+    #[test]
+    #[should_panic(expected = "exactly the domain")]
+    fn ntt_refuses_a_buffer_shorter_than_its_domain() {
+        let mut v = vec![Fr::default(); 2];
+        let _ = super::NTT(
+            4,
+            &mut v,
+            super::NTTInputOutputOrder::NN,
+            super::NTTDirection::Forward,
+            super::NTTType::Standard,
+        );
+    }
+
+    /// The staging buffer is sliced at `domain_size` strides and the
+    /// single-polynomial path memcpys the input's own length into an output
+    /// allocated at `domain_size`, so an over-long input overruns either way.
+    #[test]
+    #[should_panic(expected = "longer than the domain")]
+    fn polymul_refuses_an_input_longer_than_the_domain() {
+        let long = vec![Fr::default(); 8];
+        let polys: Vec<&[Fr]> = vec![&long];
+        let _ = super::polymul(4, &polys, &[], &Fr::default());
+    }
+
+    #[test]
+    #[should_panic(expected = "does not fill the domain")]
+    fn polymul_refuses_an_evaluation_that_is_not_the_domain() {
+        let long = vec![Fr::default(); 8];
+        let evals: Vec<&[Fr]> = vec![&long];
+        let _ = super::polymul(4, &[], &evals, &Fr::default());
+    }
+
+    /// Another curve's scalar field has `fr_t`'s width, so only the type check
+    /// stops the C++ computing with the wrong modulus.
+    #[test]
+    #[should_panic(expected = "the C++ reads this as")]
+    fn ntt_refuses_another_fields_elements() {
+        let mut v = vec![snarkvm_curves::edwards_bls12::Fr::default(); 4];
+        let _ = super::NTT(
+            4,
+            &mut v,
+            super::NTTInputOutputOrder::NN,
+            super::NTTDirection::Forward,
+            super::NTTType::Standard,
+        );
+    }
+
+    /// A scalar the width of `fr_t` that is not `BigInteger256` is read as a
+    /// different integer.
+    #[test]
+    #[should_panic(expected = "the C++ reads this as")]
+    fn msm_refuses_scalars_of_another_type() {
+        let _ = super::msm::<super::G1Affine, super::G1Projective, snarkvm_curves::edwards_bls12::Fr>(&[], &[]);
+    }
+
+    // A one-element domain clears every guard above and reaches sppark's
+    // mixed-radix kernels, which compute `(index_t)1 << (lg_domain_size - 1)`
+    // with an `int` `lg_domain_size`. At `lg == 0` the shift is undefined, and
+    // on x86-64 it launches `1 << 31` threads that run past any allocation.
+    //
+    // `NTT` has no such test: sppark's `NTT::Base` returns at
+    // `lg_domain_size == 0`, which is the identity for every direction and type.
+    #[test]
+    #[should_panic(expected = "over a one-element domain")]
+    fn polymul_refuses_a_one_element_domain() {
+        let one = [Fr::default()];
+        let polys: Vec<&[Fr]> = vec![&one, &one];
+        let _ = super::polymul(1, &polys, &[], &Fr::default());
+    }
 }
