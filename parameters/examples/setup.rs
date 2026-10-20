@@ -21,13 +21,14 @@ use snarkvm_console::{
 };
 use snarkvm_synthesizer::{Process, Program};
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 use std::{
     fs,
     fs::File,
     io::{BufWriter, Read, Write},
     path::PathBuf,
+    str::FromStr,
 };
 
 fn checksum(bytes: &[u8]) -> String {
@@ -119,6 +120,62 @@ pub fn credits_program<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     Ok(())
 }
 
+/// Synthesizes the circuit keys for the last program given, after its imports in dependency order: for
+/// every function, or for those `--functions` names.
+/// (cargo run --release --example setup program mainnet [--functions a,b] [imports.aleo...] program.aleo)
+pub fn program<N: Network, A: Aleo<Network = N>>(args: &[String]) -> Result<()> {
+    let (functions, paths) = match args {
+        [flag, names, paths @ ..] if flag == "--functions" => {
+            (Some(names.split(',').map(Identifier::<N>::from_str).collect::<Result<Vec<_>>>()?), paths)
+        }
+        paths => (None, paths),
+    };
+    let rng = &mut snarkvm_utilities::TestRng::fixed(1245897092);
+    let process = Process::<N>::load()?;
+    let credits_id = ProgramID::<N>::from_str("credits.aleo")?;
+
+    let mut program = None;
+    for path in paths {
+        let next = fs::read_to_string(path)
+            .map_err(anyhow::Error::from)
+            .and_then(|source| Program::<N>::from_str(&source))
+            .with_context(|| format!("reading {path}"))?;
+        // `add_program` silently skips credits.aleo, whose keys `setup credits` writes.
+        ensure!(next.id() != &credits_id, "{path} is credits.aleo; use `setup credits`");
+        process.lock().add_program(&next).with_context(|| format!("adding {path}"))?;
+        program = Some(next);
+    }
+    let Some(program) = program else {
+        bail!("Usage: setup program <network> [--functions a,b] [imports.aleo...] program.aleo, imports in dependency order")
+    };
+    let program_id = program.id();
+    let functions = match functions {
+        Some(functions) => {
+            for function in &functions {
+                ensure!(program.contains_function(function), "{program_id} has no function {function}");
+            }
+            functions
+        }
+        None => program.functions().keys().copied().collect(),
+    };
+
+    let mut commands = vec![];
+    for function_name in &functions {
+        process.synthesize_key::<A, _>(program_id, function_name, rng)?;
+        commands.push(write_keys(&process, program_id, function_name, &format!("{}.{function_name}", program_id.name()))?);
+        process.remove_proving_key(program_id, function_name)?;
+    }
+
+    // Print the commands.
+    println!("\nNow, perform the following operations:\n");
+    for command in commands {
+        println!("{command}");
+    }
+    println!();
+
+    Ok(())
+}
+
 /// Writes the metadata, prover and verifier files for a function's keys, and returns the upload command.
 fn write_keys<N: Network>(
     process: &Process<N>,
@@ -164,6 +221,12 @@ pub fn main() -> Result<()> {
             "mainnet" => credits_program::<MainnetV0, snarkvm_circuit::AleoV0>(),
             "testnet" => credits_program::<TestnetV0, snarkvm_circuit::AleoTestnetV0>(),
             "canary" => credits_program::<CanaryV0, snarkvm_circuit::AleoCanaryV0>(),
+            _ => panic!("Invalid network"),
+        }?,
+        "program" => match args[2].as_str() {
+            "mainnet" => program::<MainnetV0, snarkvm_circuit::AleoV0>(&args[3..]),
+            "testnet" => program::<TestnetV0, snarkvm_circuit::AleoTestnetV0>(&args[3..]),
+            "canary" => program::<CanaryV0, snarkvm_circuit::AleoCanaryV0>(&args[3..]),
             _ => panic!("Invalid network"),
         }?,
         _ => panic!("Invalid parameter"),
