@@ -30,7 +30,7 @@ quiet = [ ]
 
 [dependencies.blst]
 version = "0.3.11"
-features = [ ]
+features = [ "portable" ]
 
 [dependencies.snarkvm-curves]
 workspace = true

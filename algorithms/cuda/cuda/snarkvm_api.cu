@@ -48,6 +48,14 @@ public:
 };
 snarkvm_singleton_t snarkvm_g;
 
+// blst's portable routines choose ADX from `__blst_platform_cap`, which a
+// constructor in blst's `server.c` sets from CPUID. Nothing else here calls
+// into `server.c`, so without this reference the linker drops it, the flag
+// stays 0, and ADX is never used.
+extern "C" size_t blst_p1_sizeof(void);
+__attribute__((used)) static size_t (*const keep_blst_cpuid)(void) = blst_p1_sizeof;
+extern "C" int __blst_platform_cap;
+
 // sppark reports device failures by throwing, and an exception that crosses
 // `extern "C"` into Rust is undefined behaviour.
 template<class F> static RustError catch_all(F f) noexcept
@@ -64,6 +72,11 @@ template<class F> static RustError catch_all(F f) noexcept
 #ifndef __CUDA_ARCH__
 
 extern "C" {
+    int snarkvm_blst_platform_cap()
+    {
+        return __blst_platform_cap;
+    }
+
     RustError snarkvm_ntt(fr_t* inout, uint32_t lg_domain_size,
                           NTT::InputOutputOrder ntt_order, NTT::Direction ntt_direction,
                           NTT::Type ntt_type)

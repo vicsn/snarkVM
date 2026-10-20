@@ -25,35 +25,16 @@ fn main() {
 
     let c_src_dir = PathBuf::from("src");
     let files = vec![c_src_dir.join("lib.c")];
-    let mut cc_opt = None;
-
-    match cfg!(feature = "portable") {
-        true => {
-            println!("Compiling in portable mode without ISA extensions");
-            cc_opt = Some("__BLST_PORTABLE__");
-        }
-        false => {
-            #[cfg(target_arch = "x86_64")]
-            {
-                // account for cross-compilation [by examining environment variable]
-                let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
-                if target_arch.eq("x86_64") && std::is_x86_feature_detected!("adx") {
-                    println!("Enabling ADX because it was detected on the host");
-                    cc_opt = Some("__ADX__");
-                }
-            }
-        }
-    }
-
     cc.flag_if_supported("-mno-avx") // avoid costly transitions
         .flag_if_supported("-fno-builtin")
         .flag_if_supported("-Wno-unused-command-line-argument");
     if !cfg!(debug_assertions) {
         cc.opt_level(2);
     }
-    if let Some(def) = cc_opt {
-        cc.define(def, None);
-    }
+    // `__ADX__` renames the symbols in blst's `vect.h`, so this crate and blst
+    // must agree on it. Both build in blst's portable mode, whose routines pick
+    // the ADX code at run time from CPUID.
+    cc.define("__BLST_PORTABLE__", None);
     if let Some(include) = env::var_os("DEP_BLST_C_SRC") {
         cc.include(include);
     }
@@ -78,9 +59,7 @@ fn main() {
         nvcc.flag("-Xcompiler").flag("-Wno-subobject-linkage");
         nvcc.define("TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE", None);
         nvcc.define(curve, None);
-        if let Some(def) = cc_opt {
-            nvcc.define(def, None);
-        }
+        nvcc.define("__BLST_PORTABLE__", None);
         if let Some(include) = env::var_os("DEP_BLST_C_SRC") {
             nvcc.include(include);
         }

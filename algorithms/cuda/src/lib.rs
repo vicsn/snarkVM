@@ -62,6 +62,8 @@ extern "C" {
         lg_domain_size: u32,
     ) -> cuda::Error;
 
+    fn snarkvm_blst_platform_cap() -> core::ffi::c_int;
+
     fn snarkvm_msm(
         out: *mut c_void,
         points_with_infinity: *const c_void,
@@ -226,4 +228,10 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
     }
     // SAFETY: the C++ writes `*out` whenever it returns success.
     Ok(unsafe { ret.assume_init() })
+}
+
+/// The CPU features blst's routines run with. Bit 0 is ADX.
+#[doc(hidden)]
+pub fn blst_platform_cap() -> i32 {
+    unsafe { snarkvm_blst_platform_cap() }
 }

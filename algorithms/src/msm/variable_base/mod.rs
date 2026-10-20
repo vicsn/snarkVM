@@ -119,4 +119,13 @@ mod tests {
             assert_eq!(rust.to_affine(), cuda.to_affine());
         }
     }
+
+    /// blst's routines run the ADX code only if its CPUID constructor is in the
+    /// link.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn blst_runs_adx_on_a_cpu_with_it() {
+        let adx = snarkvm_algorithms_cuda::blst_platform_cap() & 1 != 0;
+        assert_eq!(adx, std::is_x86_feature_detected!("adx"));
+    }
 }
