@@ -15,7 +15,10 @@
 
 use snarkvm_algorithms::crypto_hash::sha256::sha256;
 use snarkvm_circuit::Aleo;
-use snarkvm_console::network::{CanaryV0, MainnetV0, Network, TestnetV0, prelude::ToBytes};
+use snarkvm_console::{
+    network::{CanaryV0, MainnetV0, Network, TestnetV0, prelude::ToBytes},
+    program::{Identifier, ProgramID},
+};
 use snarkvm_synthesizer::{Process, Program};
 
 use anyhow::Result;
@@ -103,27 +106,7 @@ pub fn credits_program<N: Network, A: Aleo<Network = N>>() -> Result<()> {
         // process.synthesize_key::<A, _>(program_id, function_name, rng)?;
         // println!("Synthesized '{}': {} ms", function_name, timer.elapsed().as_millis());
 
-        let proving_key = process.get_proving_key(program_id, function_name)?;
-        let proving_key_bytes = proving_key.to_bytes_le()?;
-        let proving_key_checksum = checksum(&proving_key_bytes);
-
-        let verifying_key = process.get_verifying_key(program_id, function_name)?;
-        let verifying_key_bytes = verifying_key.to_bytes_le()?;
-        let verifying_key_checksum = checksum(&verifying_key_bytes);
-
-        let metadata = json!({
-            "prover_checksum": proving_key_checksum,
-            "prover_size": proving_key_bytes.len(),
-            "verifier_checksum": verifying_key_checksum,
-            "verifier_size": verifying_key_bytes.len(),
-        });
-
-        println!("{}", serde_json::to_string_pretty(&metadata)?);
-        write_metadata(&format!("{function_name}.metadata"), &metadata)?;
-        write_remote(&format!("{function_name}.prover"), &proving_key_checksum, &proving_key_bytes)?;
-        write_local(&format!("{function_name}.verifier"), &verifying_key_bytes)?;
-
-        commands.push(format!("upload \"{}\"", versioned_filename(&format!("{function_name}.prover"), &proving_key_checksum)));
+        commands.push(write_keys(&process, program_id, function_name, &function_name.to_string())?);
     }
 
     // Print the commands.
@@ -134,6 +117,36 @@ pub fn credits_program<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     println!();
 
     Ok(())
+}
+
+/// Writes the metadata, prover and verifier files for a function's keys, and returns the upload command.
+fn write_keys<N: Network>(
+    process: &Process<N>,
+    program_id: &ProgramID<N>,
+    function_name: &Identifier<N>,
+    stem: &str,
+) -> Result<String> {
+    let proving_key = process.get_proving_key(program_id, function_name)?;
+    let proving_key_bytes = proving_key.to_bytes_le()?;
+    let proving_key_checksum = checksum(&proving_key_bytes);
+
+    let verifying_key = process.get_verifying_key(program_id, function_name)?;
+    let verifying_key_bytes = verifying_key.to_bytes_le()?;
+    let verifying_key_checksum = checksum(&verifying_key_bytes);
+
+    let metadata = json!({
+        "prover_checksum": proving_key_checksum,
+        "prover_size": proving_key_bytes.len(),
+        "verifier_checksum": verifying_key_checksum,
+        "verifier_size": verifying_key_bytes.len(),
+    });
+
+    println!("{}", serde_json::to_string_pretty(&metadata)?);
+    write_metadata(&format!("{stem}.metadata"), &metadata)?;
+    write_remote(&format!("{stem}.prover"), &proving_key_checksum, &proving_key_bytes)?;
+    write_local(&format!("{stem}.verifier"), &verifying_key_bytes)?;
+
+    Ok(format!("upload \"{}\"", versioned_filename(&format!("{stem}.prover"), &proving_key_checksum)))
 }
 
 /// Run the following command to perform a setup.
