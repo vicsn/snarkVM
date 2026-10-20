@@ -39,7 +39,7 @@ workspace = true
 workspace = true
 
 [dependencies.sppark]
-version = "0.1.5"
+version = "0.1.16"
 
 [build-dependencies.cc]
 version = "^1.0.83"
