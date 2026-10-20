@@ -209,7 +209,10 @@ function hello:
 
     let transaction = vm.deploy(&private_key, &program, Some(records[0].clone()), 600000, None, rng).unwrap();
 
-    c.bench_function("Transaction::Deploy - verify", |b| {
+    // `check_transaction` caches each transaction it accepts and skips proof verification on a
+    // repeat, so every `cached_verify` benchmark times a cache hit after its first iteration.
+    // `verify_transaction.rs` times verification itself.
+    c.bench_function("Transaction::Deploy - cached_verify", |b| {
         b.iter(|| vm.check_transaction(&transaction, None, rng).unwrap())
     });
 }
@@ -267,8 +270,8 @@ fn execute(c: &mut Criterion) {
             })
         });
 
-        // Bench the execution of transfer_public.
-        c.bench_function("Transaction::Execute(transfer_public) - verify", |b| {
+        // Bench a cache hit in check_transaction for transfer_public.
+        c.bench_function("Transaction::Execute(transfer_public) - cached_verify", |b| {
             b.iter(|| vm.check_transaction(&transaction, None, rng).unwrap())
         });
     }
@@ -318,8 +321,8 @@ fn execute(c: &mut Criterion) {
             })
         });
 
-        // Bench the check_transaction method.
-        c.bench_function("Transaction::Execute(transfer_private) - verify", |b| {
+        // Bench a cache hit in check_transaction for transfer_private.
+        c.bench_function("Transaction::Execute(transfer_private) - cached_verify", |b| {
             b.iter(|| vm.check_transaction(&transaction, None, rng).unwrap())
         });
     }
