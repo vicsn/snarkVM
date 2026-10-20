@@ -313,6 +313,7 @@ mod tests {
         assert!(FeePrivateProver::verify_bytes(&bytes).is_err());
     }
 
+    #[cfg(feature = "filesystem")]
     #[ignore]
     #[test]
     fn test_load_bytes_mini() {

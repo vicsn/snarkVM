@@ -757,14 +757,13 @@ mod tests {
         let (powers, shifted) = {
             let key = VarunaProvingKey::<CurrentNetwork>::from_bytes_le(&file[1..]).expect("the key reads");
             let committer_key = &key.committer_key;
-            (committer_key.powers_of_beta_g.len(), committer_key.shifted_powers_of_beta_g.as_ref().map(|b| b.len()))
+            (
+                committer_key.powers_of_beta_g.len(),
+                committer_key.shifted_powers_of_beta_g.as_ref().map_or(0, |b| b.len()),
+            )
         };
         let srs = UniversalParams::load().expect("the SRS loads");
-        srs.download_powers_for(0..powers).expect("the powers download");
-        if let Some(shifted) = shifted {
-            let end = srs.max_degree() + 1;
-            srs.download_powers_for(end - shifted..end).expect("the shifted powers download");
-        }
+        srs.download_powers_for_ends(powers, shifted).expect("the powers download");
 
         let key = VarunaProvingKey::<CurrentNetwork>::read_le_with_srs(&file[1..], &srs).expect("the key reads");
         assert!(matches!(key.committer_key.powers_of_beta_g, Bases::Shared { .. }));

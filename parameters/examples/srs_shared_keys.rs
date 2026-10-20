@@ -80,19 +80,15 @@ pub fn main() -> Result<()> {
     if grow_srs {
         // A key shares the snapshot the SRS holds when it is read, so the SRS is
         // grown to cover every key first.
-        let max_degree = srs.max_degree();
         for (_, load_bytes) in KEYS {
             // Read without the SRS, and dropped before the SRS grows: a key that
             // shared the SRS would make growing it copy the snapshot.
             let (powers, shifted) = {
                 let key = ProvingKey::<N>::from_bytes_le(&load_bytes()?)?;
                 let committer_key = &key.committer_key;
-                (committer_key.powers_of_beta_g.len(), committer_key.shifted_powers_of_beta_g.as_ref().map(|b| b.len()))
+                (committer_key.powers_of_beta_g.len(), committer_key.shifted_powers_of_beta_g.as_ref().map_or(0, |b| b.len()))
             };
-            srs.download_powers_for(0..powers)?;
-            if let Some(shifted) = shifted {
-                srs.download_powers_for(max_degree + 1 - shifted..max_degree + 1)?;
-            }
+            srs.download_powers_for_ends(powers, shifted)?;
         }
     }
 

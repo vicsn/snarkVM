@@ -120,6 +120,10 @@ workspace = true
 [dependencies.num-traits]
 workspace = true
 
+[dev-dependencies.aleo-std]
+workspace = true
+features = [ "storage" ]
+
 [dev-dependencies.expect-test]
 workspace = true
 
@@ -136,12 +140,9 @@ features = [ "preserve_order" ]
 [dev-dependencies.serial_test]
 workspace = true
 
-[dev-dependencies.snarkvm-parameters]
-workspace = true
-features = [ "filesystem" ]
-
 [features]
 cuda = [ "snarkvm-algorithms-cuda" ]
+filesystem = [ "snarkvm-parameters/filesystem" ]
 locktick = [ "snarkvm-parameters/locktick" ]
 profiler = [ "aleo-std/profiler" ]
 test = [ ]

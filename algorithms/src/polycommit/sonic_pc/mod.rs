@@ -120,14 +120,12 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             );
         }
 
-        // Every prefix download before anything is shared: a later one would
-        // replace a snapshot this key already shared, which the key would then
-        // keep alive after the SRS moved on. The suffix is downloaded, and shared,
-        // below, and touches only the suffix.
-        pp.download_powers_for(0..supported_degree + 1)?;
-        for &size in &supported_lagrange_sizes {
-            pp.download_powers_for(0..size)?;
-        }
+        // Both ends are downloaded before anything is shared: a later download
+        // would replace a snapshot this key already shared, which the key would
+        // then keep alive after the SRS moved on.
+        let prefix = supported_lagrange_sizes.iter().fold(supported_degree + 1, |end, &size| end.max(size));
+        let suffix = enforced_degree_bounds.as_deref().and_then(|bounds| bounds.last()).map_or(0, |bound| bound + 1);
+        pp.download_powers_for_ends(prefix, suffix)?;
 
         let (shifted_powers_of_beta_g, shifted_powers_of_beta_times_gamma_g) = match enforced_degree_bounds.as_deref() {
             // The bounds are sorted, so the last is the highest.
@@ -908,6 +906,7 @@ mod tests {
 
     /// Growing the SRS replaces its snapshot, never mutating the one a key
     /// shares: a key trimmed before the growth reads the same points after it.
+    #[cfg(feature = "filesystem")]
     #[test]
     fn a_key_keeps_its_snapshot_across_a_growth() {
         let pp = PC_Bls12_377::load_srs((1 << 15) - 1).unwrap();
@@ -926,8 +925,56 @@ mod tests {
         );
     }
 
+    /// Adding a file replaces the snapshot as a download does: a key trimmed
+    /// before it reads the same points after it.
+    #[test]
+    #[cfg_attr(not(feature = "filesystem"), ignore = "reads the powers files that a run with `filesystem` caches")]
+    fn a_key_keeps_its_snapshot_across_an_added_file() {
+        let pp = PC_Bls12_377::load_srs((1 << 15) - 1).unwrap();
+        let (before, _) = PC_Bls12_377::trim(&pp, 1000, [], 1, Some(&[500])).unwrap();
+        let points = before.powers_of_beta_g.to_vec();
+
+        let [file] = &pp.missing_files_for(0..(1 << 16)).unwrap()[..] else { panic!("expected one file") };
+        pp.add_powers_file(file, &*cached_file_bytes(file)).unwrap();
+        assert!(pp.missing_files_for(0..(1 << 16)).unwrap().is_empty());
+
+        assert_eq!(&*before.powers_of_beta_g, points.as_slice(), "the older snapshot changed");
+        let (after, _) = pp.shared_powers_of_beta_g(0, 1).unwrap();
+        match &before.powers_of_beta_g {
+            Bases::Shared { store, .. } => {
+                assert!(!std::sync::Arc::ptr_eq(store, &after), "the file did not replace the snapshot")
+            }
+            Bases::Owned(_) => panic!("trim should share"),
+        }
+    }
+
+    /// Without `filesystem`, `trim` names every file it needs in one error,
+    /// and trims once they are added.
+    #[cfg(not(feature = "filesystem"))]
+    #[test]
+    #[ignore = "reads the powers files that a run with `filesystem` caches"]
+    fn trim_names_every_missing_file_at_once() {
+        let (degree, bound) = (1 << 16, 1 << 16);
+        let pp = super::UniversalParams::<Bls12_377>::load().unwrap();
+        let top = pp.max_degree();
+        let mut files = pp.missing_files_for(0..degree + 1).unwrap();
+        let shifted = pp.missing_files_for(top - bound..top + 1).unwrap();
+        assert!(files.len() == 2 && !shifted.is_empty());
+        files.extend(shifted);
+
+        let error = PC_Bls12_377::trim(&pp, degree, [], 1, Some(&[bound])).unwrap_err();
+        assert_eq!(error.downcast::<snarkvm_parameters::mainnet::MissingPowers>().unwrap().files, files);
+
+        for file in &files {
+            pp.add_powers_file(file, &*cached_file_bytes(file)).unwrap();
+        }
+        let (ck, _) = PC_Bls12_377::trim(&pp, degree, [], 1, Some(&[bound])).unwrap();
+        assert_eq!(&*ck.powers_of_beta_g, pp.powers_of_beta_g(0, degree + 1).unwrap().as_slice());
+    }
+
     /// A `trim` whose Lagrange sizes grow the SRS shares the snapshot that
     /// growth made, not the one it replaced.
+    #[cfg(feature = "filesystem")]
     #[test]
     fn trim_shares_the_snapshot_left_after_its_own_downloads() {
         let pp = PC_Bls12_377::load_srs((1 << 15) - 1).unwrap();

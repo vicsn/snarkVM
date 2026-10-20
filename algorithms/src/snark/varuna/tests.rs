@@ -588,6 +588,8 @@ mod varuna_hiding {
         traits::{AlgebraicSponge, SNARK},
     };
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+    #[cfg(not(feature = "filesystem"))]
+    use snarkvm_parameters::mainnet::MissingPowers;
     use snarkvm_utilities::{
         FromBytes,
         ToBytes,
@@ -776,6 +778,7 @@ mod varuna_hiding {
         test_bincode(num_constraints, num_variables, &mut rng);
     }
 
+    #[cfg(feature = "filesystem")]
     #[test]
     fn prove_and_verify_with_large_matrix() {
         let num_constraints = 1 << 16;
@@ -786,6 +789,7 @@ mod varuna_hiding {
         test_circuit_n_times(num_constraints, num_variables, 1, VarunaVersion::V2, &mut rng);
     }
 
+    #[cfg(feature = "filesystem")]
     #[test]
     fn check_indexing() {
         let rng = &mut TestRng::default();
@@ -852,6 +856,7 @@ mod varuna_hiding {
         }
     }
 
+    #[cfg(feature = "filesystem")]
     #[test]
     fn test_srs_downloads() {
         let rng = &mut TestRng::default();
@@ -910,6 +915,36 @@ mod varuna_hiding {
             VarunaInst::verify(universal_verifier, &fs_parameters, &vk1, varuna_version, public_inputs1, &proof1)
                 .unwrap()
         );
+    }
+
+    /// Without `filesystem`, `circuit_setup` names every file it needs in one
+    /// error, and sets the circuit up once they are added.
+    #[cfg(not(feature = "filesystem"))]
+    #[test]
+    #[ignore = "reads the powers files that a run with `filesystem` caches"]
+    fn circuit_setup_names_every_missing_file_at_once() {
+        let rng = &mut TestRng::default();
+        let (circuit, _) = TestCircuit::gen_rand(2, (1 << 16) - 10, (1 << 16) - 10, rng);
+        let indexed = AHPForR1CS::<Fr, VarunaHidingMode>::index(&circuit).unwrap();
+        let max_degree = indexed.max_degree().unwrap();
+        assert!(max_degree >= 1 << 16);
+        let bounds = AHPForR1CS::<Fr, VarunaHidingMode>::get_degree_bounds(&indexed.index_info).unwrap();
+        // `bounds` is an array of four.
+        let highest_bound = bounds.into_iter().max().unwrap();
+
+        let universal_srs = crate::snark::varuna::UniversalSRS::<Bls12_377>::load().unwrap();
+        let top = universal_srs.max_degree();
+        let mut files = universal_srs.missing_files_for(0..max_degree + 1).unwrap();
+        files.extend(universal_srs.missing_files_for(top - highest_bound..top + 1).unwrap());
+        assert!(!files.is_empty());
+
+        let error = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap_err();
+        assert_eq!(error.downcast_ref::<MissingPowers>().map(|missing| &missing.files), Some(&files));
+
+        for file in &files {
+            universal_srs.add_powers_file(file, &*crate::polycommit::test_templates::cached_file_bytes(file)).unwrap();
+        }
+        VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
     }
 
     #[test]
