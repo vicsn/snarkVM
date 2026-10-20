@@ -32,6 +32,12 @@ quiet = [ ]
 version = "0.3.11"
 features = [ ]
 
+[dependencies.snarkvm-curves]
+workspace = true
+
+[dependencies.snarkvm-utilities]
+workspace = true
+
 [dependencies.sppark]
 version = "0.1.5"
 
