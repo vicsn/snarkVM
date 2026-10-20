@@ -37,9 +37,7 @@ impl VariableBase {
                 let result = snarkvm_algorithms_cuda::msm::<G, G::Projective, <G::ScalarField as PrimeField>::BigInteger>(
                     bases, scalars,
                 );
-                if let Ok(result) = result {
-                    return result;
-                }
+                return crate::cuda_must_succeed!(result, "MSM");
             }
             batched::msm(bases, scalars)
         }
@@ -105,6 +103,28 @@ mod tests {
 
             let candidate = batched::msm(bases.as_slice(), scalars.as_slice()).to_affine();
             assert_eq!(naive_a, candidate, "MSM size: {msm_size}");
+        }
+    }
+
+    /// Bases at infinity must survive the trip to the device.
+    ///
+    /// The device slot is wider than the host point, so a copy that misplaces
+    /// the infinity flag turns the identity into an ordinary point. Random
+    /// bases are never at infinity.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn test_msm_cuda_with_bases_at_infinity() {
+        use snarkvm_fields::Zero;
+
+        let mut rng = TestRng::default();
+        for i in 11..15 {
+            let (mut bases, scalars) = create_scalar_bases::<G1Affine, Fr>(&mut rng, 1 << i);
+            for base in bases.iter_mut().step_by(7) {
+                *base = G1Affine::zero();
+            }
+            let rust = standard::msm(bases.as_slice(), scalars.as_slice());
+            let cuda = VariableBase::msm::<G1Affine>(bases.as_slice(), scalars.as_slice());
+            assert_eq!(rust.to_affine(), cuda.to_affine(), "size {}", 1 << i);
         }
     }
 

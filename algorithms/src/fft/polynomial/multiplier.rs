@@ -88,9 +88,8 @@ impl<'a, F: PrimeField> PolyMultiplier<'a, F> {
 
                 let gpu_result_vec =
                     snarkvm_algorithms_cuda::polymul(domain.size(), &poly_slices, &eval_slices, &F::zero());
-                if let Ok(result) = gpu_result_vec {
-                    return Some(DensePolynomial::from_coefficients_vec(result));
-                }
+                let result = crate::cuda_must_succeed!(gpu_result_vec, "polymul");
+                return Some(DensePolynomial::from_coefficients_vec(result));
             }
         }
         self.multiply_on_host()

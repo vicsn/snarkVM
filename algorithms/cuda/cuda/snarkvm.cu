@@ -73,6 +73,8 @@ typedef std::chrono::high_resolution_clock Clock;
 
 using namespace std;
 
+static_assert(cudaErrorNotSupported == 801, "snarkvm-algorithms' CUDA_ERROR_NOT_SUPPORTED");
+
 // Returns `cudaErrorNotSupported` with a message naming the domain and the
 // limit it exceeds. Falls back to the bare code if the message cannot be
 // built, since nothing may cross `extern "C"`.

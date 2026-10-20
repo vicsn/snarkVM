@@ -396,6 +396,7 @@ impl<F: FftField> EvaluationDomain<F> {
     }
 
     /// Runs an in-order transform on the device, and returns whether it did.
+    /// A device error panics.
     ///
     /// The kernels are compiled for BLS12-377's `Fr` and read every buffer as
     /// one, so any other coefficient or field takes the host path.
@@ -407,18 +408,22 @@ impl<F: FftField> EvaluationDomain<F> {
         ntt_type: snarkvm_algorithms_cuda::NTTType,
     ) -> bool {
         // SNP TODO: how to set threshold
-        self.size >= 32
-            && x_s.len() as u64 == self.size
-            && super::is_cuda_field::<T>()
-            && super::is_cuda_field::<F>()
-            && snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                direction,
-                ntt_type,
-            )
-            .is_ok()
+        if self.size < 32
+            || x_s.len() as u64 != self.size
+            || !super::is_cuda_field::<T>()
+            || !super::is_cuda_field::<F>()
+        {
+            return false;
+        }
+        let result = snarkvm_algorithms_cuda::NTT(
+            self.size as usize,
+            x_s,
+            snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
+            direction,
+            ntt_type,
+        );
+        crate::cuda_must_succeed!(result, "ntt");
+        true
     }
 
     pub(crate) fn in_order_fft_in_place<T: DomainCoeff<F>>(&self, x_s: &mut [T]) {
