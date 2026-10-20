@@ -21,8 +21,24 @@
 
 // Lazy instantiation of snarkvm_t
 class snarkvm_singleton_t {
-    bool failed = false;
+    std::once_flag once;
     snarkvm_t *snarkvm = nullptr;
+
+    // Never throws: `std::call_once` does not mark a call that throws as
+    // done, so the next call would build the pool again.
+    void init() noexcept {
+        try {
+            // With no usable GPU, `snarkvm_t` builds an empty slot pool, and
+            // the first call waits forever for a slot.
+            if (ngpus() == 0) {
+                return;
+            }
+            // SNP TODO: max domain size?
+            snarkvm = new snarkvm_t(17);
+        } catch (...) {
+            snarkvm = nullptr;
+        }
+    }
 
 public:
     snarkvm_singleton_t() {}
@@ -30,15 +46,9 @@ public:
         delete snarkvm;
         snarkvm = nullptr;
     }
+    // Builds the pool once, however many threads make the first call.
     bool ok() {
-        if (!failed && snarkvm == nullptr) {
-            // SNP TODO: max domain size?
-            try {
-                snarkvm = new snarkvm_t(17);
-            } catch (...) {
-                failed = true;
-            }
-        }
+        std::call_once(once, [this] { init(); });
         return snarkvm != nullptr;
     }
     snarkvm_t* operator->() {
