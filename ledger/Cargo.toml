@@ -61,6 +61,12 @@ name = "transaction"
 path = "benches/transaction.rs"
 harness = false
 
+[[bench]]
+name = "verify_transaction"
+path = "benches/verify_transaction.rs"
+harness = false
+required-features = [ "test_consensus_heights" ]
+
 [features]
 default = [ "async", "indexmap/rayon", ]
 async = [
