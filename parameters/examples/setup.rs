@@ -59,7 +59,7 @@ fn write_metadata(filename: &str, metadata: &Value) -> Result<()> {
     Ok(())
 }
 
-/// (Do not use) Writes the metadata files. (cargo run --release --example setup usrs)
+/// (Do not use) Writes the metadata files. (cargo run --release --features filesystem --example setup usrs)
 pub fn usrs() -> Result<()> {
     let paths = fs::read_dir("../src/mainnet/resources/").unwrap();
     for path in paths {
@@ -84,7 +84,7 @@ pub fn usrs() -> Result<()> {
     Ok(())
 }
 
-/// Synthesizes the circuit keys for the credits program. (cargo run --release --example setup credits)
+/// Synthesizes the circuit keys for the credits program. (cargo run --release --features filesystem --example setup credits)
 pub fn credits_program<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     // Initialize an RNG.
     let rng = &mut snarkvm_utilities::TestRng::fixed(1245897092);
@@ -137,7 +137,7 @@ pub fn credits_program<N: Network, A: Aleo<Network = N>>() -> Result<()> {
 }
 
 /// Run the following command to perform a setup.
-/// `cargo run --example setup [variant]`
+/// `cargo run --features filesystem --example setup [variant]`
 pub fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
