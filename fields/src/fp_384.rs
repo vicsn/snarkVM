@@ -46,7 +46,9 @@ use zeroize::Zeroize;
 
 pub trait Fp384Parameters: FieldParameters<BigInteger = BigInteger> {}
 
+// The CUDA FFI reads this by bytes.
 #[derive(Copy, Clone, Default, PartialEq, Eq, Hash, Zeroize)]
+#[repr(transparent)]
 pub struct Fp384<P: Fp384Parameters>(pub BigInteger, #[doc(hidden)] pub PhantomData<P>);
 
 impl<P: Fp384Parameters> Fp384<P> {

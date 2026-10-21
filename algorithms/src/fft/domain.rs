@@ -395,20 +395,40 @@ impl<F: FftField> EvaluationDomain<F> {
         })
     }
 
-    pub(crate) fn in_order_fft_in_place<T: DomainCoeff<F>>(&self, x_s: &mut [T]) {
-        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        // SNP TODO: how to set threshold and check that the type is Fr
-        if self.size >= 32 && std::mem::size_of::<T>() == 32 {
-            let result = snarkvm_algorithms_cuda::NTT(
+    /// Runs an in-order transform on the device, and returns whether it did.
+    ///
+    /// The kernels are compiled for BLS12-377's `Fr` and read every buffer as
+    /// one, so any other coefficient or field takes the host path.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    fn ntt_on_device<T: DomainCoeff<F>>(
+        &self,
+        x_s: &mut [T],
+        direction: snarkvm_algorithms_cuda::NTTDirection,
+        ntt_type: snarkvm_algorithms_cuda::NTTType,
+    ) -> bool {
+        // SNP TODO: how to set threshold
+        self.size >= 32
+            && x_s.len() as u64 == self.size
+            && super::is_cuda_field::<T>()
+            && super::is_cuda_field::<F>()
+            && snarkvm_algorithms_cuda::NTT(
                 self.size as usize,
                 x_s,
                 snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                snarkvm_algorithms_cuda::NTTDirection::Forward,
-                snarkvm_algorithms_cuda::NTTType::Standard,
-            );
-            if result.is_ok() {
-                return;
-            }
+                direction,
+                ntt_type,
+            )
+            .is_ok()
+    }
+
+    pub(crate) fn in_order_fft_in_place<T: DomainCoeff<F>>(&self, x_s: &mut [T]) {
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        if self.ntt_on_device(
+            x_s,
+            snarkvm_algorithms_cuda::NTTDirection::Forward,
+            snarkvm_algorithms_cuda::NTTType::Standard,
+        ) {
+            return;
         }
 
         let pc = self.precompute_fft();
@@ -426,18 +446,12 @@ impl<F: FftField> EvaluationDomain<F> {
 
     pub(crate) fn in_order_ifft_in_place<T: DomainCoeff<F>>(&self, x_s: &mut [T]) {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        // SNP TODO: how to set threshold
-        if self.size >= 32 && std::mem::size_of::<T>() == 32 {
-            let result = snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                snarkvm_algorithms_cuda::NTTDirection::Inverse,
-                snarkvm_algorithms_cuda::NTTType::Standard,
-            );
-            if result.is_ok() {
-                return;
-            }
+        if self.ntt_on_device(
+            x_s,
+            snarkvm_algorithms_cuda::NTTDirection::Inverse,
+            snarkvm_algorithms_cuda::NTTType::Standard,
+        ) {
+            return;
         }
 
         let pc = self.precompute_ifft();
@@ -447,18 +461,12 @@ impl<F: FftField> EvaluationDomain<F> {
 
     pub(crate) fn in_order_coset_ifft_in_place<T: DomainCoeff<F>>(&self, x_s: &mut [T]) {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        // SNP TODO: how to set threshold
-        if self.size >= 32 && std::mem::size_of::<T>() == 32 {
-            let result = snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                snarkvm_algorithms_cuda::NTTDirection::Inverse,
-                snarkvm_algorithms_cuda::NTTType::Coset,
-            );
-            if result.is_ok() {
-                return;
-            }
+        if self.ntt_on_device(
+            x_s,
+            snarkvm_algorithms_cuda::NTTDirection::Inverse,
+            snarkvm_algorithms_cuda::NTTType::Coset,
+        ) {
+            return;
         }
 
         let pc = self.precompute_ifft();
@@ -474,18 +482,12 @@ impl<F: FftField> EvaluationDomain<F> {
         pre_comp: &FFTPrecomputation<F>,
     ) {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        // SNP TODO: how to set threshold
-        if self.size >= 32 && std::mem::size_of::<T>() == 32 {
-            let result = snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                snarkvm_algorithms_cuda::NTTDirection::Forward,
-                snarkvm_algorithms_cuda::NTTType::Standard,
-            );
-            if result.is_ok() {
-                return;
-            }
+        if self.ntt_on_device(
+            x_s,
+            snarkvm_algorithms_cuda::NTTDirection::Forward,
+            snarkvm_algorithms_cuda::NTTType::Standard,
+        ) {
+            return;
         }
 
         self.fft_helper_in_place_with_pc(x_s, FFTOrder::II, pre_comp)
@@ -505,20 +507,28 @@ impl<F: FftField> EvaluationDomain<F> {
         pre_comp: &IFFTPrecomputation<F>,
     ) {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        // SNP TODO: how to set threshold
-        if self.size >= 32 && std::mem::size_of::<T>() == 32 {
-            let result = snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                snarkvm_algorithms_cuda::NTTDirection::Inverse,
-                snarkvm_algorithms_cuda::NTTType::Standard,
-            );
-            if result.is_ok() {
-                return;
-            }
+        if self.ntt_on_device(
+            x_s,
+            snarkvm_algorithms_cuda::NTTDirection::Inverse,
+            snarkvm_algorithms_cuda::NTTType::Standard,
+        ) {
+            return;
         }
 
+        self.in_order_ifft_in_place_with_pc_on_host(x_s, pre_comp)
+    }
+
+    /// The in-order inverse on the host.
+    ///
+    /// Under `cuda` on x86_64, the `in_order_*_in_place` and
+    /// `in_order_*_in_place_with_pc` transforms run on the device for a domain
+    /// of 32 or more over `Fr`, so they are not host references for a test. The
+    /// host references are `in_order_fft_with_pc` (forward) and this (inverse).
+    pub(crate) fn in_order_ifft_in_place_with_pc_on_host<T: DomainCoeff<F>>(
+        &self,
+        x_s: &mut [T],
+        pre_comp: &IFFTPrecomputation<F>,
+    ) {
         self.ifft_helper_in_place_with_pc(x_s, FFTOrder::II, pre_comp);
         cfg_iter_mut!(x_s, 1_000).for_each(|val| *val *= self.size_inv);
     }
@@ -539,18 +549,12 @@ impl<F: FftField> EvaluationDomain<F> {
         pre_comp: &IFFTPrecomputation<F>,
     ) {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        // SNP TODO: how to set threshold
-        if self.size >= 32 && std::mem::size_of::<T>() == 32 {
-            let result = snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                snarkvm_algorithms_cuda::NTTDirection::Inverse,
-                snarkvm_algorithms_cuda::NTTType::Coset,
-            );
-            if result.is_ok() {
-                return;
-            }
+        if self.ntt_on_device(
+            x_s,
+            snarkvm_algorithms_cuda::NTTDirection::Inverse,
+            snarkvm_algorithms_cuda::NTTType::Coset,
+        ) {
+            return;
         }
 
         self.ifft_helper_in_place_with_pc(x_s, FFTOrder::II, pre_comp);
@@ -1243,6 +1247,101 @@ mod tests {
             }
             assert_eq!(random_polynomial.coeffs, polynomial_evaluations_cuda, "domain size = {domain_size}");
         }
+    }
+
+    /// A `DomainCoeff` as wide as `Fr` and not `Fr`.
+    ///
+    /// Scaling multiplies twice, so a transform over it differs from one over
+    /// the same bytes as `Fr`.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+    struct Squared(Fr);
+
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    mod squared_impls {
+        use super::{Fr, Squared};
+        use snarkvm_fields::Zero;
+
+        impl Zero for Squared {
+            fn zero() -> Self {
+                Self(Fr::zero())
+            }
+
+            fn is_zero(&self) -> bool {
+                self.0.is_zero()
+            }
+        }
+
+        impl core::ops::Add for Squared {
+            type Output = Self;
+
+            fn add(self, other: Self) -> Self {
+                Self(self.0 + other.0)
+            }
+        }
+
+        impl core::ops::Sub for Squared {
+            type Output = Self;
+
+            fn sub(self, other: Self) -> Self {
+                Self(self.0 - other.0)
+            }
+        }
+
+        impl core::ops::AddAssign for Squared {
+            fn add_assign(&mut self, other: Self) {
+                self.0 += other.0;
+            }
+        }
+
+        impl core::ops::SubAssign for Squared {
+            fn sub_assign(&mut self, other: Self) {
+                self.0 -= other.0;
+            }
+        }
+
+        impl core::ops::MulAssign<Fr> for Squared {
+            fn mul_assign(&mut self, f: Fr) {
+                self.0 *= f;
+                self.0 *= f;
+            }
+        }
+    }
+
+    /// A coefficient the width of `Fr` and not `Fr` must take the host path.
+    ///
+    /// The kernel reads any buffer as `fr_t`, so on the device it would give a
+    /// wrong answer without an error.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn a_type_the_width_of_fr_still_takes_the_host_path() {
+        assert_eq!(
+            core::mem::size_of::<Squared>(),
+            core::mem::size_of::<Fr>(),
+            "the fixture must be as wide as `Fr` to show that a width check is not enough"
+        );
+
+        let mut rng = TestRng::default();
+        let domain = EvaluationDomain::<Fr>::new(64).unwrap();
+        let pc = domain.precompute_ifft();
+        let values: Vec<Squared> = (0..domain.size()).map(|_| Squared(Fr::rand(&mut rng))).collect();
+
+        let mut got = values.clone();
+        domain.in_order_ifft_in_place_with_pc(&mut got, &pc);
+        let mut want = values.clone();
+        domain.in_order_ifft_in_place_with_pc_on_host(&mut want, &pc);
+
+        assert_eq!(got, want, "a non-Fr coefficient must not reach the device");
+
+        // The assertion above means something only while the fixture's
+        // arithmetic differs from `Fr`'s.
+        let mut as_fr: Vec<Fr> = values.iter().map(|s| s.0).collect();
+        domain.in_order_ifft_in_place_with_pc_on_host(&mut as_fr, &pc);
+        assert_ne!(
+            got.iter().map(|s| s.0).collect::<Vec<_>>(),
+            as_fr,
+            "the fixture must not agree with `Fr` over the same bytes, or it distinguishes nothing"
+        );
     }
 
     #[test]

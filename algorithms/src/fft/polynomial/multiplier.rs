@@ -77,6 +77,11 @@ impl<'a, F: PrimeField> PolyMultiplier<'a, F> {
                 None
             } else {
                 #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+                if crate::fft::is_cuda_field::<F>()
+                    && snarkvm_algorithms_cuda::polymul_supports(
+                        domain.size(),
+                        self.polynomials.len() + self.evaluations.len(),
+                    )
                 {
                     let mut poly_slices = Vec::new();
                     for (_, p) in &self.polynomials {
