@@ -130,6 +130,7 @@ pub fn program<N: Network, A: Aleo<Network = N>>(args: &[String]) -> Result<()> 
         }
         paths => (None, paths),
     };
+    // Samples the burner key and inputs; the keys depend only on the circuit and the SRS, not on this seed.
     let rng = &mut snarkvm_utilities::TestRng::fixed(1245897092);
     let process = Process::<N>::load()?;
     let credits_id = ProgramID::<N>::from_str("credits.aleo")?;
