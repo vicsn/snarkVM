@@ -237,6 +237,15 @@ mod tests {
 
     // The BLS12-377 scalar field modulus.
     const FR_MODULUS: [u64; 4] = [725501752471715841, 6461107452199829505, 6968279316240510977, 1345280370688173398];
+    // The BLS12-377 base field modulus.
+    const FQ_MODULUS: [u64; 6] = [
+        0x8508c00000000001,
+        0x170b5d4430000000,
+        0x1ef3622fba094800,
+        0x1a22d9f300f5138f,
+        0xc63b05c06ca1493b,
+        0x1ae3a4617c510ea,
+    ];
 
     fn check_update_de_62_at_the_range_bounds<const W: usize, const L: usize>(modulus: &[u64; W]) {
         let inv = (0..6).fold(modulus[0], |x, _| x.wrapping_mul(2u64.wrapping_sub(modulus[0].wrapping_mul(x)))) & M62;
@@ -263,7 +272,21 @@ mod tests {
     }
 
     #[test]
+    fn test_signed62_round_trip() {
+        fn round_trip<const W: usize, const L: usize>(a: [u64; W]) {
+            assert_eq!(from_signed62::<W, L>(&to_signed62::<W, L>(&a)), a);
+        }
+        for a in [FR_MODULUS, [u64::MAX; 4], [0x5555_5555_5555_5555; 4]] {
+            round_trip::<4, 5>(a);
+        }
+        for a in [FQ_MODULUS, [u64::MAX; 6], [0x5555_5555_5555_5555; 6]] {
+            round_trip::<6, 7>(a);
+        }
+    }
+
+    #[test]
     fn test_update_de_62_at_the_range_bounds() {
         check_update_de_62_at_the_range_bounds::<4, 5>(&FR_MODULUS);
+        check_update_de_62_at_the_range_bounds::<6, 7>(&FQ_MODULUS);
     }
 }

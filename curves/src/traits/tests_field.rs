@@ -20,16 +20,16 @@ use snarkvm_fields::{
     Field,
     Fp256,
     Fp256Parameters,
+    Fp384,
+    Fp384Parameters,
     LegendreSymbol,
-    One,
     PrimeField,
     SquareRootField,
-    Zero,
     batch_inversion,
     traits::{FftParameters, FieldParameters},
 };
 use snarkvm_utilities::{
-    biginteger::{BigInteger, BigInteger256},
+    biginteger::BigInteger,
     rand::{TestRng, Uniform},
     serialize::{CanonicalDeserialize, Flags, SWFlags},
 };
@@ -695,22 +695,36 @@ pub fn field_serialization_test<F: Field>(rng: &mut TestRng) {
 }
 
 pub fn fp256_inverse_test<P: Fp256Parameters>(rng: &mut TestRng) {
-    assert_eq!(P::MODULUS.0[0].wrapping_mul(P::INV.wrapping_neg()), 1);
+    inverse_test(rng, |x| Fp256::<P>(x, PhantomData), |a| a.0);
+}
 
-    let check = |a: Fp256<P>| {
+pub fn fp384_inverse_test<P: Fp384Parameters>(rng: &mut TestRng) {
+    inverse_test(rng, |x| Fp384::<P>(x, PhantomData), |a| a.0);
+}
+
+/// `raw` makes an element from its Montgomery representation, and `repr` returns that representation.
+fn inverse_test<F: PrimeField>(
+    rng: &mut TestRng,
+    raw: impl Fn(F::BigInteger) -> F,
+    repr: impl Fn(&F) -> F::BigInteger,
+) {
+    let modulus = F::Parameters::MODULUS;
+    assert_eq!(modulus.as_ref()[0].wrapping_mul(F::Parameters::INV.wrapping_neg()), 1);
+
+    let check = |a: F| {
         if a.is_zero() {
             return;
         }
         // `a` is nonzero.
         let inverse = a.inverse().unwrap();
-        assert!(inverse.0 < P::MODULUS, "{:?}", a.0);
-        assert_eq!(a * inverse, Fp256::one(), "{:?}", a.0);
+        assert!(repr(&inverse) < modulus, "{:?}", repr(&a));
+        assert_eq!(a * inverse, F::one(), "{:?}", repr(&a));
     };
-    let raw = |x: BigInteger256| Fp256::<P>(x, PhantomData);
-    let one = BigInteger256::from(1);
+    let one = F::BigInteger::from(1);
+    let bits = 64 * F::BigInteger::NUM_LIMBS as u32;
 
-    let mut edges = vec![P::R, P::R2];
-    for k in 0..256 {
+    let mut edges = vec![F::Parameters::R, F::Parameters::R2];
+    for k in 0..bits {
         let mut power = one;
         power.muln(k);
         let (mut below, mut above) = (power, power);
@@ -719,30 +733,29 @@ pub fn fp256_inverse_test<P: Fp256Parameters>(rng: &mut TestRng) {
         edges.extend([power, below, above]);
     }
     for i in 1..=64 {
-        let mut near_p = P::MODULUS;
-        near_p.sub_noborrow(&BigInteger256::from(i));
+        let mut near_p = modulus;
+        near_p.sub_noborrow(&F::BigInteger::from(i));
         edges.push(near_p);
     }
-    for edge in edges.into_iter().filter(|e| *e < P::MODULUS) {
+    for edge in edges.into_iter().filter(|e| *e < modulus) {
         check(raw(edge));
-        if let Some(canonical) = Fp256::<P>::from_bigint(edge) {
+        if let Some(canonical) = F::from_bigint(edge) {
             check(canonical);
         }
     }
     for i in 0..10_000 {
-        let mut short = rng.random::<BigInteger256>();
-        short.divn(i % 256);
-        if short < P::MODULUS {
+        let mut short = F::BigInteger::rand(rng);
+        short.divn(i % bits);
+        if short < modulus {
             check(raw(short));
         }
-        check(Fp256::<P>::rand(rng));
+        check(F::rand(rng));
     }
 
-    let mut values: Vec<Fp256<P>> =
-        (0..1000).map(|i| if i % 97 == 0 { Fp256::zero() } else { Fp256::rand(rng) }).collect();
+    let mut values: Vec<F> = (0..1000).map(|i| if i % 97 == 0 { F::zero() } else { F::rand(rng) }).collect();
     let originals = values.clone();
     batch_inversion(&mut values);
     for (original, inverse) in originals.iter().zip(&values) {
-        assert_eq!(*original * inverse, if original.is_zero() { Fp256::zero() } else { Fp256::one() });
+        assert_eq!(*original * inverse, if original.is_zero() { F::zero() } else { F::one() });
     }
 }

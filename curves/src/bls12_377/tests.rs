@@ -44,6 +44,7 @@ use crate::{
             field_serialization_test,
             field_test,
             fp256_inverse_test,
+            fp384_inverse_test,
             frobenius_test,
             primefield_test,
             random_sqrt_tonelli_tests,
@@ -111,6 +112,11 @@ fn test_bls12_377_fq() {
         sqrt_field_test(a, &mut rng);
         field_serialization_test::<Fq>(&mut rng);
     }
+}
+
+#[test]
+fn test_bls12_377_fq_inverse() {
+    fp384_inverse_test::<FqParameters>(&mut TestRng::default());
 }
 
 #[test]
