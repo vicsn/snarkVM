@@ -66,6 +66,8 @@ pub fn max_available_threads() -> usize {
         Cpu::AMD | Cpu::Unknown => None,
     });
 
+    // Read on every call, not cached: this is the size of the caller's pool, which may be
+    // smaller than the global one, such as a pool `execute_with_threads` installs.
     let rayon_threads = rayon::current_num_threads();
     intel_physical_cores.map_or(rayon_threads, |cores| cores.min(rayon_threads))
 }
