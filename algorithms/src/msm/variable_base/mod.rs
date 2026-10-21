@@ -93,7 +93,7 @@ mod tests {
         use snarkvm_curves::ProjectiveCurve;
 
         let mut rng = TestRng::default();
-        for msm_size in [1, 5, 10, 50, 100, 500, 1000] {
+        for msm_size in [1, 5, 10, 14, 15, 25, 31, 32, 33, 50, 100, 500, 1000] {
             let (bases, scalars) = create_scalar_bases::<G1Affine, Fr>(&mut rng, msm_size);
 
             let naive_a = VariableBase::msm_naive(bases.as_slice(), scalars.as_slice()).to_affine();
