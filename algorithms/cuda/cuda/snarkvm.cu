@@ -296,9 +296,10 @@ public:
         RustError error = RustError{cudaSuccess};
         std::mutex error_mtx;
 
-        // Divide the MSM among the GPUs
+        // Divide the MSM among the GPUs. If a spawn throws, the workers
+        // already running still write this frame, so wait for them first.
         for (size_t i = 0; i < gpu_count; i++) {
-            pool.spawn([&, i]() {
+            auto work = [&, i]() {
                 int dev = i;
                 size_t start = i * bases_per_gpu;
                 size_t sz = std::min(bases_per_gpu, npoints - start);
@@ -332,7 +333,15 @@ public:
                     }
                 }
                 ch.send(i);
-            });
+            };
+            try {
+                pool.spawn(work);
+            } catch (...) {
+                for (size_t j = 0; j < i; j++)
+                    ch.recv();
+                free(error.message);
+                throw;
+            }
         }
         size_t dev = ch.recv();
         *out = partial_sums[dev];
