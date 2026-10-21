@@ -66,6 +66,7 @@ public:
 #include <chrono>
 #include <atomic>
 #include <mutex>
+#include <exception>
 
 typedef std::chrono::high_resolution_clock Clock;
 
@@ -92,12 +93,14 @@ class snarkvm_t {
         resource_t* r;
     public:
         slot_t(channel_t<resource_t*>& p) : pool(p), r(p.recv()) {}
-        // An exception can leave copies into this slot's staging buffers in
-        // flight, so the stream is synced before the next holder gets them.
-        // Both calls can throw, and a throw during unwinding is
-        // `std::terminate`.
+        // Mul and NTT::Base sync the device in their own cuda_error handlers.
+        // Only an exception they do not catch can leave zero-stream copies into
+        // the staging buffers in flight, so the whole device is synced only then.
         ~slot_t() noexcept {
-            try { select_gpu(r->dev)[r->stream].sync(); } catch (...) {}
+            try {
+                auto& gpu = select_gpu(r->dev);
+                if (std::uncaught_exceptions()) gpu.sync(); else gpu[r->stream].sync();
+            } catch (...) {}
             try { pool.send(r); } catch (...) {}
         }
         slot_t(const slot_t&) = delete;
