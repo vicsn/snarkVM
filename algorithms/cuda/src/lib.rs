@@ -104,18 +104,21 @@ fn assert_type<T: 'static, Expected: 'static>() {
     );
 }
 
-/// How many usable CUDA devices are present. Zero means none, or that the
-/// runtime could not be queried at all.
+/// How many CUDA devices sppark will use. Zero means none, or that the runtime
+/// could not be queried at all.
 pub fn device_count() -> usize {
     unsafe { snarkvm_cuda_device_count() }
 }
 
-/// The largest constraint domain a proof can multiply here, as an element
-/// count. Zero means there is no usable pool.
+/// The largest domain a proof can multiply here, as an element count. Zero
+/// means there is no usable pool.
 ///
-/// Compare `CircuitInfo::num_constraints`, rounded up to a power of two, and
-/// refuse above it. Round two's `z_a * z_b` is over the constraint domain and
-/// always reaches the pool guard, so anything this refuses would have failed.
+/// The prover multiplies over the constraint domain in round two, the variable
+/// domain in round three, and each matrix's non-zero domain in round four, so
+/// all three must fit. Compare `CircuitInfo::num_constraints`,
+/// `num_variables` and each of `num_non_zero_a`, `num_non_zero_b` and
+/// `num_non_zero_c`, rounded up to a power of two, and refuse above it. No
+/// consensus limit caps the non-zero counts.
 ///
 /// `snarkvm_t::PolyMul` admits a domain up to a quarter of
 /// [`pool_elements()`], and `PolyMultiplier::multiply` asks for `2n` to
