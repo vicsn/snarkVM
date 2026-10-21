@@ -20,6 +20,7 @@ use snarkvm_console::{
     program::{Identifier, ProgramID},
 };
 use snarkvm_synthesizer::{Process, Program};
+use snarkvm_utilities::FixedRng;
 
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
@@ -90,8 +91,8 @@ pub fn usrs() -> Result<()> {
 
 /// Synthesizes the circuit keys for the credits program. (cargo run --release --example setup credits)
 pub fn credits_program<N: Network, A: Aleo<Network = N>>() -> Result<()> {
-    // Initialize an RNG.
-    let rng = &mut snarkvm_utilities::TestRng::fixed(1245897092);
+    // Samples the burner key and inputs; the keys depend only on the circuit and the SRS, not on this seed.
+    let rng = &mut FixedRng::new([0u8; 32]);
     // Initialize the process.
     let process = Process::setup::<A, _>(rng)?;
     // Initialize the program.
@@ -131,7 +132,7 @@ pub fn program<N: Network, A: Aleo<Network = N>>(args: &[String]) -> Result<()> 
         paths => (None, paths),
     };
     // Samples the burner key and inputs; the keys depend only on the circuit and the SRS, not on this seed.
-    let rng = &mut snarkvm_utilities::TestRng::fixed(1245897092);
+    let rng = &mut FixedRng::new([0u8; 32]);
     let process = Process::<N>::load()?;
     let credits_id = ProgramID::<N>::from_str("credits.aleo")?;
 
