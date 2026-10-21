@@ -60,6 +60,7 @@ required-features = ["test-helpers"]
 name = "transaction"
 path = "benches/transaction.rs"
 harness = false
+required-features = [ "test_consensus_heights" ]
 
 [[bench]]
 name = "verify_transaction"
