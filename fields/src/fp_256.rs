@@ -25,6 +25,7 @@ use crate::{
     PrimeField,
     SquareRootField,
     Zero,
+    safegcd,
 };
 use snarkvm_utilities::{
     FromBytes,
@@ -50,9 +51,9 @@ pub trait Fp256Parameters: FieldParameters<BigInteger = BigInteger> {}
 pub struct Fp256<P: Fp256Parameters>(pub BigInteger, #[doc(hidden)] pub PhantomData<P>);
 
 impl<P: Fp256Parameters> Fp256<P> {
-    const MODULUS_62: [i64; 5] = to_signed62(&P::MODULUS.0);
-    const MODULUS_INV_62: u64 = P::INV.wrapping_neg() & M62;
-    const R2_62: [i64; 5] = to_signed62(&P::R2.0);
+    const MODULUS_62: [i64; 5] = safegcd::to_signed62(&P::MODULUS.0);
+    const MODULUS_INV_62: u64 = P::INV.wrapping_neg() & safegcd::M62;
+    const R2_62: [i64; 5] = safegcd::to_signed62(&P::R2.0);
 
     #[inline]
     fn is_valid(&self) -> bool {
@@ -123,32 +124,13 @@ impl<P: Fp256Parameters> Fp256<P> {
 
     /// Returns the inverse of a nonzero canonical element.
     ///
-    /// Bernstein-Yang safegcd, as libsecp256k1's `modinv64_var`; its branches and running time depend on `self`.
+    /// Its branches and running time depend on `self`.
     fn safegcd_inverse(&self) -> Self {
         debug_assert!(self.is_valid());
-        let modulus = &Self::MODULUS_62;
-        let mut d = [0i64; 5];
-        let mut e = Self::R2_62;
-        let mut f = *modulus;
-        let mut g = to_signed62(&self.0.0);
-        let mut len = 5;
-        let mut eta = -1;
-        loop {
-            let t;
-            (eta, t) = divsteps_62_var(eta, f[0] as u64, g[0] as u64);
-            update_de_62(&mut d, &mut e, t, modulus, Self::MODULUS_INV_62);
-            update_fg_62_var(len, &mut f, &mut g, t);
-            if g[..len].iter().all(|&limb| limb == 0) {
-                break;
-            }
-            let (f_top, g_top) = (f[len - 1], g[len - 1]);
-            if len > 1 && f_top ^ (f_top >> 63) == 0 && g_top ^ (g_top >> 63) == 0 {
-                f[len - 2] |= f_top << 62;
-                g[len - 2] |= g_top << 62;
-                len -= 1;
-            }
-        }
-        Self(BigInteger(from_signed62(&normalize_62(d, f[len - 1], modulus))), PhantomData)
+        Self(
+            BigInteger(safegcd::inverse(&self.0.0, &Self::MODULUS_62, Self::MODULUS_INV_62, &Self::R2_62)),
+            PhantomData,
+        )
     }
 }
 
@@ -801,200 +783,5 @@ impl<P: Fp256Parameters> DivAssign<&'_ Self> for Fp256<P> {
     #[inline]
     fn div_assign(&mut self, other: &Self) {
         self.mul_assign(&other.inverse().unwrap());
-    }
-}
-
-// The loop in `Fp256::safegcd_inverse` and the functions `divsteps_62_var`, `update_de_62`,
-// `update_fg_62_var` and `normalize_62` are ported from `src/modinv64_impl.h` in libsecp256k1
-// (https://github.com/bitcoin-core/secp256k1). That file carries the copyright line
-// "Copyright (c) 2020 Peter Dettman" and is distributed under the project's MIT license:
-//
-// Copyright (c) 2013 Pieter Wuille
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
-const M62: u64 = u64::MAX >> 2;
-
-#[inline]
-const fn to_signed62(a: &[u64; 4]) -> [i64; 5] {
-    [
-        (a[0] & M62) as i64,
-        ((a[0] >> 62 | a[1] << 2) & M62) as i64,
-        ((a[1] >> 60 | a[2] << 4) & M62) as i64,
-        ((a[2] >> 58 | a[3] << 6) & M62) as i64,
-        (a[3] >> 56) as i64,
-    ]
-}
-
-#[inline]
-fn from_signed62(v: &[i64; 5]) -> [u64; 4] {
-    let v = v.map(|limb| limb as u64);
-    [v[0] | v[1] << 62, v[1] >> 2 | v[2] << 60, v[2] >> 4 | v[3] << 58, v[3] >> 6 | v[4] << 56]
-}
-
-#[inline]
-/// Runs 62 divsteps on the low limbs of `f` and `g`, returning `eta` and the transition matrix `[u, v, q, r]`.
-fn divsteps_62_var(mut eta: i64, mut f: u64, mut g: u64) -> (i64, [i64; 4]) {
-    let (mut u, mut v, mut q, mut r) = (1u64, 0u64, 0u64, 1u64);
-    let mut i = 62u32;
-    loop {
-        let zeros = (g | (u64::MAX << i)).trailing_zeros();
-        g >>= zeros;
-        u <<= zeros;
-        v <<= zeros;
-        eta -= zeros as i64;
-        i -= zeros;
-        if i == 0 {
-            break;
-        }
-        let w = if eta < 0 {
-            eta = -eta;
-            (f, g) = (g, f.wrapping_neg());
-            (u, q) = (q, u.wrapping_neg());
-            (v, r) = (r, v.wrapping_neg());
-            let limit = (eta + 1).min(i as i64) as u32;
-            let mask = (u64::MAX >> (64 - limit)) & 63;
-            f.wrapping_mul(g).wrapping_mul(f.wrapping_mul(f).wrapping_sub(2)) & mask
-        } else {
-            let limit = (eta + 1).min(i as i64) as u32;
-            let mask = (u64::MAX >> (64 - limit)) & 15;
-            f.wrapping_add((f.wrapping_add(1) & 4) << 1).wrapping_neg().wrapping_mul(g) & mask
-        };
-        g = g.wrapping_add(f.wrapping_mul(w));
-        q = q.wrapping_add(u.wrapping_mul(w));
-        r = r.wrapping_add(v.wrapping_mul(w));
-    }
-    (eta, [u as i64, v as i64, q as i64, r as i64])
-}
-
-#[inline]
-/// Sets `[d, e]` to `t [d, e] / 2^62 mod p`, keeping both in `(-2p, p)`.
-fn update_de_62(d: &mut [i64; 5], e: &mut [i64; 5], t: [i64; 4], modulus: &[i64; 5], modulus_inv_62: u64) {
-    let [u, v, q, r] = t;
-    let (sd, se) = (d[4] >> 63, e[4] >> 63);
-    let mut md = (u & sd) + (v & se);
-    let mut me = (q & sd) + (r & se);
-    let [u, v, q, r] = t.map(i128::from);
-    let mut cd = u * d[0] as i128 + v * e[0] as i128;
-    let mut ce = q * d[0] as i128 + r * e[0] as i128;
-    md -= (modulus_inv_62.wrapping_mul(cd as u64).wrapping_add(md as u64) & M62) as i64;
-    me -= (modulus_inv_62.wrapping_mul(ce as u64).wrapping_add(me as u64) & M62) as i64;
-    cd += modulus[0] as i128 * md as i128;
-    ce += modulus[0] as i128 * me as i128;
-    cd >>= 62;
-    ce >>= 62;
-    for i in 1..5 {
-        cd += u * d[i] as i128 + v * e[i] as i128 + modulus[i] as i128 * md as i128;
-        ce += q * d[i] as i128 + r * e[i] as i128 + modulus[i] as i128 * me as i128;
-        d[i - 1] = (cd as u64 & M62) as i64;
-        e[i - 1] = (ce as u64 & M62) as i64;
-        cd >>= 62;
-        ce >>= 62;
-    }
-    d[4] = cd as i64;
-    e[4] = ce as i64;
-    debug_assert!([d, e].iter().all(|x| sign_62(x, modulus, 2) > 0 && sign_62(x, modulus, -1) < 0));
-}
-
-#[inline]
-/// Sets `[f, g]` to `t [f, g] / 2^62` over their low `len` limbs.
-fn update_fg_62_var(len: usize, f: &mut [i64; 5], g: &mut [i64; 5], t: [i64; 4]) {
-    let [u, v, q, r] = t.map(i128::from);
-    let mut cf = (u * f[0] as i128 + v * g[0] as i128) >> 62;
-    let mut cg = (q * f[0] as i128 + r * g[0] as i128) >> 62;
-    for i in 1..len {
-        cf += u * f[i] as i128 + v * g[i] as i128;
-        cg += q * f[i] as i128 + r * g[i] as i128;
-        f[i - 1] = (cf as u64 & M62) as i64;
-        g[i - 1] = (cg as u64 & M62) as i64;
-        cf >>= 62;
-        cg >>= 62;
-    }
-    f[len - 1] = cf as i64;
-    g[len - 1] = cg as i64;
-}
-
-#[inline]
-/// Maps `r` in `(-2p, p)` to `sign(sign) * r mod p` in `[0, p)`.
-fn normalize_62(mut r: [i64; 5], sign: i64, modulus: &[i64; 5]) -> [i64; 5] {
-    let add = r[4] >> 63;
-    let negate = sign >> 63;
-    for (limb, m) in r.iter_mut().zip(modulus) {
-        *limb = ((*limb + (m & add)) ^ negate) - negate;
-    }
-    carry_62(&mut r);
-    let add = r[4] >> 63;
-    for (limb, m) in r.iter_mut().zip(modulus) {
-        *limb += m & add;
-    }
-    carry_62(&mut r);
-    r
-}
-
-#[inline]
-fn carry_62(r: &mut [i64; 5]) {
-    for i in 0..4 {
-        r[i + 1] += r[i] >> 62;
-        r[i] &= M62 as i64;
-    }
-}
-
-/// Returns the sign of `a + k * modulus`.
-fn sign_62(a: &[i64; 5], modulus: &[i64; 5], k: i64) -> i64 {
-    let (mut carry, mut nonzero) = (0i128, false);
-    for (limb, m) in a.iter().zip(modulus) {
-        carry += *limb as i128 + k as i128 * *m as i128;
-        nonzero |= carry as u64 & M62 != 0;
-        carry >>= 62;
-    }
-    if carry != 0 { carry.signum() as i64 } else { nonzero as i64 }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // The BLS12-377 scalar field modulus.
-    const MODULUS: [u64; 4] = [725501752471715841, 6461107452199829505, 6968279316240510977, 1345280370688173398];
-
-    #[test]
-    fn test_update_de_62_at_the_range_bounds() {
-        let modulus = to_signed62(&MODULUS);
-        let inv = (0..6).fold(MODULUS[0], |x, _| x.wrapping_mul(2u64.wrapping_sub(MODULUS[0].wrapping_mul(x)))) & M62;
-        assert_eq!(MODULUS[0].wrapping_mul(inv) & M62, 1);
-        let at = |k: i64, offset: i64| {
-            let mut x = modulus.map(|m| k * m);
-            x[0] += offset;
-            carry_62(&mut x);
-            x
-        };
-        let bounds = [at(-2, 1), at(1, -1), [0; 5]];
-        for k in [1, 3, 1 << 20, (1 << 61) - 1] {
-            let w = (1i64 << 62) - k;
-            for t in [[w, k, k, w], [-w, -k, -k, -w], [w, -k, -k, w], [-w, k, k, -w]] {
-                for (mut d, mut e) in bounds.iter().flat_map(|d| bounds.iter().map(move |e| (*d, *e))) {
-                    update_de_62(&mut d, &mut e, t, &modulus, inv);
-                    for x in [d, e] {
-                        assert!(sign_62(&x, &modulus, 2) > 0 && sign_62(&x, &modulus, -1) < 0, "{t:?}");
-                    }
-                }
-            }
-        }
     }
 }
