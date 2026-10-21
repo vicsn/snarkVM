@@ -16,6 +16,8 @@
 use std::{env, path::PathBuf};
 
 fn main() {
+    // Set once the kernels compile, so tests that call them build only then.
+    println!("cargo::rustc-check-cfg=cfg(feature, values(\"cuda\"))");
     let curve = "FEATURE_BLS12_377";
 
     // Set CC environment variable to choose an alternative C compiler.

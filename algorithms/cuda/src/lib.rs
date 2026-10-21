@@ -235,3 +235,107 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
 pub fn blst_platform_cap() -> i32 {
     unsafe { snarkvm_blst_platform_cap() }
 }
+
+/// Argument guards that a caller can trip.
+///
+/// The device-failure paths — `cudaSetDevice` throwing, the pool allocation
+/// failing — cannot be provoked from a test, so nothing here covers them.
+#[cfg(all(test, feature = "cuda"))]
+mod argument_guards {
+    use super::Fr;
+
+    /// Zero passes the power-of-two test, and the C++ would then compute
+    /// `(size_t)1 << 64`, which is undefined and 1 on x86.
+    #[test]
+    #[should_panic(expected = "non-zero power of 2")]
+    fn ntt_refuses_a_zero_domain() {
+        let mut v: Vec<Fr> = Vec::new();
+        let _ = super::NTT(
+            0,
+            &mut v,
+            super::NTTInputOutputOrder::NN,
+            super::NTTDirection::Forward,
+            super::NTTType::Standard,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "non-zero power of 2")]
+    fn polymul_refuses_a_zero_domain() {
+        let one = [Fr::default()];
+        let polys = vec![one.to_vec(), one.to_vec()];
+        let _ = super::polymul(0, &polys, &vec![], &Fr::default());
+    }
+
+    /// The C++ transforms `domain_size` elements through this pointer and has
+    /// no length to check, so a short buffer is an overrun.
+    #[test]
+    #[should_panic(expected = "exactly the domain")]
+    fn ntt_refuses_a_buffer_shorter_than_its_domain() {
+        let mut v = vec![Fr::default(); 2];
+        let _ = super::NTT(
+            4,
+            &mut v,
+            super::NTTInputOutputOrder::NN,
+            super::NTTDirection::Forward,
+            super::NTTType::Standard,
+        );
+    }
+
+    /// The staging buffer is sliced at `domain_size` strides and the
+    /// single-polynomial path memcpys the input's own length into an output
+    /// allocated at `domain_size`, so an over-long input overruns either way.
+    #[test]
+    #[should_panic(expected = "longer than the domain")]
+    fn polymul_refuses_an_input_longer_than_the_domain() {
+        let long = vec![Fr::default(); 8];
+        let polys = vec![long];
+        let _ = super::polymul(4, &polys, &vec![], &Fr::default());
+    }
+
+    #[test]
+    #[should_panic(expected = "does not fill the domain")]
+    fn polymul_refuses_an_evaluation_that_is_not_the_domain() {
+        let long = vec![Fr::default(); 8];
+        let evals = vec![long];
+        let _ = super::polymul(4, &vec![], &evals, &Fr::default());
+    }
+
+    /// Another curve's scalar field has `fr_t`'s width, so only the type check
+    /// stops the C++ computing with the wrong modulus.
+    #[test]
+    #[should_panic(expected = "the C++ reads this as")]
+    fn ntt_refuses_another_fields_elements() {
+        let mut v = vec![snarkvm_curves::edwards_bls12::Fr::default(); 4];
+        let _ = super::NTT(
+            4,
+            &mut v,
+            super::NTTInputOutputOrder::NN,
+            super::NTTDirection::Forward,
+            super::NTTType::Standard,
+        );
+    }
+
+    /// A scalar the width of `fr_t` that is not `BigInteger256` is read as a
+    /// different integer.
+    #[test]
+    #[should_panic(expected = "the C++ reads this as")]
+    fn msm_refuses_scalars_of_another_type() {
+        let _ = super::msm::<super::G1Affine, super::G1Projective, snarkvm_curves::edwards_bls12::Fr>(&[], &[]);
+    }
+
+    // A one-element domain clears every guard above and reaches sppark's
+    // mixed-radix kernels, which compute `(index_t)1 << (lg_domain_size - 1)`
+    // with an `int` `lg_domain_size`. At `lg == 0` the shift is undefined, and
+    // on x86-64 it launches `1 << 31` threads that run past any allocation.
+    //
+    // `NTT` has no such test: sppark's `NTT::Base` returns at
+    // `lg_domain_size == 0`, which is the identity for every direction and type.
+    #[test]
+    #[should_panic(expected = "over a one-element domain")]
+    fn polymul_refuses_a_one_element_domain() {
+        let one = [Fr::default()];
+        let polys = vec![one.to_vec(), one.to_vec()];
+        let _ = super::polymul(1, &polys, &vec![], &Fr::default());
+    }
+}
