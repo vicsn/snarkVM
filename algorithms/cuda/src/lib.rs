@@ -109,18 +109,21 @@ fn assert_type<T: 'static, Expected: 'static>() {
 /// nvcc, but nothing it declares links.
 pub const HAVE_NVCC: bool = cfg!(feature = "cuda");
 
-/// How many usable CUDA devices are present. Zero means none, or that the
-/// runtime could not be queried at all.
+/// How many CUDA devices sppark will use. Zero means none, or that the runtime
+/// could not be queried at all.
 pub fn device_count() -> usize {
     unsafe { snarkvm_cuda_device_count() }
 }
 
-/// The largest constraint domain a proof can multiply here, as an element
-/// count. Zero means there is no usable pool.
+/// The largest domain a proof can multiply here, as an element count. Zero
+/// means there is no usable pool.
 ///
-/// Compare `CircuitInfo::num_constraints`, rounded up to a power of two, and
-/// refuse above it. Round two's `z_a * z_b` is over the constraint domain and
-/// always reaches the pool guard, so anything this refuses would have failed.
+/// The prover multiplies over the constraint domain in round two, the variable
+/// domain in round three, and each matrix's non-zero domain in round four, so
+/// all three must fit. Compare `CircuitInfo::num_constraints`,
+/// `num_variables` and each of `num_non_zero_a`, `num_non_zero_b` and
+/// `num_non_zero_c`, rounded up to a power of two, and refuse above it. No
+/// consensus limit caps the non-zero counts.
 ///
 /// `snarkvm_t::PolyMul` admits a domain up to a quarter of
 /// [`pool_elements()`], and `PolyMultiplier::multiply` asks for `2n` to
@@ -292,8 +295,7 @@ pub fn blst_platform_cap() -> i32 {
 mod argument_guards {
     use super::Fr;
 
-    /// Zero passes the power-of-two test, and the C++ would then compute
-    /// `(size_t)1 << 64`, which is undefined and 1 on x86.
+    /// Zero passes the power-of-two test, so it has a check of its own.
     #[test]
     #[should_panic(expected = "non-zero power of 2")]
     fn ntt_refuses_a_zero_domain() {
@@ -349,6 +351,14 @@ mod argument_guards {
         let _ = super::polymul(4, &[], &evals, &Fr::default());
     }
 
+    #[test]
+    #[should_panic(expected = "does not fill the domain")]
+    fn polymul_refuses_an_evaluation_shorter_than_the_domain() {
+        let short = vec![Fr::default(); 2];
+        let evals: Vec<&[Fr]> = vec![&short];
+        let _ = super::polymul(4, &[], &evals, &Fr::default());
+    }
+
     /// Another curve's scalar field has `fr_t`'s width, so only the type check
     /// stops the C++ computing with the wrong modulus.
     #[test]
@@ -367,18 +377,19 @@ mod argument_guards {
     /// A scalar the width of `fr_t` that is not `BigInteger256` is read as a
     /// different integer.
     #[test]
-    #[should_panic(expected = "the C++ reads this as")]
+    #[should_panic(expected = "BigInteger256, got")]
     fn msm_refuses_scalars_of_another_type() {
         let _ = super::msm::<super::G1Affine, super::G1Projective, snarkvm_curves::edwards_bls12::Fr>(&[], &[]);
     }
 
-    // A one-element domain clears every guard above and reaches sppark's
-    // mixed-radix kernels, which compute `(index_t)1 << (lg_domain_size - 1)`
-    // with an `int` `lg_domain_size`. At `lg == 0` the shift is undefined, and
-    // on x86-64 it launches `1 << 31` threads that run past any allocation.
-    //
-    // `NTT` has no such test: sppark's `NTT::Base` returns at
-    // `lg_domain_size == 0`, which is the identity for every direction and type.
+    #[test]
+    #[should_panic(expected = "0 points < 1 scalars")]
+    fn msm_refuses_more_scalars_than_points() {
+        let scalars = [super::BigInteger256::default()];
+        let _ = super::msm::<super::G1Affine, super::G1Projective, super::BigInteger256>(&[], &scalars);
+    }
+
+    /// The shape `polymul_supports` refuses.
     #[test]
     #[should_panic(expected = "over a one-element domain")]
     fn polymul_refuses_a_one_element_domain() {
