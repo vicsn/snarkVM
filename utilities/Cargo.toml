@@ -54,6 +54,9 @@ version = "0.5"
 [dependencies.rand]
 workspace = true
 
+[dependencies.rand_chacha]
+workspace = true
+
 [dependencies.rand_xorshift]
 version = "0.5"
 

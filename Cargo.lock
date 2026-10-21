@@ -3964,6 +3964,7 @@ dependencies = [
  "num-bigint",
  "num_cpus",
  "rand",
+ "rand_chacha",
  "rand_xorshift",
  "rayon",
  "serde",
