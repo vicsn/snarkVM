@@ -303,8 +303,11 @@ fn test_window_sum_is_below_the_group_order() -> Result<()> {
 
 #[test]
 fn test_setup_rejects_a_window_past_the_cap() {
-    let result = BHPHasher::<Console, 1, 64>::setup("BHPWindowCap");
-    assert!(result.is_err());
+    let error = BHPHasher::<Console, 1, 64>::setup("BHPWindowCap").unwrap_err().to_string();
+    assert!(
+        error.contains("BHP window sum must be below the group order"),
+        "window 64 must fail the group-order check, got {error}"
+    );
 }
 
 #[test]

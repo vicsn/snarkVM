@@ -90,14 +90,6 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
         // The absolute value of one window is at most `4 * (16^WINDOW_SIZE - 1) / 15`.
         // Incomplete Montgomery addition divides by a difference of x-coordinates.
         // The division is defined when that bound is below the group order and no base is the identity.
-        let mut maximum_window_size = 0;
-        let mut range = E::BigInteger::from(2_u64);
-        while range < E::Scalar::modulus_minus_one_div_two() {
-            // range < (p-1)/2
-            range.muln(4); // range * 2^4
-            maximum_window_size += 1;
-        }
-        ensure!(WINDOW_SIZE <= maximum_window_size, "The maximum BHP window size is {maximum_window_size}");
         let window_sum = Self::window_sum_bound(WINDOW_SIZE)?;
         ensure!(window_sum < E::Scalar::modulus(), "BHP window sum must be below the group order");
 
