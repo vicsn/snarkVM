@@ -109,8 +109,9 @@ fn assert_type<T: 'static, Expected: 'static>() {
 /// nvcc, but nothing it declares links.
 pub const HAVE_NVCC: bool = cfg!(feature = "cuda");
 
-/// How many CUDA devices sppark will use. Zero means none, or that the runtime
-/// could not be queried at all.
+/// How many CUDA devices the runtime reports. Zero means none, or that the
+/// runtime could not be queried at all. sppark uses only those of compute
+/// capability 7.0 or later that support cooperative launch.
 pub fn device_count() -> usize {
     unsafe { snarkvm_cuda_device_count() }
 }
@@ -121,9 +122,9 @@ pub fn device_count() -> usize {
 /// The prover multiplies over the constraint domain in round two, the variable
 /// domain in round three, and each matrix's non-zero domain in round four, so
 /// all three must fit. Compare `CircuitInfo::num_constraints`,
-/// `num_variables` and each of `num_non_zero_a`, `num_non_zero_b` and
-/// `num_non_zero_c`, rounded up to a power of two, and refuse above it. No
-/// consensus limit caps the non-zero counts.
+/// `num_public_and_private_variables` and each of `num_non_zero_a`,
+/// `num_non_zero_b` and `num_non_zero_c`, rounded up to a power of two, and
+/// refuse above it. No consensus limit caps the non-zero counts.
 ///
 /// `snarkvm_t::PolyMul` admits a domain up to a quarter of
 /// [`pool_elements()`], and `PolyMultiplier::multiply` asks for `2n` to
