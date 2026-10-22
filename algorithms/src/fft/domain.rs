@@ -396,6 +396,7 @@ impl<F: FftField> EvaluationDomain<F> {
     }
 
     /// Runs an in-order transform on the device, and returns whether it did.
+    /// A device error panics.
     ///
     /// The kernels are compiled for BLS12-377's `Fr` and read every buffer as
     /// one, so any other coefficient or field takes the host path.
@@ -407,18 +408,22 @@ impl<F: FftField> EvaluationDomain<F> {
         ntt_type: snarkvm_algorithms_cuda::NTTType,
     ) -> bool {
         // SNP TODO: how to set threshold
-        self.size >= 32
-            && x_s.len() as u64 == self.size
-            && super::is_cuda_field::<T>()
-            && super::is_cuda_field::<F>()
-            && snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                direction,
-                ntt_type,
-            )
-            .is_ok()
+        if self.size < 32
+            || x_s.len() as u64 != self.size
+            || !super::is_cuda_field::<T>()
+            || !super::is_cuda_field::<F>()
+        {
+            return false;
+        }
+        let result = snarkvm_algorithms_cuda::NTT(
+            self.size as usize,
+            x_s,
+            snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
+            direction,
+            ntt_type,
+        );
+        crate::cuda_must_succeed!(result, "ntt");
+        true
     }
 
     pub(crate) fn in_order_fft_in_place<T: DomainCoeff<F>>(&self, x_s: &mut [T]) {
@@ -1166,6 +1171,53 @@ mod tests {
             let fft_pc = domain.precompute_fft();
             assert_eq!(pc, fft_pc.to_ifft_precomputation())
         }
+    }
+
+    /// A multiply of two polynomials over `max_domain()` fits the pool.
+    ///
+    /// `PolyMul` is the guard that binds: its product domain is
+    /// `2 * max_domain()`, which is exactly its `pool / 4` limit.
+    /// `snarkvm_t::NTT` admits eight times the bound, so an FFT here would
+    /// prove nothing.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn test_max_domain_is_a_bound_polymul_accepts_cuda() {
+        use crate::fft::polynomial::PolyMultiplier;
+
+        let max = snarkvm_algorithms_cuda::max_domain();
+        assert!(max > 0, "no usable pool: either no device, or its construction failed");
+
+        let mut rng = TestRng::default();
+        let a = DensePolynomial::<Fr>::rand(max - 1, &mut rng);
+        let b = DensePolynomial::<Fr>::rand(max - 1, &mut rng);
+        let expected_degree = a.degree() + b.degree();
+
+        let mut multiplier = PolyMultiplier::new();
+        multiplier.add_polynomial_ref(&a, "a");
+        multiplier.add_polynomial_ref(&b, "b");
+        let product = multiplier.multiply().expect("the product domain is within the pool");
+
+        assert_eq!(product.degree(), expected_degree, "the multiply ran but did not produce the product");
+    }
+
+    /// One step past `PolyMul`'s pool guard is refused with
+    /// `cudaErrorNotSupported`, and the error names the domain and the limit it
+    /// exceeds.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn test_polymul_pool_guard_names_the_domain_and_limit_cuda() {
+        let pool = snarkvm_algorithms_cuda::pool_elements();
+        assert!(pool > 0, "no usable pool: either no device, or its construction failed");
+
+        let (limit, one) = (pool / 4, [Fr::one()]);
+        let domain = 2 * limit;
+        let err = snarkvm_algorithms_cuda::polymul(domain, &[&one, &one], &[], &Fr::zero())
+            .expect_err("a multiply larger than the pool must be refused");
+        assert_eq!(err.code, 801);
+        assert_eq!(
+            String::from(&err),
+            format!("PolyMul domain of {domain} exceeds the device pool's limit of {limit}")
+        );
     }
 
     /// Tests that the FFTs output the correct result.

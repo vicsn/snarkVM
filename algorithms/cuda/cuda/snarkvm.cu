@@ -66,11 +66,28 @@ public:
 #include <chrono>
 #include <atomic>
 #include <mutex>
+#include <cstring>
+#include <string>
 #include <exception>
 
 typedef std::chrono::high_resolution_clock Clock;
 
 using namespace std;
+
+static_assert(cudaErrorNotSupported == 801, "snarkvm-algorithms' CUDA_ERROR_NOT_SUPPORTED");
+
+// Returns `cudaErrorNotSupported` with a message naming the domain and the
+// limit it exceeds. Falls back to the bare code if the message cannot be
+// built, since nothing may cross `extern "C"`.
+static RustError pool_refusal(const char* op, size_t domain_size, size_t limit) noexcept {
+    try {
+        return RustError{cudaErrorNotSupported,
+                         std::string(op) + " domain of " + std::to_string(domain_size)
+                         + " exceeds the device pool's limit of " + std::to_string(limit)};
+    } catch (...) {
+        return RustError{cudaErrorNotSupported};
+    }
+}
 
 class snarkvm_t {
     thread_pool_t pool;
@@ -146,6 +163,10 @@ class snarkvm_t {
     }
     
 public:
+    // Elements the pool reserves per device per stream slot. `NTT` admits a
+    // domain up to this, `PolyMul` up to a quarter of it.
+    size_t pool_elements() const { return allocated_elements; }
+
     snarkvm_t(int max_lg_domain) : pool(ngpus()) {
         // Allocate storage for 4 polynomials, required by polynomial multiplication
         // Will be allocated per gpu per stream
@@ -164,9 +185,14 @@ public:
                 h_mem[i] = new host_ptr_t<fr_t>(allocated_elements * gpu_t::FLIP_FLOP);
             }
         } catch (const cuda_error& e) {
-            // Failed to allocate. Clean up any memory
+            // Clean up, then rethrow. Completing with `allocated_elements == 0`
+            // would fail every later capacity check as `cudaErrorNotSupported`,
+            // reporting a startup failure as a property of each circuit.
+            // `snarkvm_singleton_t::init()` reports it as
+            // `cudaErrorInitializationError`.
             free_memory();
-        }            
+            throw;
+        }
 
         // GPU resource allocation scheme
         for (size_t j = 0; j < gpu_t::FLIP_FLOP; j++) {
@@ -184,9 +210,11 @@ public:
                   NTT::Type ntt_type) {
         size_t domain_size = (size_t)1 << lg_domain_size;
 
-        // Ensure enough sufficient memory
+        // Larger than the pool this instance preallocated. This check and
+        // PolyMul's are the only source of a positive `cudaErrorNotSupported`,
+        // so the Rust side can tell it from an allocation failure.
         if (allocated_elements < domain_size) {
-            return RustError{cudaErrorMemoryAllocation};
+            return pool_refusal("NTT", domain_size, allocated_elements);
         }
 
         slot_t slot(resources);
@@ -233,9 +261,11 @@ public:
             return RustError{cudaSuccess};
         }
         
-        // Ensure enough sufficient memory
+        // Too large for the preallocated pool, as in `NTT`. PolyMul works on
+        // four polynomials of the domain, so it refuses at a quarter of what
+        // `NTT` accepts.
         if (allocated_elements < 4 * domain_size) {
-            return RustError{cudaErrorMemoryAllocation};
+            return pool_refusal("PolyMul", domain_size, allocated_elements / 4);
         }
 
         slot_t slot(resources);
@@ -262,7 +292,8 @@ public:
             return e;
         }
 
-        cudaDeviceSynchronize();
+        // `Polynomial::Mul` ends in `stream.DtoH` then `stream.sync()`, so
+        // `h_mem0` is complete here without a device-wide sync.
         memcpy(out, h_mem0, sizeof(fr_t) * domain_size);
 
         return RustError{cudaSuccess};
@@ -270,9 +301,6 @@ public:
 
     RustError MSM(point_t* out, const affine_t points[], size_t npoints,
                   const scalar_t scalars[], size_t ffi_affine_size) {
-        // SNP TODO: cleanup
-        // auto start = Clock::now();
-
         // With no points, `gpu_count` is 0, and `ch.recv()` below would wait
         // forever. Rust reads all three coordinates, and `inf()` sets only Z,
         // so this writes Rust's zero in full.
@@ -306,7 +334,7 @@ public:
 
                 // This is ugly, but we only know the size of the affine points in bytes
                 const affine_t* pts = (affine_t*)(&((uint8_t*)points)[start * ffi_affine_size]);
-                
+
                 RustError ret;
                 try {
                     select_gpu(dev);
@@ -349,21 +377,8 @@ public:
             dev = ch.recv();
             point_t::dadd(*out, *out, partial_sums[dev]);
         }
-        // auto end = Clock::now();
-        // uint64_t dt = std::chrono::duration_cast<
-        //     std::chrono::microseconds>(end - start).count();
-        // printf("MSM size %ld took %ld us\n", npoints, dt);
 
         return error;
-        
-        // auto start = Clock::now();
-        // auto res = mult_pippenger<bucket_t>(out, points, npoints, scalars,
-        //                                     false, ffi_affine_size);
-        // auto end = Clock::now();
-        // uint64_t dt = std::chrono::duration_cast<
-        //     std::chrono::microseconds>(end - start).count();
-        // printf("MSM size %ld took %ld us\n", npoints, dt);
-        // return res;
     }
 };
 

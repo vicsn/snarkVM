@@ -19,6 +19,17 @@ fn main() {
     // Declared here and set below once the kernels compile, so tests that call
     // them build only then.
     println!("cargo:rustc-check-cfg=cfg(feature, values(\"cuda\"))");
+    // One `rerun-if-changed` replaces cargo's default of watching every file
+    // in the package, so every source compiled below must be listed here.
+    println!("cargo:rerun-if-changed=src/lib.c");
+    println!("cargo:rerun-if-changed=cuda");
+    println!("cargo:rerun-if-env-changed=CXXFLAGS");
+    println!("cargo:rerun-if-env-changed=NVCC");
+    println!("cargo:rerun-if-env-changed=CUDA_ARCH");
+    // nvcc reads these two itself, so cc-rs does not declare them.
+    println!("cargo:rerun-if-env-changed=NVCC_APPEND_FLAGS");
+    println!("cargo:rerun-if-env-changed=NVCC_PREPEND_FLAGS");
+
     let curve = "FEATURE_BLS12_377";
 
     // Set CC environment variable to choose an alternative C compiler.
@@ -51,8 +62,22 @@ fn main() {
     if nvcc.is_ok() {
         let mut nvcc = cc::Build::new();
         nvcc.cuda(true);
+        // Host debug info only. cc-rs adds device debug (-G) when the profile has
+        // debug on, and -G stops `xyzz_t::add` being inlined into `accumulate`.
+        // nvlink then rejects the cross-module call: `accumulate` is
+        // `__launch_bounds__`-capped at 168 registers while `add` is compiled
+        // under -maxrregcount=255.
+        nvcc.debug(false);
         nvcc.flag("-g");
-        nvcc.flag("-arch=sm_86");
+        // Ampere (sm_86) by default. Its SASS also runs on Ada (sm_89), and
+        // Hopper (sm_90) JIT-compiles its embedded PTX. CUDA_ARCH overrides it;
+        // an empty value takes the default. A binary built for a newer arch than
+        // the GPU fails every kernel launch.
+        let arch = match env::var("CUDA_ARCH") {
+            Ok(v) if !v.trim().is_empty() => v.trim().to_string(),
+            _ => "sm_86".to_string(),
+        };
+        nvcc.flag(format!("-arch={arch}"));
         nvcc.flag("-maxrregcount=255");
         nvcc.flag("-Xcompiler").flag("-Wno-unused-function");
         nvcc.flag("-Xcompiler").flag("-Wno-subobject-linkage");
@@ -71,8 +96,6 @@ fn main() {
         nvcc.file("cuda/snarkvm_api.cu").compile("snarkvm_algorithms_cuda");
 
         println!("cargo:rustc-cfg=feature=\"cuda\"");
-        println!("cargo:rerun-if-changed=cuda");
-        println!("cargo:rerun-if-env-changed=CXXFLAGS");
     } else {
         println!("nvcc must be in the path. Consider adding /usr/local/cuda/bin.");
         // panic!();

@@ -42,7 +42,11 @@ pub enum NTTType {
     Coset = 1,
 }
 
-extern "C" {
+unsafe extern "C" {
+    fn snarkvm_cuda_device_count() -> usize;
+
+    fn snarkvm_cuda_pool_elements() -> usize;
+
     fn snarkvm_ntt(
         inout: *mut core::ffi::c_void,
         lg_domain_size: u32,
@@ -100,7 +104,50 @@ fn assert_type<T: 'static, Expected: 'static>() {
     );
 }
 
+/// How many CUDA devices the runtime reports. Zero means none, or that the
+/// runtime could not be queried at all. sppark uses only those of compute
+/// capability 7.0 or later that support cooperative launch.
+pub fn device_count() -> usize {
+    unsafe { snarkvm_cuda_device_count() }
+}
+
+/// The largest domain a proof can multiply here, as an element count. Zero
+/// means there is no usable pool.
+///
+/// The prover multiplies over the constraint domain in round two, the variable
+/// domain in round three, and each matrix's non-zero domain in round four, so
+/// all three must fit. Compare `CircuitInfo::num_constraints`,
+/// `num_public_and_private_variables` and each of `num_non_zero_a`,
+/// `num_non_zero_b` and `num_non_zero_c`, rounded up to a power of two, and
+/// refuse above it. No consensus limit caps the non-zero counts.
+///
+/// `snarkvm_t::PolyMul` admits a domain up to a quarter of
+/// [`pool_elements()`], and `PolyMultiplier::multiply` asks for `2n` to
+/// multiply two polynomials over a domain of `n`, so the bound is `pool / 8`.
+/// The factor depends on the prover: a multiply of three polynomials would make
+/// it `pool / 16`. The contract test in `fft::domain` checks it.
+///
+/// This builds the pool if it is not built, and a failed build is never
+/// retried, so calling it before the device is ready latches the failure for
+/// the life of the process. [`device_count()`] has no such side effect.
+pub fn max_domain() -> usize {
+    unsafe { snarkvm_cuda_pool_elements() / 8 }
+}
+
+/// Elements the pool reserves per device per stream slot.
+///
+/// `snarkvm_t::NTT` refuses a domain above it and `snarkvm_t::PolyMul` above a
+/// quarter of it. It is for diagnostics, not a refusal criterion: use
+/// [`max_domain()`] for that. Zero, and the construction side effect, are as
+/// for [`max_domain()`].
+pub fn pool_elements() -> usize {
+    unsafe { snarkvm_cuda_pool_elements() }
+}
+
 /// Compute an in-place NTT on the input data.
+///
+/// A domain larger than the device pool is refused with
+/// `cudaErrorNotSupported`, whose message names the domain and the limit.
 #[allow(non_snake_case)]
 pub fn NTT<T: 'static>(
     domain_size: usize,
@@ -139,8 +186,8 @@ pub fn polymul_supports(domain_size: usize, operands: usize) -> bool {
 /// Compute a polynomial multiply
 pub fn polymul<T: std::clone::Clone + 'static>(
     domain: usize,
-    polynomials: &Vec<Vec<T>>,
-    evaluations: &Vec<Vec<T>>,
+    polynomials: &[&[T]],
+    evaluations: &[&[T]],
     zero: &T,
 ) -> Result<Vec<T>, cuda::Error> {
     assert_type::<T, Fr>();
@@ -166,21 +213,20 @@ pub fn polymul<T: std::clone::Clone + 'static>(
 
     let lg_domain_size = initial_domain_size.trailing_zeros();
 
-    let mut pptrs = Vec::new();
-    let mut plens = Vec::new();
+    let mut pptrs = Vec::with_capacity(polynomials.len());
+    let mut plens = Vec::with_capacity(polynomials.len());
     for polynomial in polynomials {
         pptrs.push(polynomial.as_ptr() as *const core::ffi::c_void);
         plens.push(polynomial.len());
     }
-    let mut eptrs = Vec::new();
-    let mut elens = Vec::new();
+    let mut eptrs = Vec::with_capacity(evaluations.len());
+    let mut elens = Vec::with_capacity(evaluations.len());
     for evaluation in evaluations {
         eptrs.push(evaluation.as_ptr() as *const core::ffi::c_void);
         elens.push(evaluation.len());
     }
 
-    let mut out = Vec::new();
-    out.resize(initial_domain_size, zero.clone());
+    let mut out = vec![zero.clone(); initial_domain_size];
     let err = unsafe {
         snarkvm_polymul(
             out.as_mut_ptr() as *mut core::ffi::c_void,
@@ -200,7 +246,8 @@ pub fn polymul<T: std::clone::Clone + 'static>(
     Ok(out)
 }
 
-/// Compute a multi-scalar multiplication
+/// Compute a multi-scalar multiplication over scalars reduced out of
+/// Montgomery form.
 pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
     points: &[Affine],
     scalars: &[Scalar],
@@ -262,8 +309,8 @@ mod argument_guards {
     #[should_panic(expected = "non-zero power of 2")]
     fn polymul_refuses_a_zero_domain() {
         let one = [Fr::default()];
-        let polys = vec![one.to_vec(), one.to_vec()];
-        let _ = super::polymul(0, &polys, &vec![], &Fr::default());
+        let polys: Vec<&[Fr]> = vec![&one, &one];
+        let _ = super::polymul(0, &polys, &[], &Fr::default());
     }
 
     /// The C++ transforms `domain_size` elements through this pointer and has
@@ -288,24 +335,24 @@ mod argument_guards {
     #[should_panic(expected = "longer than the domain")]
     fn polymul_refuses_an_input_longer_than_the_domain() {
         let long = vec![Fr::default(); 8];
-        let polys = vec![long];
-        let _ = super::polymul(4, &polys, &vec![], &Fr::default());
+        let polys: Vec<&[Fr]> = vec![&long];
+        let _ = super::polymul(4, &polys, &[], &Fr::default());
     }
 
     #[test]
     #[should_panic(expected = "does not fill the domain")]
     fn polymul_refuses_an_evaluation_that_is_not_the_domain() {
         let long = vec![Fr::default(); 8];
-        let evals = vec![long];
-        let _ = super::polymul(4, &vec![], &evals, &Fr::default());
+        let evals: Vec<&[Fr]> = vec![&long];
+        let _ = super::polymul(4, &[], &evals, &Fr::default());
     }
 
     #[test]
     #[should_panic(expected = "does not fill the domain")]
     fn polymul_refuses_an_evaluation_shorter_than_the_domain() {
         let short = vec![Fr::default(); 2];
-        let evals = vec![short];
-        let _ = super::polymul(4, &vec![], &evals, &Fr::default());
+        let evals: Vec<&[Fr]> = vec![&short];
+        let _ = super::polymul(4, &[], &evals, &Fr::default());
     }
 
     /// Another curve's scalar field has `fr_t`'s width, so only the type check
@@ -343,7 +390,7 @@ mod argument_guards {
     #[should_panic(expected = "over a one-element domain")]
     fn polymul_refuses_a_one_element_domain() {
         let one = [Fr::default()];
-        let polys = vec![one.to_vec(), one.to_vec()];
-        let _ = super::polymul(1, &polys, &vec![], &Fr::default());
+        let polys: Vec<&[Fr]> = vec![&one, &one];
+        let _ = super::polymul(1, &polys, &[], &Fr::default());
     }
 }

@@ -1342,3 +1342,82 @@ mod varuna_test_vectors {
         test_varuna_with_all_circuits(false);
     }
 }
+
+/// A proof, pinned by its hash, so the device and the host must agree on it.
+///
+/// This checks the whole pipeline's output rather than one kernel. The circuit
+/// is sized so that every device entry point runs: `msm`, `ntt` and `polymul`.
+/// The prover's randomness comes from the `rng` argument alone, so a fixed
+/// seed fixes the proof.
+mod proof_vector {
+    use crate::{
+        crypto_hash::PoseidonSponge,
+        snark::varuna::{AHPForR1CS, VarunaHidingMode, VarunaSNARK, VarunaVersion, test_circuit::TestCircuit},
+        traits::{AlgebraicSponge, SNARK},
+    };
+    use blake2::Digest;
+    use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+    use snarkvm_utilities::{ToBytes, rand::TestRng};
+
+    type FS = PoseidonSponge<Fq, 2, 1>;
+    type Inst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
+
+    // The circuit's shape and both seeds. Changing any of them changes the
+    // proof.
+    const SETUP_SEED: u64 = 20260911;
+    const PROVE_SEED: u64 = 777;
+    const MUL_DEPTH: usize = 1;
+    /// Large enough that the commitment MSMs cross `VariableBase::msm`'s
+    /// `> 1024` threshold and run on the device. Below it, a wrong MSM kernel
+    /// would still produce the pinned hash.
+    const NUM_CONSTRAINTS: usize = 2000;
+    const NUM_VARIABLES: usize = 2000;
+    /// Per matrix: `max_degree` builds one non-zero domain from this, and
+    /// `TestCircuit` writes one entry per matrix per constraint.
+    const NUM_NON_ZERO: usize = NUM_CONSTRAINTS;
+
+    /// Blake2s over `proof.to_bytes_le()`, per Varuna version.
+    ///
+    /// Any change to the proof for a fixed input moves this: intended if the
+    /// prover was meant to change, a regression otherwise. Both feature sets
+    /// are checked against these values, so a device that disagrees with the
+    /// host fails in one of them. The `rand` generators and the SRS bytes
+    /// `universal_setup` produces also move it, so a dependency bump can land
+    /// here without a prover change.
+    const EXPECTED: [(VarunaVersion, &str); 2] = [
+        (VarunaVersion::V2, "620d8f2272d8496df5832bddeffa3cf70ed48c192ce6caffb624c27f73db34b3"),
+        (VarunaVersion::V3, "8e2b36c08794204430f20e5e1c26e52b7d8e4588acc8d7799669d9365bd8ef70"),
+    ];
+
+    #[test]
+    fn a_fixed_input_proves_to_a_fixed_proof() {
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(NUM_CONSTRAINTS, NUM_VARIABLES, NUM_NON_ZERO)
+            .expect("the test circuit has a max degree");
+        prove_and_check(Inst::universal_setup(max_degree).expect("the SRS for the test circuit"));
+    }
+
+    fn prove_and_check(srs: crate::snark::varuna::UniversalSRS<Bls12_377>) {
+        let setup = &mut TestRng::fixed(SETUP_SEED);
+        let prover = &srs.to_universal_prover().expect("a prover from the SRS");
+        let verifier = &srs.to_universal_verifier().expect("a verifier from the SRS");
+        let fs = FS::sample_parameters();
+        let (circuit, inputs) = TestCircuit::gen_rand(MUL_DEPTH, NUM_CONSTRAINTS, NUM_VARIABLES, setup);
+        let (pk, vk) = Inst::circuit_setup(&srs, &circuit).expect("the keys for the test circuit");
+        for (version, expected) in EXPECTED {
+            let rng = &mut TestRng::fixed(PROVE_SEED);
+            let proof = Inst::prove(prover, &fs, &pk, version, &circuit, rng).expect("the test circuit proves");
+
+            // Verified before the hash is compared, so a wrong proof fails as
+            // wrong rather than as merely different.
+            let verified = Inst::verify(verifier, &fs, &vk, version, inputs.as_slice(), &proof)
+                .unwrap_or_else(|e| panic!("the pinned {version:?} proof must verify, and verification errored: {e}"));
+            assert!(verified, "the pinned {version:?} proof must verify");
+
+            let digest = hex::encode(blake2::Blake2s256::digest(proof.to_bytes_le().expect("a proof serializes")));
+            assert_eq!(
+                digest, expected,
+                "the {version:?} proof for a fixed input changed; see this constant's documentation"
+            );
+        }
+    }
+}

@@ -813,6 +813,14 @@ mod tests {
         multiplier.add_polynomial(a.clone(), "a");
         assert_eq!(multiplier.multiply().unwrap(), a);
 
+        // A constant, which gives the smallest domain, of size one.
+        println!("Test a single constant");
+        let c = DensePolynomial::from_coefficients_vec(vec![Fr::rand(rng)]);
+        assert_eq!(c.degree(), 0);
+        let mut multiplier = PolyMultiplier::new();
+        multiplier.add_polynomial(c.clone(), "c");
+        assert_eq!(multiplier.multiply().unwrap(), c);
+
         // Note PolyMultiplier doesn't support evaluations with no polynomials
     }
 
