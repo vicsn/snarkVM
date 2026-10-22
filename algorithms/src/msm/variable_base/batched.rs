@@ -370,7 +370,10 @@ fn batched_window<G: AffineCurve>(
 }
 
 pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
-    if bases.len() < 15 {
+    // Below 32 bases, each window of the bucket method holds too few points to
+    // amortize its batched inversions, and double-and-add is several times
+    // faster.
+    if bases.len() < 32 {
         let num_bits = G::ScalarField::size_in_bits();
         let bigint_size = <G::ScalarField as PrimeField>::BigInteger::NUM_LIMBS * 64;
         let mut bits =
@@ -393,10 +396,7 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
         sum
     } else {
         // Determine the bucket size `c` (chosen empirically).
-        let c = match scalars.len() < 32 {
-            true => 1,
-            false => crate::msm::ln_without_floats(scalars.len()) + 2,
-        };
+        let c = crate::msm::ln_without_floats(scalars.len()) + 2;
 
         let num_bits = <G::ScalarField as PrimeField>::size_in_bits();
 
