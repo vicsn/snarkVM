@@ -44,6 +44,9 @@ pub use legendre::*;
 
 mod safegcd;
 
+mod sqrt_tables;
+pub use sqrt_tables::SqrtTables;
+
 mod to_field_vec;
 #[allow(unused_imports)]
 pub use to_field_vec::*;
