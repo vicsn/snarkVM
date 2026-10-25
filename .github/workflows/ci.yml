@@ -273,7 +273,7 @@ jobs:
             runs: |
               nextest run -p snarkvm-ledger --features test --run-ignored ignored-only -E test(/^tests::valid_solutions::/)
               nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
-              nextest run -p snarkvm-ledger-block
+              nextest run -p snarkvm-ledger-block -j 12
           - name: parameters
             runs: nextest run -p snarkvm-parameters --features filesystem -j 2
           - name: parameters-uncached
