@@ -104,6 +104,11 @@ pub(crate) fn inverse<const W: usize, const L: usize>(
             len -= 1;
         }
     }
+    // `f` is the gcd of `p` and `a` up to sign, which is 1.
+    debug_assert!(
+        (f[..len - 1].iter().all(|&limb| limb == 0) && f[len - 1] == 1)
+            || (f[..len - 1].iter().all(|&limb| limb == M62 as i64) && f[len - 1] == -1)
+    );
     from_signed62(&normalize_62(d, f[len - 1], modulus))
 }
 
@@ -139,7 +144,11 @@ fn divsteps_62_var(mut eta: i64, mut f: u64, mut g: u64) -> (i64, [i64; 4]) {
         q = q.wrapping_add(u.wrapping_mul(w));
         r = r.wrapping_add(v.wrapping_mul(w));
     }
-    (eta, [u as i64, v as i64, q as i64, r as i64])
+    let t = [u as i64, v as i64, q as i64, r as i64];
+    let [u, v, q, r] = t.map(i128::from);
+    debug_assert_eq!(u * r - v * q, 1 << 62);
+    debug_assert!(u.abs() + v.abs() <= 1 << 62 && q.abs() + r.abs() <= 1 << 62);
+    (eta, t)
 }
 
 #[inline]
