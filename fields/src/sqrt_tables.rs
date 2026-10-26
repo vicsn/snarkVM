@@ -177,6 +177,8 @@ impl<F: PrimeField> SqrtTables<F> {
 
     /// Returns the square root of `u` that Algorithm 1 of the paper returns, or `None` if `u` is not
     /// a square.
+    ///
+    /// Its running time and table accesses depend on `u`.
     pub fn sqrt(&self, u: &F) -> Option<F> {
         if u.is_zero() {
             return Some(*u);
