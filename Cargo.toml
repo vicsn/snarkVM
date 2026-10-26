@@ -493,7 +493,7 @@ version = "1.4"
 version = "0.6"
 
 [workspace.dependencies.lru]
-version = "0.18"
+version = "0.19"
 
 [workspace.dependencies.num-traits]
 version = "0.2"
