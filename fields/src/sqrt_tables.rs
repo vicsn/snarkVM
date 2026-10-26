@@ -53,6 +53,11 @@ pub struct SqrtTables<F> {
 
 impl<P: Fp256Parameters> SqrtTables<Fp256<P>> {
     /// Computes the tables for `Fp256<P>`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the 2-adicity is 64 or more, if `p - 1` is a power of two, or if two roots of unity
+    /// in the look-up table have the same lowest limb.
     pub fn new() -> Self {
         Self::with_key(|element| element.0.0[0])
     }
@@ -66,6 +71,11 @@ impl<P: Fp256Parameters> Default for SqrtTables<Fp256<P>> {
 
 impl<P: Fp384Parameters> SqrtTables<Fp384<P>> {
     /// Computes the tables for `Fp384<P>`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the 2-adicity is 64 or more, if `p - 1` is a power of two, or if two roots of unity
+    /// in the look-up table have the same lowest limb.
     pub fn new() -> Self {
         Self::with_key(|element| element.0.0[0])
     }
