@@ -240,7 +240,8 @@ impl<F: PrimeField> SqrtTables<F> {
 const MAX_EXPONENT_WINDOW: u32 = 6;
 
 /// A sliding-window exponentiation by a fixed exponent. Odd power `i` is `u^(2i+1)`.
-struct ExponentSchedule {
+#[doc(hidden)]
+pub struct ExponentSchedule {
     /// The number of odd powers to precompute.
     odd_powers: usize,
     /// The odd power that starts the exponentiation.
@@ -254,7 +255,7 @@ struct ExponentSchedule {
 impl ExponentSchedule {
     /// Returns the schedule with the fewest multiplications for the non-zero exponent `limbs`,
     /// in little-endian order.
-    fn new(limbs: &[u64]) -> Self {
+    pub fn new(limbs: &[u64]) -> Self {
         let bits: Vec<bool> = snarkvm_utilities::BitIteratorBE::new_without_leading_zeros(limbs).collect();
         assert!(!bits.is_empty(), "the exponent must be non-zero");
         (1..=MAX_EXPONENT_WINDOW)
@@ -288,7 +289,7 @@ impl ExponentSchedule {
     }
 
     #[inline]
-    fn pow<F: Field>(&self, u: &F) -> F {
+    pub fn pow<F: Field>(&self, u: &F) -> F {
         let mut odd_powers = [*u; 1 << (MAX_EXPONENT_WINDOW - 1)];
         let u_squared = u.square();
         for i in 1..self.odd_powers {

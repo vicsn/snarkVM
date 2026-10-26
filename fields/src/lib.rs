@@ -45,6 +45,8 @@ pub use legendre::*;
 mod safegcd;
 
 mod sqrt_tables;
+#[doc(hidden)]
+pub use sqrt_tables::ExponentSchedule;
 pub use sqrt_tables::SqrtTables;
 
 mod to_field_vec;

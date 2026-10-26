@@ -23,6 +23,7 @@ use crate::{
     edwards_bls12::Fr as EdwardsFr,
 };
 use snarkvm_fields::{
+    ExponentSchedule,
     FftField,
     FftParameters,
     Field,
@@ -210,6 +211,18 @@ fn check_field<F: PrimeField + SquareRootField>(tables: &SqrtTables<F>, rng: &mu
         check(&with_two_adic_log(rng.random::<u64>() & ones(n), F::rand(rng)), tables);
     }
 
+    // Every byte at every bit position, with all other bits zero and with all other bits one.
+    let r = F::rand(rng);
+    for start in 0..n {
+        let byte = ones(n) & (ones(8) << start);
+        for digit in 0..256 {
+            let digit = byte & (digit << start);
+            for e in [digit, digit | (ones(n) & !byte)] {
+                check(&with_two_adic_log(e, r), tables);
+            }
+        }
+    }
+
     // Random residues and non-residues.
     let (mut residues, mut non_residues) = (0, 0);
     while residues < RANDOM_INPUTS || non_residues < RANDOM_INPUTS {
@@ -225,6 +238,41 @@ fn check_field<F: PrimeField + SquareRootField>(tables: &SqrtTables<F>, rng: &mu
             non_residues += 1;
         }
     }
+}
+
+/// Checks `ExponentSchedule` against `pow` for small exponents, exponents with trailing zeros,
+/// and dense, sparse and random multi-limb exponents.
+fn check_exponent_schedule<F: Field>(rng: &mut TestRng) {
+    let mut exponents: Vec<Vec<u64>> = (1..=4096).map(|e| vec![e]).collect();
+    exponents.extend([
+        vec![1 << 63],
+        vec![u64::MAX],
+        vec![0, 1],
+        vec![0, 1 << 63],
+        vec![u64::MAX, u64::MAX],
+        vec![0x5555_5555_5555_5555, 0xaaaa_aaaa_aaaa_aaaa, 0x5555_5555_5555_5555],
+        vec![0, 0, 0, 0, 0, 1 << 63],
+    ]);
+    for _ in 0..200 {
+        let mut limbs: Vec<u64> = (0..rng.random_range(1..=6)).map(|_| rng.random()).collect();
+        limbs[0] &= u64::MAX << rng.random_range(0..64);
+        *limbs.last_mut().unwrap() |= 1 << 63;
+        exponents.push(limbs);
+    }
+    for limbs in exponents {
+        let u = F::rand(rng);
+        assert_eq!(ExponentSchedule::new(&limbs).pow(&u), u.pow(&limbs), "u^{limbs:?}");
+    }
+}
+
+#[test]
+fn test_exponent_schedule_bls12_377_fq() {
+    check_exponent_schedule::<Fq>(&mut TestRng::default());
+}
+
+#[test]
+fn test_exponent_schedule_bls12_377_fr() {
+    check_exponent_schedule::<Fr>(&mut TestRng::default());
 }
 
 #[test]
