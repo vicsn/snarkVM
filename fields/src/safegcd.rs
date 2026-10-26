@@ -162,6 +162,8 @@ fn update_de_62<const L: usize>(
     me -= (modulus_inv_62.wrapping_mul(ce as u64).wrapping_add(me as u64) & M62) as i64;
     cd += modulus[0] as i128 * md as i128;
     ce += modulus[0] as i128 * me as i128;
+    debug_assert_eq!(cd & M62 as i128, 0);
+    debug_assert_eq!(ce & M62 as i128, 0);
     cd >>= 62;
     ce >>= 62;
     for i in 1..L {
@@ -181,8 +183,12 @@ fn update_de_62<const L: usize>(
 /// Sets `[f, g]` to `t [f, g] / 2^62` over their low `len` limbs.
 fn update_fg_62_var<const L: usize>(len: usize, f: &mut [i64; L], g: &mut [i64; L], t: [i64; 4]) {
     let [u, v, q, r] = t.map(i128::from);
-    let mut cf = (u * f[0] as i128 + v * g[0] as i128) >> 62;
-    let mut cg = (q * f[0] as i128 + r * g[0] as i128) >> 62;
+    let mut cf = u * f[0] as i128 + v * g[0] as i128;
+    let mut cg = q * f[0] as i128 + r * g[0] as i128;
+    debug_assert_eq!(cf & M62 as i128, 0);
+    debug_assert_eq!(cg & M62 as i128, 0);
+    cf >>= 62;
+    cg >>= 62;
     for i in 1..len {
         cf += u * f[i] as i128 + v * g[i] as i128;
         cg += q * f[i] as i128 + r * g[i] as i128;
@@ -235,6 +241,8 @@ fn sign_62<const L: usize>(a: &[i64; L], modulus: &[i64; L], k: i64) -> i64 {
 mod tests {
     use super::*;
 
+    use std::ops::{Add, Mul, Neg};
+
     // The BLS12-377 scalar field modulus.
     const FR_MODULUS: [u64; 4] = [725501752471715841, 6461107452199829505, 6968279316240510977, 1345280370688173398];
     // The BLS12-377 base field modulus.
@@ -247,7 +255,23 @@ mod tests {
         0x1ae3a4617c510ea,
     ];
 
-    fn check_update_de_62_at_the_range_bounds<const W: usize, const L: usize>(modulus: &[u64; W]) {
+    fn signed<F: From<u64> + Neg<Output = F>>(x: i64) -> F {
+        if x < 0 { -F::from(x.unsigned_abs()) } else { F::from(x as u64) }
+    }
+
+    /// Returns the value of the signed limbs `x` in `F`.
+    fn to_field<F, const L: usize>(x: &[i64; L]) -> F
+    where
+        F: Copy + From<u64> + Neg<Output = F> + Add<Output = F> + Mul<Output = F>,
+    {
+        x.iter().rev().fold(F::from(0u64), |acc, &limb| acc * F::from(1u64 << 62) + signed(limb))
+    }
+
+    /// `F` is the field with the modulus `modulus`.
+    fn check_update_de_62_at_the_range_bounds<F, const W: usize, const L: usize>(modulus: &[u64; W])
+    where
+        F: Copy + std::fmt::Debug + PartialEq + From<u64> + Neg<Output = F> + Add<Output = F> + Mul<Output = F>,
+    {
         let inv = (0..6).fold(modulus[0], |x, _| x.wrapping_mul(2u64.wrapping_sub(modulus[0].wrapping_mul(x)))) & M62;
         assert_eq!(modulus[0].wrapping_mul(inv) & M62, 1);
         let modulus = to_signed62::<W, L>(modulus);
@@ -261,11 +285,17 @@ mod tests {
         for k in [1, 3, 1 << 20, (1 << 61) - 1] {
             let w = (1i64 << 62) - k;
             for t in [[w, k, k, w], [-w, -k, -k, -w], [w, -k, -k, w], [-w, k, k, -w]] {
-                for (mut d, mut e) in bounds.iter().flat_map(|d| bounds.iter().map(move |e| (*d, *e))) {
-                    update_de_62(&mut d, &mut e, t, &modulus, inv);
-                    for x in [d, e] {
+                let [u, v, q, r] = t.map(signed::<F>);
+                for (d, e) in bounds.iter().flat_map(|d| bounds.iter().map(move |e| (*d, *e))) {
+                    let (mut d_next, mut e_next) = (d, e);
+                    update_de_62(&mut d_next, &mut e_next, t, &modulus, inv);
+                    for x in [d_next, e_next] {
                         assert!(sign_62(&x, &modulus, 2) > 0 && sign_62(&x, &modulus, -1) < 0, "{t:?}");
                     }
+                    let (d, e) = (to_field::<F, L>(&d), to_field::<F, L>(&e));
+                    let two_62 = F::from(1u64 << 62);
+                    assert_eq!(to_field::<F, L>(&d_next) * two_62, u * d + v * e, "{t:?}");
+                    assert_eq!(to_field::<F, L>(&e_next) * two_62, q * d + r * e, "{t:?}");
                 }
             }
         }
@@ -286,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_update_de_62_at_the_range_bounds() {
-        check_update_de_62_at_the_range_bounds::<4, 5>(&FR_MODULUS);
-        check_update_de_62_at_the_range_bounds::<6, 7>(&FQ_MODULUS);
+        check_update_de_62_at_the_range_bounds::<snarkvm_curves::bls12_377::Fr, 4, 5>(&FR_MODULUS);
+        check_update_de_62_at_the_range_bounds::<snarkvm_curves::bls12_377::Fq, 6, 7>(&FQ_MODULUS);
     }
 }
