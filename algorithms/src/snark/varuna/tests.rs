@@ -1034,6 +1034,33 @@ mod varuna_hiding {
     }
 
     #[test]
+    fn a_verifying_key_with_a_commitment_outside_the_subgroup_is_rejected() {
+        use crate::polycommit::kzg10::KZGCommitment;
+        use snarkvm_curves::{AffineCurve, bls12_377::G1Affine};
+        use snarkvm_utilities::serialize::*;
+
+        let mut rng = TestRng::default();
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
+        let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
+        let (circ, _) = TestCircuit::gen_rand(1, 26, 25, &mut rng);
+        let (_, mut index_vk) = VarunaInst::circuit_setup(&universal_srs, &circ).unwrap();
+
+        let outside = (0u64..)
+            .filter_map(|x| G1Affine::from_x_coordinate(Fq::from(x), true))
+            .find(|p| !p.is_in_correct_subgroup_assuming_on_curve())
+            .unwrap();
+        index_vk.circuit_commitments[0] = KZGCommitment(outside);
+        let bytes = index_vk.to_bytes_le().unwrap();
+
+        assert!(CircuitVerifyingKey::<Bls12_377>::deserialize_compressed_unchecked(&bytes[..]).is_ok());
+        assert!(matches!(
+            CircuitVerifyingKey::<Bls12_377>::deserialize_compressed(&bytes[..]),
+            Err(SerializationError::InvalidData)
+        ));
+        assert!(index_vk.check().is_err());
+    }
+
+    #[test]
     fn a_proving_key_reads_back_with_exact_rows() {
         use crate::snark::varuna::{CircuitProvingKey, ahp::indexer::Circuit};
 
